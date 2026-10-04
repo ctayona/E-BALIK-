@@ -1,0 +1,10 @@
+{
+  "description": "Streamline the reporting, tracking, and claiming of lost items for the University of Makati community with an automated inventory system.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

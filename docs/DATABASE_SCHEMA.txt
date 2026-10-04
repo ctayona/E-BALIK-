@@ -1,0 +1,325 @@
+================================================================================
+E-BALIK LOST & FOUND SYSTEM - DATABASE SCHEMA
+University of Makati Campus
+Created: 2026-08-17
+================================================================================
+
+TABLE 1: user_profiles
+================================================================================
+Description: Core user account information for the E-Balik system
+
+PRIMARY IDENTIFIERS:
+  - account_id (UUID, auto-generated)
+  - campus_id (VARCHAR, unique, user-provided)
+  - email (VARCHAR, unique, university email)
+
+COLUMNS:
+┌─────────────────────┬───────────────────────┬─────────────────────────────┐
+│ Column Name         │ Data Type             │ Constraints & Description   │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ account_id          │ UUID                  │ PRIMARY KEY                 │
+│                     │                       │ Auto-generated              │
+│                     │                       │ Unique identifier           │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ campus_id           │ VARCHAR(50)           │ NOT NULL, UNIQUE            │
+│                     │                       │ Student/Employee ID         │
+│                     │                       │ From user input             │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ fname               │ VARCHAR(100)          │ NOT NULL                    │
+│                     │                       │ First name                  │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ mname               │ VARCHAR(100)          │ NULLABLE                    │
+│                     │                       │ Middle name                 │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ lname               │ VARCHAR(100)          │ NOT NULL                    │
+│                     │                       │ Last name                   │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ email               │ VARCHAR(255)          │ NOT NULL, UNIQUE            │
+│                     │                       │ University email            │
+│                     │                       │ Format: user@umak.edu.ph    │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ password_hash       │ VARCHAR(255)          │ NOT NULL                    │
+│                     │                       │ Bcrypt hashed password      │
+│                     │                       │ 12 rounds                   │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ user_role           │ VARCHAR(50)           │ NULLABLE                    │
+│                     │                       │ Empty initially             │
+│                     │                       │ Future: student/admin/staff │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ created_at          │ TIMESTAMP WITH TZ     │ DEFAULT now()               │
+│                     │                       │ Account creation time       │
+│                     │                       │ UTC timezone                │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ last_login_at       │ TIMESTAMP WITH TZ     │ NULLABLE                    │
+│                     │                       │ Last successful login       │
+│                     │                       │ UTC timezone                │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ is_active           │ BOOLEAN               │ DEFAULT true                │
+│                     │                       │ Account status              │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ updated_at          │ TIMESTAMP WITH TZ     │ DEFAULT now()               │
+│                     │                       │ Last update time            │
+│                     │                       │ Auto-updated                │
+└─────────────────────┴───────────────────────┴─────────────────────────────┘
+
+INDEXES:
+  - idx_user_profiles_email          : Fast lookup by email (login)
+  - idx_user_profiles_campus_id      : Fast lookup by campus ID
+  - idx_user_profiles_created_at     : Sort recent registrations
+
+ROW LEVEL SECURITY: ENABLED
+  - Users can only view their own profile
+  - Admins can view all profiles
+
+
+TABLE 2: otp_tokens
+================================================================================
+Description: OTP codes for account verification and password reset
+
+PRIMARY KEY:
+  - id (UUID, auto-generated)
+
+COLUMNS:
+┌─────────────────────┬───────────────────────┬─────────────────────────────┐
+│ Column Name         │ Data Type             │ Constraints & Description   │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ id                  │ UUID                  │ PRIMARY KEY                 │
+│                     │                       │ Auto-generated              │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ email               │ VARCHAR(255)          │ NOT NULL                    │
+│                     │                       │ Associated email address    │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ otp_code            │ VARCHAR(6)            │ NOT NULL                    │
+│                     │                       │ 6-digit code                │
+│                     │                       │ Random digits               │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ otp_type            │ VARCHAR(50)           │ NOT NULL                    │
+│                     │                       │ Values: registration        │
+│                     │                       │         password_reset      │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ expires_at          │ TIMESTAMP WITH TZ     │ NOT NULL                    │
+│                     │                       │ Expiration time             │
+│                     │                       │ Default: now() + 10 min     │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ is_used             │ BOOLEAN               │ DEFAULT false               │
+│                     │                       │ Verification flag           │
+│                     │                       │ Set to true after use       │
+├─────────────────────┼───────────────────────┼─────────────────────────────┤
+│ created_at          │ TIMESTAMP WITH TZ     │ DEFAULT now()               │
+│                     │                       │ Creation time               │
+└─────────────────────┴───────────────────────┴─────────────────────────────┘
+
+INDEXES:
+  - idx_otp_tokens_email_type        : Find OTP by email and type
+  - idx_otp_tokens_expires_at        : Clean expired OTPs
+  - idx_otp_tokens_is_used           : Find valid OTPs
+
+ROW LEVEL SECURITY: ENABLED
+  - Only service role can access
+  - For backend operations only
+
+
+TABLE 3: found_items (Future Use)
+================================================================================
+Description: Items found on campus awaiting owner claims
+
+COLUMNS:
+  - item_id          : UUID (Primary Key)
+  - account_id       : UUID (Foreign Key to user_profiles)
+  - item_name        : VARCHAR(255)
+  - category         : VARCHAR(100)
+  - description      : TEXT
+  - location         : VARCHAR(255)
+  - found_date       : DATE
+  - image_url        : VARCHAR(255)
+  - status           : VARCHAR(50) [available, claimed, returned]
+  - created_at       : TIMESTAMP
+  - updated_at       : TIMESTAMP
+
+
+TABLE 4: missing_items (Future Use)
+================================================================================
+Description: Items reported as missing by users
+
+COLUMNS:
+  - item_id          : UUID (Primary Key)
+  - account_id       : UUID (Foreign Key to user_profiles)
+  - item_name        : VARCHAR(255)
+  - category         : VARCHAR(100)
+  - description      : TEXT
+  - last_location    : VARCHAR(255)
+  - last_seen_date   : DATE
+  - image_url        : VARCHAR(255)
+  - status           : VARCHAR(50) [missing, found, returned]
+  - created_at       : TIMESTAMP
+  - updated_at       : TIMESTAMP
+
+
+TABLE 5: claims (Future Use)
+================================================================================
+Description: Claims made by users on found items
+
+COLUMNS:
+  - claim_id         : UUID (Primary Key)
+  - found_item_id    : UUID (Foreign Key to found_items)
+  - claimant_account_id : UUID (Foreign Key to user_profiles)
+  - claim_reason     : TEXT
+  - status           : VARCHAR(50) [pending, approved, rejected]
+  - created_at       : TIMESTAMP
+  - reviewed_at      : TIMESTAMP
+  - updated_at       : TIMESTAMP
+
+
+RELATIONSHIPS
+================================================================================
+found_items.account_id → user_profiles.account_id
+  "User who found the item"
+  Action on delete: CASCADE (delete found items when user deleted)
+
+missing_items.account_id → user_profiles.account_id
+  "User who reported missing item"
+  Action on delete: CASCADE
+
+claims.found_item_id → found_items.item_id
+  "Item being claimed"
+  Action on delete: CASCADE
+
+claims.claimant_account_id → user_profiles.account_id
+  "User claiming the item"
+  Action on delete: CASCADE
+
+
+SECURITY FEATURES
+================================================================================
+1. Password Hashing
+   - Algorithm: bcrypt with 12 rounds
+   - Salt: auto-generated
+   - Strength: ~280 billion iterations
+
+2. OTP Security
+   - Length: 6 digits
+   - Expiration: 10 minutes
+   - Single use: marked after verification
+   - Random generation: cryptographically secure
+
+3. Row Level Security (RLS)
+   - Enabled on all tables
+   - Users can only access own data
+   - Admins can access all data
+   - Service role for backend operations
+
+4. Email Validation
+   - Format: valid email syntax
+   - Domain: @umak.edu.ph required
+   - Unique per system
+
+
+USAGE EXAMPLES
+================================================================================
+
+1. Find user by email:
+   SELECT * FROM user_profiles WHERE email = 'john.doe@umak.edu.ph';
+
+2. Get recent registrations:
+   SELECT account_id, fname, lname, email, created_at
+   FROM user_profiles
+   ORDER BY created_at DESC
+   LIMIT 10;
+
+3. Count active users:
+   SELECT COUNT(*) as total_active FROM user_profiles
+   WHERE is_active = true;
+
+4. Get registrations by date:
+   SELECT DATE(created_at) as registration_date, COUNT(*) as count
+   FROM user_profiles
+   GROUP BY DATE(created_at)
+   ORDER BY registration_date DESC;
+
+5. Find unused OTPs:
+   SELECT * FROM otp_tokens
+   WHERE is_used = false AND expires_at > now();
+
+6. Clean expired OTPs:
+   DELETE FROM otp_tokens
+   WHERE is_used = false AND expires_at < now();
+
+7. Update user role:
+   UPDATE user_profiles
+   SET user_role = 'admin'
+   WHERE email = 'admin@umak.edu.ph';
+
+8. Record last login:
+   UPDATE user_profiles
+   SET last_login_at = now()
+   WHERE account_id = 'uuid-here';
+
+
+MAINTENANCE SCHEDULE
+================================================================================
+Daily:
+  - Clean expired OTPs: DELETE FROM otp_tokens WHERE expires_at < now()
+
+Weekly:
+  - Analyze table sizes
+  - Review user registrations
+  - Check for inactive accounts
+
+Monthly:
+  - Database backup
+  - Performance optimization
+  - Security audit
+
+
+BACKUP & RECOVERY
+================================================================================
+- Supabase handles automatic daily backups
+- Retention: 7 days
+- Manual backup before major changes
+- Test recovery procedures quarterly
+
+
+PERFORMANCE NOTES
+================================================================================
+- All indexes are on frequently queried columns
+- UUID primary keys support distributed systems
+- Denormalization minimal to maintain data integrity
+- Connection pooling handled by Supabase
+
+
+FUTURE ENHANCEMENTS
+================================================================================
+1. Add audit_logs table for compliance
+2. Add user_roles lookup table with permissions
+3. Add campus_locations lookup table
+4. Add item_categories lookup table
+5. Add messaging table for user communication
+6. Add notifications table
+7. Add user_profiles.profile_image_url
+8. Add found_items.qr_code (for tracking)
+9. Add claims.rejection_reason
+10. Add analytics views
+
+
+VERSION HISTORY
+================================================================================
+v1.0 - 2026-08-17
+  - Initial schema creation
+  - Core tables: user_profiles, otp_tokens
+  - Future tables: found_items, missing_items, claims
+  - RLS policies implemented
+  - Indexes optimized for performance
+
+
+CONTACT & SUPPORT
+================================================================================
+For database issues or schema modifications:
+1. Review this document first
+2. Check backend logs at: backend/BACKEND_SETUP.md
+3. Verify Supabase console for data integrity
+4. Contact development team
+
+
+================================================================================
+End of Database Schema Document
+================================================================================

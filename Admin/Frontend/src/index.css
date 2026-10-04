@@ -1,0 +1,302 @@
+@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+@import 'tailwindcss';
+
+/* E-Balik "Campus Utility" tokens — kept in sync with Users/Frontend/src/styles/theme.css */
+@theme {
+  --font-heading: 'Lexend', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Source Sans 3', ui-sans-serif, system-ui, sans-serif;
+
+  --color-navy-50: #f2f5fb;
+  --color-navy-100: #e3e9f4;
+  --color-navy-200: #c5d1e8;
+  --color-navy-300: #9aaed4;
+  --color-navy-400: #6a84b8;
+  --color-navy-500: #46619c;
+  --color-navy-600: #33497f;
+  --color-navy-700: #283b6c;
+  --color-navy-800: #1f3160;
+  --color-navy-900: #162448;
+  --color-navy-950: #0e1830;
+
+  --color-gold-50: #fdf8ee;
+  --color-gold-100: #faefd6;
+  --color-gold-200: #f3dcab;
+  --color-gold-300: #e9c47c;
+  --color-gold-400: #dfb063;
+  --color-gold-500: #d1a153;
+  --color-gold-600: #b9873a;
+  --color-gold-700: #8f6526;
+  --color-gold-800: #6f4e1d;
+  --color-gold-900: #523a16;
+
+  --color-tide-50: #ecfaf8;
+  --color-tide-100: #cff2ed;
+  --color-tide-200: #a0e3da;
+  --color-tide-500: #169a8f;
+  --color-tide-600: #0f8077;
+  --color-tide-700: #0c6660;
+
+  --color-page: #f4f6fa;
+  --color-line: #e3e8f0;
+  --color-line-strong: #cfd7e3;
+  --color-ink: #0f172a;
+  --color-ink-soft: #334155;
+  --color-ink-muted: #5b6b82;
+
+  /* Legacy aliases used across admin pages */
+  --color-navy: #1f3160;
+  --color-navy-light: #283b6c;
+  --color-teal: #0f8077;
+  --color-teal-light: #169a8f;
+  --color-gold: #d1a153;
+  --color-gold-light: #dfb063;
+
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-raised: 0 2px 4px rgba(15, 23, 42, 0.04), 0 8px 20px -4px rgba(15, 23, 42, 0.10);
+  --shadow-overlay: 0 2px 6px rgba(15, 23, 42, 0.06), 0 24px 64px rgba(11, 21, 48, 0.24);
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--color-page);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-heading);
+  letter-spacing: -0.01em;
+}
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-gold-500);
+  outline-offset: 2px;
+}
+
+button:not(:disabled), select, summary { cursor: pointer; }
+::selection { background: var(--color-gold-200); color: var(--color-navy-950); }
+
+/* ── Admin card system ──────────────────────────────────────────── */
+.admin-card {
+  background: white;
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card);
+}
+
+.admin-card-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--color-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* ── Admin metric cards ───────────────────────────────────────── */
+.admin-metric {
+  border-radius: 14px;
+  border: 1px solid var(--color-line);
+  padding: 1.25rem;
+  background: white;
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.admin-metric:hover {
+  border-color: var(--color-line-strong);
+  box-shadow: var(--shadow-raised);
+}
+
+/* ── Admin table styling ─────────────────────────────────────── */
+.admin-table-wrap {
+  border-radius: 14px;
+  border: 1px solid var(--color-line);
+  background: white;
+  box-shadow: var(--shadow-card);
+  overflow: auto;
+}
+
+.admin-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f7f9fc;
+  border-bottom: 1px solid var(--color-line);
+  padding: 0.75rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--color-ink-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.admin-table-wrap tbody td {
+  padding: 0.8125rem 1rem;
+  border-bottom: 1px solid var(--color-line);
+  font-size: 0.9375rem;
+  color: var(--color-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-table-wrap tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table-wrap tbody tr:hover {
+  background: var(--color-navy-50);
+}
+
+/* ── Admin badges ────────────────────────────────────────────── */
+.admin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+/* ── Print styles ─────────────────────────────────────────────── */
+@media print {
+  @page {
+    margin: 0.5in;
+  }
+
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html,
+  body,
+  #root,
+  #root > div,
+  .app-main {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  .print-hide {
+    display: none !important;
+  }
+
+  .print-report {
+    padding: 0 !important;
+  }
+
+  .print-report > div {
+    break-inside: auto;
+    box-shadow: none !important;
+  }
+
+  .print-report .bg-white {
+    border-color: #d1d5db !important;
+    break-inside: avoid;
+  }
+
+  .print-compact .grid-cols-2 {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+
+  .print-compact .grid-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .print-compact .gap-4 {
+    gap: 0.75rem !important;
+  }
+
+  .print-compact .p-5 {
+    padding: 1rem !important;
+  }
+}
+
+/* ── Mobile responsive overrides ─────────────────────────────── */
+@media (max-width: 639px) {
+  .app-main > .p-6,
+  .app-main > .p-4 {
+    padding: 1rem;
+  }
+
+  .app-main .overflow-hidden:has(> table) {
+    overflow-x: auto;
+  }
+
+  .app-main .overflow-hidden:has(> table) table {
+    min-width: max-content;
+  }
+
+  .app-main > .p-6 > .flex.items-center.justify-between,
+  .app-main > .p-4 > .flex.items-center.justify-between {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .app-main > .p-6 > .flex.items-center.justify-between > button,
+  .app-main > .p-4 > .flex.items-center.justify-between > button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ── Custom scrollbars ────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.55);
+}
+
+/* ── Reduced motion ──────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Global information modal ─────────────────────────────────── */
+@keyframes info-modal-enter {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes info-modal-progress {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+.info-modal-enter { animation: info-modal-enter 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.info-modal-progress { animation-name: info-modal-progress; animation-timing-function: linear; animation-fill-mode: forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .info-modal-enter { animation: none; }
+  .info-modal-progress { display: none; }
+}

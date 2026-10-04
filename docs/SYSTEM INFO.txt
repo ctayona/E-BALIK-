@@ -1,0 +1,50 @@
+E-Balik: An Automated Campus Lost & Found Inventory System via AI Visual Recognition, Smart Auto-Matching, and Chain-of-Custody Verification
+
+Project Definition
+Losing personal belongings inside a university campus can be frustrating, especially when students and faculty do not know where to look or how to check if an item has been turned in. At the same time, campus security guards and the Lost and Found Office struggle to manage items using paper logbooks, which are easily lost, hard to search, and prone to human error.
+E-Balik is a web-based lost-and-found management platform engineered specifically for the University of Makati. Built using a lightweight Python Flask backend framework and a real-time Supabase cloud database, the system connects security guards, office staff, students, and faculty on one central platform. By integrating AI-powered visual item recognition, automated attribute matching, QR code inventory tagging, and non-public claim verification, E-Balik ensures lost items are accurately logged, quickly matched, and safely returned to their rightful owners.
+Project Conceptualization
+Rationale of the Study
+Managing a university lost and found system using paper records creates operational bottlenecks at every step. Paper logs make searching slow, provide no way to track physical item transfers between guard posts and central storage, and leave staff vulnerable to liability disputes. 
+Furthermore, manual matching relies heavily on administrative memory, leading to crowded storage rooms and delayed returns. E-Balik solves these issues by automating the entire lifecycle of a lost item. Through AI image processing during upload, automated text and attribute matching, real-time alert APIs, and digital chain-of-custody tracking, the platform creates a fast, secure, and transparent property recovery process for the campus community.
+Objectives of the Study
+The main goal of this study is to develop E-Balik, an automated campus lost-and-found system for the University of Makati.
+Specifically, the study aims to build the following key features:
+AI Visual Item Recognition: Integrate a vision AI model to automatically analyze uploaded photos of found items during intake, automatically identifying the item category, primary color, and physical attributes to speed up logging and reduce manual typing errors.
+Smart Auto-Matching and Filtering: Build a background matching algorithm in Flask that automatically compares lost reports against found items using location, category, date, AI image tags, and text description similarity to suggest instant potential matches.
+Digital Chain-of-Custody Tracking: Develop a multi-role tracking workflow that logs every physical transfer of an item—from initial guard intake, through transit, to central storage at the Main Lost and Found Office—ensuring full accountability.
+Secure Claim Verification Pipeline: Require students to submit private, non-public proof of ownership (such as unique marks, serial numbers, or hidden contents) for admin verification before releasing an item.
+Real-Time Notifications: Automatically send email or SMS alerts to students when a candidate item is logged, when a claim status changes, or when an item is ready for pickup.
+Admin Analytics Dashboard: Construct an interactive dashboard displaying visual reports on high-loss campus zones, recovery times, return rates, and pending inventory to aid administrative decision-making.
+Immutable Audit and History Logs: Maintain uneditable, timestamped records for every status update, staff action, and custody transfer to prevent accountability disputes.
+System Evaluation: Assess E-Balik's overall ease of use, security, functionality, and user satisfaction among security guards, office staff, faculty, and students.
+(Optional) QR Code Tag Printing: Interface a small IoT thermal printer to generate unique QR code stickers for physical items upon logging for fast scanning and inventory checks.
+
+
+
+
+
+Technical Architecture & Possible API Integrations
+To ensure E-Balik can be built efficiently within a college project timeline and budget, the system relies on accessible, free-tier, and industry-standard developer APIs:
+1. Database, Authentication, & File Storage
+Supabase Database & Auth API: Acts as the primary PostgreSQL database for real-time data synchronization across guard desks and admin portals. Handles role-based access control (Students, Security Guards, L&F Admins).
+Supabase Storage API: Provides secure cloud bucket storage for uploaded item photographs, condition proofs, and claim verification evidence.
+Supabase Realtime API: Triggers instant UI updates on admin and guard dashboards without needing manual page refreshes when a new item is logged or claimed.
+2. AI Visual Recognition & Metadata Extraction
+Google Gemini API (Gemini Flash Vision): Highly feasible, free-tier accessible API for analyzing item photos. When a guard or student uploads an image, Flask sends the image payload to Gemini with a structured prompt requesting JSON output (e.g., {"category": "Water Bottle", "color": "Blue", "brand": "Hydro Flask", "distinguishing_marks": "White sticker on side"}). This automatically populates form fields during intake.
+3. Student Alerts & Notification APIs
+Resend API / SendGrid API: Free-tier transactional email services used to send real-time notification emails to students when the auto-matching algorithm finds a candidate item or when a claim is approved.
+Twilio SMS API (Optional): Used for firing instant text alerts to students' mobile phones for urgent pickup notifications.
+4. Text Matching & QR Code Libraries
+RapidFuzz / FuzzyWuzzy (Python PyPI Libraries): Runs inside the Flask backend to perform fuzzy string matching and calculate similarity scores between student lost report descriptions and guard found logs.
+Html5-QRCode (JavaScript Library) & qrcode (Python): Open-source, browser-native libraries allowing guards to generate QR codes for item tags and scan physical item tags directly using standard phone or laptop webcams—without requiring expensive dedicated barcode hardware.
+Intended Beneficiaries and Significance of the Study
+University Students: Gives students an easy way to report lost items, search for found belongings, and track claim status without making unnecessary trips to the office.
+Faculty and Staff: Provides a simple, reliable way for university employees to report lost or found items anywhere on campus.
+Campus Security Guards: Gives guards a simple digital form to log found items, print QR tags, and document item transfers to the main office.
+Main Lost and Found Office Personnel: Helps office staff organize inventory, reduce manual searching through automated matching, and manage old unclaimed items easily.
+University Administrators: Provides visual data on high-loss areas and recovery trends to help improve overall campus security and property management.
+Future Researchers: Serves as a practical reference for future students developing systems for asset tracking, automated record matching, or campus management.
+
+
+

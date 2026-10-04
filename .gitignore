@@ -1,0 +1,17 @@
+# Secrets and local environment files
+.env
+.env.*
+!.env.local.example
+Server/.env
+
+# Dependencies and generated output
+node_modules/
+dist/
+Server/venv/
+**/__pycache__/
+*.py[cod]
+
+# Local tooling and OS files
+.vscode/
+.DS_Store
+Thumbs.db

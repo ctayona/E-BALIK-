@@ -1,0 +1,19 @@
+E-Balik Progress Log - 2026-08-18
+
+Completed:
+- Set up the frontend React + Vite project and verified the app builds successfully.
+- Set up the Python Flask backend and connected it to the Supabase database.
+- Implemented authentication flow for registration, login, logout, and password recovery.
+- Added OTP-based verification for account creation and password reset processes.
+- Integrated SendGrid-based email notifications for OTP and welcome messages.
+- Established a user schema with account details, campus ID, names, email, hashed password, role, creation timestamp, and last login timestamp.
+- Updated the app to keep user session data persistent across refreshes.
+- Fixed the forgot-password flow and ensured the reset form remains active after OTP validation.
+- Improved the dashboard with a clean welcome banner and a tile/list view toggle.
+- Added pagination for the tile view and a compact scrollable list view for usability.
+- Kept the design consistent while tightening the app flow and making navigation behavior predictable.
+
+Notes:
+- The project includes a one-command run setup through the root package script: npm run dev.
+- Frontend and backend are ready to run together for local development.
+- The current frontend build passes successfully with Vite.

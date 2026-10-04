@@ -1,0 +1,484 @@
+E-BALIK LOST & FOUND SYSTEM
+SYSTEM AND SOURCE-CODE PRESENTATION GUIDE
+University of Makati
+Prepared from the current workspace source tree
+
+======================================================================
+1. SYSTEM OVERVIEW
+======================================================================
+
+E-Balik is the University of Makati campus lost-and-found system. It
+connects students, faculty, staff, and administrators through authenticated
+missing-item and found-item reports, matching, claims, custody tracking,
+account verification, notifications, and administrative review.
+
+The workspace contains three cooperating applications/services:
+
+	USER WEB APP
+		React + TypeScript + Vite + Tailwind CSS
+		User-facing pages and responsive mobile/desktop navigation.
+		Dev URL: http://localhost:5173
+
+	ADMIN WEB APP
+		Separate React + TypeScript + Vite + Tailwind CSS application in Admin/
+		Operational dashboard, registries, claim review, users, analytics, logs.
+		Dev URL: http://localhost:8443/admin/
+
+	BACKEND API
+		Python + Flask, running on http://localhost:5000
+		Verifies user/admin JWTs and accesses Supabase with the server-side
+		service key.
+
+	DATA AND FILE STORAGE
+		Supabase PostgreSQL stores account, report, claim, notification, and
+		audit data. Supabase Storage stores item photos, claim evidence, and
+		private account-verification documents.
+
+Request/data flow:
+
+	Browser page
+			-> frontend API client (Authorization: Bearer <session JWT>)
+			-> Flask route (validates token and actor permissions)
+			-> Supabase database/storage through backend service client
+			-> JSON response back to the page
+			-> optional best-effort email through SendGrid
+
+The backend owns identifiers, authorization, persistence, uploads, and
+email recipients. The browser does not write directly to Supabase.
+
+======================================================================
+2. APPLICATIONS AND SOURCE FILES
+======================================================================
+
+ROOT AND BUILD ENTRYPOINTS
+
+	package.json
+		Workspace scripts to start the backend, user frontend, and Admin app.
+		`npm run dev` starts all three using concurrently.
+		`npm run dev:frontend` starts Vite on port 5173.
+		`npm run dev:backend` starts backend/run.py through the backend venv.
+		`npm run dev:admin` starts the Admin Vite app on port 8443.
+		`npm run build` builds the user app.
+
+	index.html, vite.config.ts, src/main.tsx
+		User app HTML shell, Vite aliases/proxy, and React entrypoint.
+
+	Admin/package.json, Admin/index.html, Admin/vite.config.ts,
+	Admin/src/main.tsx
+		Separate Admin build scripts, HTML shell, Vite setup, and React entry.
+
+USER FRONTEND: src/app/
+
+	App.tsx
+		Central user page renderer and page-state navigation. Restores the last
+		authenticated page using localStorage; transient navigation context is
+		kept in sessionStorage. Owns the shared auth state/profile refresh.
+
+	types.ts
+		Page identifiers and navigation option types.
+
+	pages/Landing.tsx
+		Public entry page, login/register flows, and recently found items.
+	pages/Login.tsx, Register.tsx, ForgotPasswordModal.tsx
+		Account entry, registration, OTP setup, and password recovery UI.
+	pages/Dashboard.tsx
+		Authenticated overview and shortcuts to reports and browsing.
+	pages/ReportItem.tsx
+		Single entry point for choosing found-item or missing-item reporting.
+	pages/FoundItem.tsx
+		Found-item intake, photo upload, search, and the user's found reports.
+	pages/MissingItem.tsx
+		Missing-item intake, matching consent, search, and report management.
+	pages/MyReports.tsx
+		Current user's own found/missing reports and their actions.
+	pages/Matches.tsx
+		Matching summaries for the user's missing reports.
+	pages/BrowseItems.tsx
+		Public-safe missing-item and items-in-custody browsing.
+	pages/Claim.tsx
+		Claim form, proof/ID uploads, timed confirmation, and claim history.
+	pages/Profile.tsx
+		Profile edits and private account-verification document workflow.
+	pages/Notifications.tsx
+		Persisted user notifications, read state, and action links.
+	pages/AuctionHall.tsx
+		Static design preview using sample lots only; no live auction/bid API.
+
+USER SHARED CODE
+
+	shared/UserHeader.tsx
+		Responsive desktop Pages menu, mobile navigation drawer, profile,
+		logout, and unread-notification badge.
+	shared/LoadingSkeleton.tsx
+		Shared loading placeholders used by user pages.
+	shared/PhotoUploadSection.tsx
+		Shared image selection/preview UI.
+	components/OTPModal.tsx
+		OTP verification UI.
+	components/figma/
+		Figma-generated user interface components.
+	components/ui/
+		accordion.tsx, alert-dialog.tsx, alert.tsx, aspect-ratio.tsx,
+		avatar.tsx, badge.tsx, breadcrumb.tsx, button.tsx, calendar.tsx,
+		card.tsx, carousel.tsx, chart.tsx, checkbox.tsx, collapsible.tsx,
+		command.tsx, context-menu.tsx, dialog.tsx, drawer.tsx,
+		dropdown-menu.tsx, form.tsx, hover-card.tsx, input-otp.tsx,
+		input.tsx, label.tsx, menubar.tsx, navigation-menu.tsx,
+		pagination.tsx, popover.tsx, progress.tsx, radio-group.tsx,
+		resizable.tsx, scroll-area.tsx, select.tsx, separator.tsx,
+		sheet.tsx, sidebar.tsx, skeleton.tsx, slider.tsx, sonner.tsx,
+		switch.tsx, table.tsx, tabs.tsx, textarea.tsx, toggle-group.tsx,
+		toggle.tsx, tooltip.tsx. Helpers: use-mobile.ts and utils.ts.
+	utils/api.ts
+		User HTTP client, bearer-token attachment, FormData uploads, and
+		endpoint wrappers.
+	utils/useAuth.ts
+		Auth/session state and user-facing report, claim, and profile actions.
+	utils/clay.ts
+		Shared user visual tokens and interaction styles.
+	styles/index.css, fonts.css, theme.css, tailwind.css
+		User styles entrypoint, Lexend/Source Sans 3 fonts, theme tokens, and
+		Tailwind integration. styles/globals.css is currently empty.
+	imports/ and imports/**
+		University marks and Figma/design-exported images and vector assets.
+
+ADMIN FRONTEND: Admin/src/
+
+	App.tsx
+		Admin page renderer, access session guard, last-page persistence, and
+		global success/failure operation modal.
+	components/Header.tsx, Sidebar.tsx
+		Admin shell header and page navigation.
+	components/LoadingSkeleton.tsx
+		Admin loading states.
+	components/ConfirmActionDialog.tsx
+		Shared type-CONFIRM action dialog.
+	components/AdminProcessFeedback.tsx
+		Prominent centered operation result modal.
+	components/AccountVerificationTab.tsx
+		Pending document review, signed preview, identity-category assignment,
+		and approve/reject confirmation.
+	pages/Dashboard.tsx
+		Operational metrics, monthly trends, performance, and recent activity.
+	pages/LostItems.tsx, FoundItems.tsx
+		Database-backed item registries, create/edit, and superadmin deletes.
+	pages/AIMatching.tsx
+		Candidate review, confirmation, and rejection.
+	pages/ClaimsVerification.tsx
+		Claim review/status transitions, history, and superadmin deletion.
+	pages/ChainOfCustody.tsx
+		Found-item/claim custody timeline and report export.
+	pages/Users.tsx
+		User controls plus the Account Verification tab and pending badge.
+	pages/ReportsAnalytics.tsx
+		Aggregated live metrics, charts, filters, CSV and print/PDF export.
+	pages/Notifications.tsx
+		Admin activity-derived notification view.
+	pages/ActivityLogs.tsx
+		Search/filter/export audit entries; separate superadmin log view.
+	pages/AdminProfile.tsx
+		Admin profile and authenticator MFA setup/recovery.
+	utils/api.ts
+		Admin API wrappers and global mutation feedback events.
+	utils/notificationsStore.ts
+		Local admin notification read state and badge updates.
+	data/mockData.ts
+		Legacy/demo fixture definitions; live operational pages use API data.
+	imports/
+		Admin logos and design assets.
+
+BACKEND FILE MAP: backend/
+
+	run.py
+		Flask entrypoint; default local API port is 5000.
+	config.py
+		Loads backend/.env, project .env, and .env.local; defines Supabase,
+		SendGrid, JWT, encryption, CORS, and environment settings.
+	app/__init__.py
+		Flask application factory, CORS setup, database initialization, and
+		blueprint registration.
+	app/routes/__init__.py
+		Mounts route groups under /api/auth, /api/found-items,
+		/api/missing-items, /api/claims, /api/admin, /api/notifications.
+	app/routes/auth.py
+		Registration/OTP, login/Google/MFA, profile read/update, verification
+		document upload, and token validation.
+	app/routes/found_items.py
+		Authenticated found-item creation/list/update/delete and public/search/
+		matching endpoints.
+	app/routes/missing_items.py
+		Authenticated missing-report creation/list/update/delete plus public and
+		matching endpoints.
+	app/routes/claims.py
+		User claim submission/list/cancellation; validates evidence and uploads.
+	app/routes/notifications.py
+		User notification list, unread count, and mark-read endpoint.
+	app/routes/admin.py
+		Dashboard/analytics, item CRUD, activity logs, users, role/status
+		management, account verification, claims, AI matching, and MFA routes.
+	app/utils/supabase_db.py
+		Shared Supabase queries, writes, mappings, signed URLs, audit activity,
+		notifications, and storage helpers.
+	app/utils/auth.py
+		Password hashing and JWT issue/validation utilities.
+	app/utils/crypto_service.py
+		AES-GCM encryption for sensitive stored fields.
+	app/utils/email_service.py
+		SendGrid OTP/welcome/reference emails. Report and approval email failure
+		is best-effort and does not undo committed data.
+	app/utils/matching.py
+		Shared match scoring and match-summary logic.
+	app/utils/claim_status.py
+		Claim-status normalization and allowed status transitions.
+	app/utils/admin_mfa.py
+		TOTP, recovery-code, and authenticator helpers.
+	app/models/__init__.py
+		Package marker; persistence is currently implemented in supabase_db.py,
+		not through ORM model classes.
+	database_schema.sql
+		Canonical base PostgreSQL schema and indexes.
+	manual_migrations/*.sql
+		Incremental account/admin MFA, item management, claim history, and
+		account-verification changes. Apply required migrations to Supabase
+		before deploying code that depends on them.
+	tests/test_claim_status.py
+		Focused claim status normalization/transition assertions.
+
+======================================================================
+3. MAIN USER WORKFLOWS
+======================================================================
+
+AUTHENTICATION AND TOKEN FLOW
+
+	1. User registers or logs in through src/app/pages and src/app/utils/api.ts.
+	2. Registration verifies OTP before account activation.
+	3. Backend returns a JWT; the user client stores it as `ebalik_token`.
+	4. Authenticated API requests send `Authorization: Bearer <JWT>`.
+	5. Flask verifies the JWT and obtains account_id from its claims. User IDs
+		 or email recipients are not   trusted from arbitrary report payloads.
+
+MISSING/FOUND REPORTS
+
+	1. User selects Report Item and chooses a workflow.
+	2. FoundItem.tsx or MissingItem.tsx collects form data and optional image.
+	3. User API sends multipart FormData; backend validates, uploads supported
+		 files, creates the database row, and assigns an MP... or FP... reference.
+	4. The backend emails the stored account email with the reference after the
+		 database insert. Email is best-effort; the saved report remains valid
+		 if SendGrid is unavailable.
+	5. My Reports, Dashboard, Matches, and Browse Items reload from APIs.
+
+MATCHING
+
+	backend/app/utils/matching.py compares category, location, date, and text.
+	Exact category match adds 30. Location adds 25 for exact, 18 for substring,
+	or 10 for shared tokens. Date adds 20 for same-day, 12 within two days,
+	or 6 within seven days. Text-token overlap adds up to 25; total is capped
+	at 100. User Matches filters use 75% for strong and 55% for possible.
+	Admin AI Matching presents candidates from 55% and labels 80%+ high
+	confidence. The match is an aid to review, not proof of ownership.
+
+CLAIMS AND APPROVAL EMAIL
+
+	1. Claim.tsx submits a found-item reference, reason, ownership photo, and
+		 identity document after a timed review/confirmation step.
+	2. backend/app/routes/claims.py verifies the user JWT, validates file types
+		 and signatures, stores evidence privately, creates the pending claim,
+		 and returns a claim reference.
+	3. A receipt email is sent to the claimant's stored account email. It
+		 contains the reference and next steps, not claim reason or ID files.
+	4. Admin changes a claim to Approved for Pickup in ClaimsVerification.tsx.
+	5. After the status RPC commits, Admin loads email/context from the stored
+		 claim and sends an approval email. It reminds the claimant to bring
+		 original ID; online approval is not final handover.
+
+ACCOUNT VERIFICATION
+
+	Profile.tsx uploads a real multipart file to the private
+	account-verification-documents bucket. The database stores its path and
+	pending state. Admin Users > Account Verification receives the pending
+	request, opens a short-lived signed preview, and approves/rejects it.
+	Approval assigns identity category (Student/Faculty/Others), not admin
+	privileges. The backend stores the decision and creates a notification.
+	App.tsx refreshes shared auth state, so Profile and header state update
+	without logout. Notification list and unread badge refresh periodically.
+
+======================================================================
+4. ADMIN OPERATIONS AND PRIVILEGES
+======================================================================
+
+	Admin login uses the Admin client and `ebalik_admin_token`; API requests
+	send it as a Bearer JWT. Backend checks the live user_profiles access level
+	and, when configured, MFA verification/session generation.
+
+	`access_level` controls system privilege:
+		user         standard account
+		admin        operational review and management; no hard-delete rights
+		super_admin  elevated management, including protected delete/audit views
+
+	`user_role` is the identity category/program (for example Student or
+	Faculty); it is separate from access_level. Account document approval does
+	not promote a user to Admin or Superadmin.
+
+	Admin routes include dashboards/reports, item CRUD, matching decisions,
+	claim decisions, user status/access management, verification review, MFA,
+	and activity logs. Superadmin-only routes enforce privilege server-side.
+	Significant admin actions are recorded in user_activity_logs.
+
+	Frontend files: Admin/src/App.tsx, Admin/src/components/Sidebar.tsx,
+	Admin/src/pages/*.tsx, Admin/src/utils/api.ts.
+	Backend authorization and route implementation: backend/app/routes/admin.py.
+
+======================================================================
+5. API ENDPOINT MAP
+======================================================================
+
+AUTH: /api/auth
+	POST /register, /verify-otp, /login, /google-login
+	POST /admin-mfa/verify, /forgot-password, /reset-password
+	GET  /profile, /verify-token
+	PUT  /profile
+	POST /profile/document-upload
+
+FOUND ITEMS: /api/found-items
+	POST/GET base route; GET /public, /search, /matches;
+	PUT/DELETE /<fpost_id>.
+
+MISSING ITEMS: /api/missing-items
+	POST/GET base route; GET /public, /matches;
+	PUT/DELETE /<mpost_id>.
+
+CLAIMS: /api/claims
+	GET/POST base route; DELETE /<claim_id> (owner's pending claim only).
+
+NOTIFICATIONS: /api/notifications
+	GET base route, GET /count/unread, PATCH /<notification_id>/read.
+
+ADMIN: /api/admin
+	GET dashboard/reports/items/users/claims/logs/matches.
+	POST item creation and AI match decisions.
+	PUT/DELETE item references, PATCH user status/access, verification review,
+	and claim status. Claim delete and administrator audit view are protected.
+	MFA endpoints cover status, setup, verification, and disable.
+
+======================================================================
+6. DATA, STORAGE, EMAIL, AND TOKEN SAFETY
+======================================================================
+
+MAIN DATABASE TABLES
+
+	user_profiles          identity, contact, role, verification metadata
+	otp_tokens             registration and password-reset OTP state
+	missing_items          lost-item reports and public references
+	found_items            found items, custody, and public references
+	claims                 claim owner, reference, status, review timestamps
+	ai_matches             persisted match decisions
+	user_notifications     user inbox/read state
+	user_activity_logs     user/admin activity trail
+	claim_change_history   append-only claim change/deletion snapshots
+	admin_mfa and related tables
+												 TOTP setup, challenges, and recovery codes
+
+STORAGE BUCKETS
+
+	found-item-images and missing-item-images
+		Item photos; public listing visibility is constrained by backend fields.
+	claim-proof-images and claim-id-documents
+		Private claim evidence; backend creates short-lived signed URLs.
+	account-verification-documents
+		Private user-verification files; Admin previews use signed URLs.
+
+EMAIL
+
+	backend/app/utils/email_service.py sends OTP and reference emails through
+	SendGrid. Required server settings: SENDGRID_API_KEY and
+	SENDGRID_FROM_EMAIL. Reference emails contain only a report/claim ID,
+	status, item name/location details suitable for the owner, and next steps.
+	Never include JWTs or OTPs in report/claim emails. OTP delivery for
+	registration and password reset is a separate authentication email flow.
+	Do not email claim reason, ownership proof, or identity document files.
+
+TOKEN AND SECRET HANDLING
+
+	User JWT: browser key `ebalik_token`.
+	Admin JWT: browser key `ebalik_admin_token`.
+	JWTs are sent only in the Authorization header to the backend. Never place
+	them in email, report references, screenshots, source files, logs, or this
+	presentation. The Supabase service-role key, SendGrid API key, JWT secret,
+	and encryption key belong only in ignored backend/project environment files
+	and must never be put in frontend code or a presentation.
+
+	A JWT identifies an account; backend routes still check current database
+	role/ownership. Never accept account_id, claimant email, role, or recipient
+	from a public client request when they can be resolved from the token and DB.
+
+======================================================================
+7. DATABASE AND CONFIGURATION FILES
+======================================================================
+
+	backend/database_schema.sql
+		Canonical baseline schema. DATABASE_SCHEMA.txt is older; prefer the SQL.
+	backend/manual_migrations/20260928_claim_identity_and_admin_access.sql
+		Identity/access fields and protected admin functions.
+	backend/manual_migrations/20260929_admin_totp_mfa.sql
+		Admin authenticator/MFA support.
+	backend/manual_migrations/20260930_account_verification_review.sql
+		Verification fields, index, and private verification bucket.
+	backend/manual_migrations/20260930_admin_item_management.sql
+		Admin reporter metadata and protected item deletion RPCs.
+	backend/manual_migrations/20260930_claim_history_reference_and_superadmin_delete.sql
+		Claim references/history and protected claim deletion.
+
+	Apply required migrations to the target Supabase project before deploying
+	code that calls their columns, buckets, triggers, or RPCs. Do not paste
+	environment values or service-role keys into presentation materials.
+
+======================================================================
+8. PRESENTATION DEMONSTRATION FLOW
+======================================================================
+
+	1. Show the public landing page and identify the campus lost-and-found goal.
+	2. Register/login and describe OTP/JWT authentication at a high level.
+	3. Submit a missing report or found item; show its generated reference and
+		 explain that the report email is sent after persistence.
+	4. Show matching/browsing and explain that public views omit private fields.
+	5. Submit a claim with ownership evidence; show the pending state/reference.
+	6. In Admin, review the claim and approve it; show the user email, Profile
+		 update, notification, and in-person verification next step.
+	7. Show Account Verification with a private signed document preview and
+		 distinguish identity category from Admin/Superadmin privilege.
+	8. Finish with Admin audit/analytics and Auction Hall. Auction Hall is a
+		 static design preview: its sample lots are not live data and bidding is
+		 disabled.
+
+======================================================================
+9. RUN AND VALIDATE
+======================================================================
+
+	Start all local services from project root:
+		npm run dev
+
+	Or start individually:
+		npm run dev:frontend       user frontend, normally :5173
+		npm run dev:backend        Flask API, normally :5000
+		npm run dev:admin          Admin app, normally :8443
+
+	Production builds:
+		npm run build
+		npm --prefix Admin run build
+
+	Focused backend checks:
+		backend\venv\Scripts\python.exe -m compileall -q backend
+		python -m pytest backend\tests\test_claim_status.py
+
+	The repository currently contains one pytest-style claim-status test file;
+	pytest is not listed in backend/requirements.txt, so install it in the
+	development environment before running that command. Endpoint and live
+	Supabase integration coverage is limited.
+
+PRESENTATION NOTE
+
+	This guide intentionally documents source responsibilities and system
+	behavior rather than listing generated dist files, node_modules, virtualenv
+	contents, build caches, private environment files, or every low-level
+	generated design asset as an individual business-logic file.

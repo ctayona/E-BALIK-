@@ -1,0 +1,21 @@
+E-Balik Progress Log - 2026-08-17
+
+Completed today:
+- Set up the project environment and verified the frontend can build successfully with Vite.
+- Confirmed the app has a working dual-run command for frontend and backend via the root package scripts.
+- Integrated the Flask backend and connected the app to the Supabase-backed user authentication flow.
+- Implemented and stabilized user registration, login, OTP verification, and password reset processes.
+- Added the required account fields and ensured names are captured as first, middle, and last name entries.
+- Improved session persistence so the authenticated state remains after refresh and logout clears the stored auth session correctly.
+- Added a logout action to the header navigation and ensured navigation remains consistent across the app.
+- Implemented profile management with a confirmation modal before saving changes.
+- Updated the backend profile update route to persist profile edits to the database.
+- Added a dashboard tile/list design toggle while keeping the original visual style intact.
+- Updated the login flow so a successful login transitions directly to the dashboard instead of staying on the login page.
+- Fixed the forgot-password flow so it stays on the correct step and advances properly through OTP validation and reset state.
+- Added consistent success and error dialog/message handling for key user actions.
+
+Notes:
+- The app remains organized around a React frontend and Python Flask backend with a Supabase database connection.
+- Frontend and backend flows are kept aligned to provide a smoother local development experience.
+- Current build validation passed successfully after the latest fixes.
