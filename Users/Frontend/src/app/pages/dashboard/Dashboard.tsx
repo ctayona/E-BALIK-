@@ -8,6 +8,7 @@ import { SkeletonBlock } from "@/app/shared/LoadingSkeleton";
 import HeroSlideshow from "@/app/shared/media/HeroSlideshow";
 import ItemCollection from "@/app/shared/media/ItemCollection";
 import ItemViewer from "@/app/shared/media/ItemViewer";
+import AuctionShelf from "@/app/shared/auction/AuctionShelf";
 import type { GalleryItem } from "@/app/shared/media/ItemImage";
 import ViewToggle from "@/app/shared/view/ViewToggle";
 import { useViewMode } from "@/app/shared/view/useViewMode";
@@ -152,6 +153,9 @@ export default function Dashboard({ user, onNavigate }: {
             </button>
           ))}
         </section>
+
+        {/* Live auctions (own component so its countdown ticks don't re-render the whole dashboard) */}
+        <AuctionShelf onViewAll={() => onNavigate("auction-hall")} />
 
         {/* Recent found items */}
         <DashboardSection

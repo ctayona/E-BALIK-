@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { notificationsAPI } from '@/app/utils/api';
 import { showInfoModal } from '@/app/shared/info-modal/infoModalStore';
 import { CX, SPRING } from '@/app/utils/clay';
+import type { NavigationOptions, Page } from '@/app/types';
 import { ReportListSkeleton } from '@/app/shared/LoadingSkeleton';
 
 interface UserNotification {
@@ -20,7 +21,7 @@ interface UserNotification {
 }
 
 interface NotificationsPageProps {
-  onNavigate?: (page: string, itemId?: string) => void;
+  onNavigate?: (page: Page, options?: NavigationOptions) => void;
 }
 
 export default function Notifications({ onNavigate }: NotificationsPageProps) {
@@ -82,9 +83,11 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
   const handleNotificationClick = (notification: UserNotification) => {
     if (!notification.is_read) handleMarkAsRead(notification.notification_id);
     if (notification.link_page === 'claim' && notification.found_item_id && onNavigate) {
-      onNavigate('claim', notification.found_item_id);
+      onNavigate('claim', { foundItemId: notification.found_item_id });
     } else if (notification.link_page === 'profile' && onNavigate) {
       onNavigate('profile');
+    } else if (notification.link_page === 'auction-hall' && onNavigate) {
+      onNavigate('auction-hall');
     }
   };
 
@@ -239,6 +242,14 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
                         className={`${CX.btnNavy} mt-3 px-4 py-2 text-[12px]`}
                       >
                         {notification.link_label || 'View Item'}
+                      </button>
+                    )}
+                    {notification.link_page === 'auction-hall' && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleNotificationClick(notification); }}
+                        className={`${CX.btnGold} mt-3 px-4 py-2 text-[12px]`}
+                      >
+                        {notification.link_label || 'View auction'}
                       </button>
                     )}
                     {notification.link_page === 'profile' && (

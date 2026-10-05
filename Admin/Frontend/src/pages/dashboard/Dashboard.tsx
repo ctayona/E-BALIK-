@@ -1,12 +1,13 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useEffect, useState } from "react";
-import { AlertTriangle, ChevronRight, Clock3, Sparkles } from "lucide-react";
+import { AlertTriangle, ChevronRight, Clock3, Gavel, Sparkles } from "lucide-react";
 import { fetchAdminDashboard, getStoredAdmin, type AdminDashboardSummary } from "../../utils/api";
 import { RolePill } from "../../components/ui/primitives";
+import { fetchAdminAuctions } from "../../utils/auctionApi";
 import { isSuperAdmin } from "../../utils/permissions";
 import { useTheme, tr } from "../../utils/preferences";
 
-type DeskPage = "claims" | "ai-matching" | "lost-items" | "found-items" | "users" | "activity-logs";
+type DeskPage = "claims" | "ai-matching" | "lost-items" | "found-items" | "users" | "activity-logs" | "auctions";
 import { AdminMetricSkeleton, SkeletonBlock, AdminTableSkeleton } from "../../components/LoadingSkeleton";
 
 interface DonutProps { value: number; color: string; size?: number; }
@@ -37,6 +38,14 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
   const [summary, setSummary] = useState<AdminDashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [activityFilter, setActivityFilter] = useState<string>("All");
+  // Auction pickups join the work queue once the Auction Hall tables exist; any failure just hides the row.
+  const [auctionPickups, setAuctionPickups] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetchAdminAuctions().then((data) => { if (active) setAuctionPickups(data.stats.awaiting_pickup); }).catch(() => { if (active) setAuctionPickups(null); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -165,6 +174,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
     { label: tr("Claims waiting for review"), hint: tr("Check proof and ID, then approve or reject"), value: summary?.pending_claims ?? 0, page: "claims", edge: "before:bg-gold-500", icon: <Clock3 size={18} aria-hidden="true" /> },
     { label: tr("AI matches to confirm"), hint: tr("Possible owner and item pairs found automatically"), value: summary?.potential_ai_matches ?? 0, page: "ai-matching", edge: "before:bg-iris-500", icon: <Sparkles size={18} aria-hidden="true" /> },
     { label: tr("Unresolved items"), hint: tr("Reports still open without a match or claim"), value: summary?.unresolved_items ?? 0, page: "lost-items", edge: "before:bg-rose-400", icon: <AlertTriangle size={18} aria-hidden="true" /> },
+    ...(auctionPickups ? [{ label: tr("Auction pickups waiting"), hint: tr("Winners who still need to pay and collect"), value: auctionPickups, page: "auctions" as DeskPage, edge: "before:bg-gold-300", icon: <Gavel size={18} aria-hidden="true" /> }] : []),
   ];
   const openItems = queue.reduce((total, item) => total + item.value, 0);
 

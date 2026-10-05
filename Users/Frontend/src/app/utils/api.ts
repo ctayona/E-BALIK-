@@ -386,6 +386,19 @@ export const claimsApi = {
 /**
  * Utility functions
  */
+export interface PublicBoard {
+  missing: { mpost_id: string; item_name: string; category?: string; last_location?: string; last_seen_date?: string; image_url?: string; created_at?: string }[];
+  found: { fpost_id: string; item_name: string; category?: string; location?: string; found_date?: string; image_url?: string; created_at?: string }[];
+  counts: { missing: number; found: number };
+}
+
+export const publicApi = {
+  /** Newest missing reports and found items for the signed-out landing page. */
+  async board() {
+    return apiCall<PublicBoard>('/api/public/board');
+  },
+};
+
 export const authUtils = {
   /**
    * Save JWT token to localStorage

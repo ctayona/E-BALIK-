@@ -3,8 +3,9 @@ import umakLogo from "../imports/UMak Logo.png";
 import { AdminUser } from "../utils/api";
 import { useT, tr } from "../utils/preferences";
 import type { StringKey } from "../i18n/strings";
+import { Gavel } from "lucide-react";
 
-type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "admin-profile";
+type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "auctions" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "admin-profile";
 
 interface SidebarProps {
   currentPage: Page;
@@ -34,6 +35,7 @@ const navItems = [
   { id: "ai-matching" as Page, group: "Items", label: "nav.aiMatching" as StringKey, icon: (
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><rect x="2" y="6" width="8" height="12" rx="2" stroke="currentColor" strokeWidth="2"/><rect x="14" y="6" width="8" height="12" rx="2" stroke="currentColor" strokeWidth="2"/><path d="M10 12h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
   )},
+  { id: "auctions" as Page, group: "Items", label: "nav.auctions" as StringKey, icon: <Gavel size={18} aria-hidden="true" /> },
   { id: "claims" as Page, group: "Claims & people", label: "nav.claims" as StringKey, icon: (
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/></svg>
   )},

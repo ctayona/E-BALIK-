@@ -13,6 +13,7 @@ const Dashboard = lazy(() => import("./pages/dashboard/Dashboard"));
 const LostItems = lazy(() => import("./pages/lost-items/LostItems"));
 const FoundItems = lazy(() => import("./pages/found-items/FoundItems"));
 const AIMatching = lazy(() => import("./pages/ai-matching/AIMatching"));
+const Auctions = lazy(() => import("./pages/auctions/Auctions"));
 const ClaimsVerification = lazy(() => import("./pages/claims-verification/ClaimsVerification"));
 const ChainOfCustody = lazy(() => import("./pages/chain-of-custody/ChainOfCustody"));
 const Users = lazy(() => import("./pages/users/Users"));
@@ -21,13 +22,14 @@ const Notifications = lazy(() => import("./pages/notifications/Notifications"));
 const ActivityLogs = lazy(() => import("./pages/activity-logs/ActivityLogs"));
 const AdminProfile = lazy(() => import("./pages/admin-profile/AdminProfile"));
 
-type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "admin-profile";
+type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "auctions" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "admin-profile";
 
 const PAGE_META: Record<Page, StringKey> = {
   "dashboard": "nav.dashboard",
   "lost-items": "nav.lostItems",
   "found-items": "nav.foundItems",
   "ai-matching": "nav.aiMatching",
+  "auctions": "nav.auctions",
   "claims": "nav.claims",
   "chain-of-custody": "nav.custody",
   "users": "nav.users",
@@ -101,6 +103,7 @@ export default function App() {
       case "lost-items": return <LostItems />;
       case "found-items": return <FoundItems />;
       case "ai-matching": return <AIMatching />;
+      case "auctions": return <Auctions />;
       case "claims": return <ClaimsVerification />;
       case "chain-of-custody": return <ChainOfCustody />;
       case "users": return <Users />;

@@ -361,6 +361,11 @@ CREATE POLICY "Service role can manage claims"
     WITH CHECK (auth.jwt() ->> 'role' = 'service_role');
 
 -- ============================================================================
+-- Auction Hall (auctions, auction_bids, auction_comments, auction_place_bid, auction_settle_due)
+-- Defined in manual_migrations/20261005_auction_hall.sql. Run that file in the SQL Editor; it is not repeated here.
+-- ============================================================================
+
+-- ============================================================================
 -- USEFUL QUERIES FOR FUTURE REFERENCE
 -- ============================================================================
 -- Check user count: SELECT COUNT(*) FROM user_profiles;

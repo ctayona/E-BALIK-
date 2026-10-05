@@ -823,3 +823,14 @@ def list_public_found_items():
     except Exception as error:
         current_app.logger.exception(f'Public found item listing error: {error}')
         return jsonify({'error': 'Unable to load recent found items'}), 500
+
+
+@home_bp.route('/public/board', methods=['GET'])
+def public_board():
+    """Newest missing reports and found items plus totals for the public landing page (safe fields only, no login)."""
+    try:
+        db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        return jsonify(db.get_public_board(missing_limit=8, found_limit=8)), 200
+    except Exception as error:
+        current_app.logger.exception(f'Public board error: {error}')
+        return jsonify({'error': 'Unable to load recent reports'}), 500

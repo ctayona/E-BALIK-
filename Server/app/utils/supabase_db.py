@@ -575,6 +575,23 @@ class SupabaseDB:
         ).eq('status', 'unclaimed').order('created_at', desc=True).limit(limit).execute()
         return response.data or []
 
+    def get_public_board(self, missing_limit: int = 8, found_limit: int = 8) -> Dict[str, Any]:
+        """Newest open missing reports and unclaimed found items for the signed-out landing page.
+
+        Only fields already shown on public lists are returned: no reporter name, email, campus ID, description or marks.
+        """
+        missing = self.client.table('missing_items').select(
+            'mpost_id,item_name,category,last_location,last_seen_date,image_url,created_at', count='exact'
+        ).eq('status', 'missing').order('created_at', desc=True).limit(missing_limit).execute()
+        found = self.client.table('found_items').select(
+            'fpost_id,item_name,category,location,found_date,image_url,created_at', count='exact'
+        ).eq('status', 'unclaimed').order('created_at', desc=True).limit(found_limit).execute()
+        return {
+            'missing': missing.data or [],
+            'found': found.data or [],
+            'counts': {'missing': int(missing.count or 0), 'found': int(found.count or 0)},
+        }
+
     def get_missing_items_for_matching(self) -> List[Dict[str, Any]]:
         """Return missing fields needed for private server-side matching."""
         response = self.client.table('missing_items').select(
@@ -1122,7 +1139,7 @@ class SupabaseDB:
             for item in items:
                 item_key = str(item.get('fpost_id') or item.get('item_id') or '')
                 report_status = str(item.get('status') or '').lower()
-                ui_status = 'Claimed' if report_status == 'claimed' else 'Released' if report_status == 'returned' else 'Under Review' if report_status in {'pending', 'review'} else 'Ready to Release' if report_status == 'ready_to_release' else 'Unclaimed'
+                ui_status = 'Claimed' if report_status == 'claimed' else 'Released' if report_status == 'returned' else 'Under Review' if report_status in {'pending', 'review'} else 'Ready to Release' if report_status == 'ready_to_release' else 'Auctioned' if report_status == 'auctioned' else 'Unclaimed'
                 ai_score = float(best_match_scores.get(item_key, 0.0) or 0.0)
                 ai_matched = ai_score >= 55
                 mapped.append({

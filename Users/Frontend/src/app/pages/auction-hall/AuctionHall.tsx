@@ -1,120 +1,236 @@
-import { useDeferredValue, useState } from "react";
-import { BellRing, Clock3, Gavel, Heart, Search, ShieldCheck, Sparkles } from "lucide-react";
-import imgBottle from "@/imports/OverlaidContent/b49e29d1e878a675879b971b78c0f6b7bf360de5.webp";
-import imgPhone from "@/imports/OverlaidContent/0823e4e53b38a443f5851ca353f8f6bbe20f42de.webp";
-import imgKeys from "@/imports/OverlaidContent/d17f656f410a0a4ef6102c44406b2f313dd1390d.webp";
-import imgUmbrella from "@/imports/OverlaidContent/ef6e46632c1113bdd39677d9964345eb79582284.webp";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { BellRing, Clock3, Gavel, Heart, ListChecks, Search, ShieldCheck, Sparkles, Trophy } from "lucide-react";
+import { AuctionClock, AuctionTile, SoldTile } from "@/app/shared/auction/AuctionParts";
+import { useWatchlist } from "@/app/shared/auction/useWatchlist";
+import { auctionsApi, formatRemaining, msLeft, pesoShort, useAuctionFeed, useNow, type Auction } from "@/app/utils/auctions";
+import { authUtils } from "@/app/utils/api";
 import { CX } from "@/app/utils/clay";
+import AuctionDetail from "@/app/shared/auction/AuctionDetail";
+import AuctionPost from "./AuctionPost";
 
-const previewLots = [
-  { lot: "LOT 01", name: "Hydro Flask", category: "Accessories", location: "Main Building", image: imgBottle, opening: "₱350", description: "Insulated bottle · 32 oz · slate blue" },
-  { lot: "LOT 02", name: "iPhone 13 Pro", category: "Electronics", location: "Admin Lobby", image: imgPhone, opening: "₱4,500", description: "Graphite finish · protective case included" },
-  { lot: "LOT 03", name: "Lanyard with Keys", category: "Personal Effects", location: "Athletic Field", image: imgKeys, opening: "₱100", description: "Three keys · navy university lanyard" },
-  { lot: "LOT 04", name: "Black Umbrella", category: "Accessories", location: "Library", image: imgUmbrella, opening: "₱180", description: "Compact folding umbrella · carry sleeve" },
+type Tab = "live" | "upcoming" | "sold" | "mine";
+type Sort = "ending" | "price" | "bids";
+
+const SORTS: { value: Sort; label: string }[] = [
+  { value: "ending", label: "Ending soonest" },
+  { value: "price", label: "Highest bid" },
+  { value: "bids", label: "Most bids" },
 ];
-const categories = ["All lots", "Electronics", "Accessories", "Personal Effects"];
+
+const MY_STATE_LABEL: Record<NonNullable<Auction["my_state"]>, { text: string; className: string }> = {
+  leading: { text: "You're leading", className: "bg-tide-600 text-white" },
+  outbid: { text: "Outbid", className: "bg-rose-600 text-white" },
+  won: { text: "You won", className: "bg-gold-500 text-navy-950" },
+  lost: { text: "Not won", className: "bg-slate-600 text-white" },
+  cancelled: { text: "Cancelled", className: "bg-slate-600 text-white" },
+};
+
+function monthLabel(value: string) {
+  return new Date(value).toLocaleString([], { month: "long", year: "numeric" });
+}
 
 export default function AuctionHall() {
-  const [category, setCategory] = useState("All lots");
+  const { feed, error, setupRequired, loading, offset, refresh } = useAuctionFeed();
+  const now = useNow();
+  const watch = useWatchlist();
+  const signedIn = Boolean(authUtils.getToken());
+  const [tab, setTab] = useState<Tab>("live");
+  const [sort, setSort] = useState<Sort>("ending");
   const [search, setSearch] = useState("");
-  const [savedLots, setSavedLots] = useState<string[]>([]);
-  const deferredSearch = useDeferredValue(search.trim().toLowerCase());
-  const lots = previewLots.filter((lot) => {
-    const matchesCategory = category === "All lots" || lot.category === category;
-    const matchesSearch = !deferredSearch || `${lot.name} ${lot.category} ${lot.lot}`.toLowerCase().includes(deferredSearch);
-    return matchesCategory && matchesSearch;
-  });
+  const [onlyWatched, setOnlyWatched] = useState(false);
+  const [open, setOpen] = useState<{ auction: Auction; focus?: "comments" } | null>(null);
+  const [mine, setMine] = useState<Auction[] | null>(null);
+  const [mineError, setMineError] = useState("");
+  const query = useDeferredValue(search.trim().toLowerCase());
 
-  const toggleSaved = (lot: string) => {
-    setSavedLots((current) => current.includes(lot) ? current.filter((saved) => saved !== lot) : [...current, lot]);
-  };
+  const loadMine = useCallback(async () => {
+    if (!signedIn) return;
+    try {
+      const data = await auctionsApi.mine();
+      setMine(data.auctions);
+      setMineError("");
+    } catch (reason) {
+      setMineError(reason instanceof Error ? reason.message : "Unable to load your bids.");
+    }
+  }, [signedIn]);
+
+  useEffect(() => { if (tab === "mine") void loadMine(); }, [tab, loadMine]);
+
+  const matches = useCallback((a: Auction) => (!query || `${a.title} ${a.reference} ${a.category} ${a.location}`.toLowerCase().includes(query)) && (!onlyWatched || watch.watching(a.id)), [query, onlyWatched, watch]);
+
+  const liveAll = useMemo(() => (feed?.live ?? []).filter((a) => a.status === "live" && msLeft(a, now, offset) > 0), [feed, now, offset]);
+  const upcomingAll = useMemo(() => (feed?.live ?? []).filter((a) => a.status === "scheduled"), [feed]);
+  const live = useMemo(() => {
+    const list = liveAll.filter(matches);
+    return [...list].sort((a, b) => sort === "price" ? b.current_price - a.current_price : sort === "bids" ? b.bid_count - a.bid_count : Date.parse(a.ends_at) - Date.parse(b.ends_at));
+  }, [liveAll, matches, sort]);
+  const upcoming = useMemo(() => upcomingAll.filter(matches).sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at)), [upcomingAll, matches]);
+  const sold = useMemo(() => (feed?.past ?? []).filter(matches), [feed, matches]);
+  const soldGroups = useMemo(() => {
+    const groups = new Map<string, Auction[]>();
+    sold.forEach((a) => { const key = monthLabel(a.ends_at); groups.set(key, [...(groups.get(key) ?? []), a]); });
+    return [...groups.entries()];
+  }, [sold]);
+  const endingSoon = useMemo(() => [...liveAll].sort((a, b) => Date.parse(a.ends_at) - Date.parse(b.ends_at)).slice(0, 3), [liveAll]);
+  const nextClose = endingSoon[0] ? msLeft(endingSoon[0], now, offset) : 0;
+
+  const openAuction = (auction: Auction, focus?: "comments") => setOpen({ auction, focus });
+  const closeAuction = useCallback(() => setOpen(null), []);
+  const changed = useCallback(() => { void refresh(); if (tab === "mine") void loadMine(); }, [refresh, loadMine, tab]);
+
+  const tabs: { id: Tab; label: string; count?: number }[] = [
+    { id: "live", label: "Live", count: liveAll.length },
+    { id: "upcoming", label: "Upcoming", count: upcomingAll.length },
+    { id: "sold", label: "Sold", count: feed?.past.length ?? 0 },
+    ...(signedIn ? [{ id: "mine" as Tab, label: "My bids" }] : []),
+  ];
 
   return (
     <main className={CX.page}>
       <div className={CX.inner}>
-        <section className="relative overflow-hidden rounded-[26px] border border-white/15 bg-[#162448] p-6 text-white sm:p-8 lg:p-10">
+        <section className="relative overflow-hidden rounded-[26px] border border-white/15 bg-[#162448] p-6 text-white sm:p-8 lg:p-10" aria-labelledby="auction-hero">
           <div className="absolute -right-12 -top-16 size-64 rounded-full border border-gold-400/15" aria-hidden="true" />
           <div className="absolute -right-2 -top-6 size-44 rounded-full border border-gold-400/10" aria-hidden="true" />
-          <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-end">
+          <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-end">
             <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-2 rounded-full border border-gold-400/35 bg-gold-500/10 px-3 py-1 text-[12px] font-bold text-gold-300"><Gavel size={13} /> Auction Hall</span>
-                <span className="rounded-full border border-white/20 px-3 py-1 text-[12px] font-semibold text-white/75">Design preview</span>
-              </div>
-              <h1 className="mt-4 text-3xl font-semibold leading-tight sm:text-4xl" style={{ fontFamily: "var(--font-heading)" }}>Unclaimed items, a second chance.</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/70">A preview of the university auction experience. These sample lots are not live listings and cannot be bid on.</p>
+              <span className="inline-flex items-center gap-2 rounded-full border border-gold-400/35 bg-gold-500/10 px-3 py-1 text-[13px] font-semibold text-gold-300"><Gavel size={13} aria-hidden="true" /> Auction Hall</span>
+              <h1 id="auction-hero" className="mt-4 text-3xl font-semibold leading-tight sm:text-4xl" style={{ fontFamily: "var(--font-heading)" }}>Unclaimed items, a second chance.</h1>
+              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-white/70">Items nobody claimed within a month go up for bidding. Every peso supports the university's lost-and-found service.</p>
             </div>
-            <div className="grid grid-cols-2 gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div><p className="text-[12px] font-bold text-white/50">Preview lots</p><p className="mt-1 text-2xl font-semibold text-white">04</p></div>
-              <div><p className="text-[12px] font-bold text-white/50">Live auctions</p><p className="mt-1 text-2xl font-semibold text-gold-300">0</p></div>
-              <div className="col-span-2 flex items-center gap-2 border-t border-white/10 pt-3 text-xs text-white/65"><Clock3 size={14} className="text-gold-300" /> Auction dates will appear here when enabled.</div>
-            </div>
+            <dl className="grid grid-cols-2 gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div><dt className="text-[12.5px] font-medium text-white/55">Live now</dt><dd className="mt-1 text-2xl font-semibold tabular-nums text-gold-300">{liveAll.length}</dd></div>
+              <div><dt className="text-[12.5px] font-medium text-white/55">Sold so far</dt><dd className="mt-1 text-2xl font-semibold tabular-nums text-white">{(feed?.past ?? []).filter((a) => a.sold).length}</dd></div>
+              <div className="col-span-2 flex items-center gap-2 border-t border-white/10 pt-3 text-[13px] text-white/70"><Clock3 size={14} className="shrink-0 text-gold-300" aria-hidden="true" />{nextClose > 0 ? `Next auction closes in ${formatRemaining(nextClose)}` : "New auctions are announced here."}</div>
+            </dl>
           </div>
         </section>
 
-        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
-          <section className="min-w-0">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-xs font-bold text-gold-700">Preview catalog</p>
-                <h2 className="mt-1 text-xl font-semibold text-navy-800">Featured lots</h2>
-              </div>
-              <label className="relative block w-full sm:max-w-xs">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search preview lots" className={`${CX.input} h-11 w-full pl-10`} />
-              </label>
-            </div>
-
-            <div className="mb-5 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Preview lot categories">
-              {categories.map((item) => <button key={item} type="button" role="tab" aria-selected={category === item} onClick={() => setCategory(item)} className={`shrink-0 rounded-full border px-4 py-2 text-xs font-bold transition ${category === item ? "border-[#1f3160] bg-navy-800 text-white" : "border-[#dbe2ee] bg-white text-ink-soft hover:border-[#b8893e]"}`}>{item}</button>)}
-            </div>
-
-            {lots.length ? <div className="grid gap-4 sm:grid-cols-2">
-              {lots.map((lot) => {
-                const saved = savedLots.includes(lot.lot);
-                return <article key={lot.lot} className={`${CX.cardSm} overflow-hidden`}>
-                  <div className="relative aspect-[16/10] overflow-hidden bg-[#e9edf4]">
-                    <img src={lot.image} alt={lot.name} className="size-full object-cover" loading="lazy" />
-                    <span className="absolute left-3 top-3 rounded-full bg-navy-800/90 px-3 py-1 text-[12px] font-bold text-white">{lot.lot}</span>
-                    <button type="button" onClick={() => toggleSaved(lot.lot)} aria-label={saved ? `Remove ${lot.name} from saved lots` : `Save ${lot.name}`} aria-pressed={saved} className="absolute right-3 top-3 flex size-9 items-center justify-center rounded-full border border-white/60 bg-white/90 text-navy-800 shadow-sm hover:bg-white">
-                      <Heart size={16} fill={saved ? "#dc2626" : "none"} color={saved ? "#dc2626" : "currentColor"} />
-                    </button>
-                    <span className="absolute bottom-3 left-3 rounded-full bg-gold-500 px-3 py-1 text-[12px] font-bold text-navy-800">Sample lot</span>
-                  </div>
-                  <div className="p-4 sm:p-5">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-[12px] font-bold text-gold-700">{lot.category}</span>
-                      <span className="text-[12px] font-semibold text-ink-muted">{lot.location}</span>
-                    </div>
-                    <h3 className="mt-2 text-lg font-semibold text-navy-800">{lot.name}</h3>
-                    <p className="mt-1 min-h-10 text-xs leading-5 text-ink-muted">{lot.description}</p>
-                    <div className="mt-4 flex items-end justify-between gap-3 border-t border-[#e8edf4] pt-3">
-                      <div><p className="text-[12px] font-bold text-slate-500">Sample opening offer</p><p className="mt-0.5 text-xl font-semibold text-navy-800">{lot.opening}</p></div>
-                      <button type="button" disabled title="Bidding is not enabled" className={`${CX.btnNavy} cursor-not-allowed px-4 py-2.5 text-xs opacity-50`}>Bidding soon</button>
-                    </div>
-                  </div>
-                </article>;
-              })}
-            </div> : <div className={`${CX.card} p-10 text-center text-sm text-ink-muted`}>No preview lots match this search.</div>}
+        {setupRequired ? (
+          <section className={`${CX.card} mx-auto mt-8 max-w-[640px] p-8 text-center`} role="status">
+            <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950"><Gavel size={26} aria-hidden="true" /></span>
+            <h2 className="mt-4 font-[family-name:var(--font-heading)] text-[24px] font-semibold text-navy-800">The Auction Hall is opening soon</h2>
+            <p className="mx-auto mt-2 max-w-[44ch] text-[15px] leading-7 text-ink-muted">We're getting the first lots ready. Check back shortly to see unclaimed items and place your bids.</p>
           </section>
+        ) : (
+          <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <section className="min-w-0" aria-label="Auctions">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div role="tablist" aria-label="Auction views" className="flex gap-1.5 overflow-x-auto pb-1">
+                  {tabs.map((item) => (
+                    <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)} className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-[13.5px] font-semibold transition ${tab === item.id ? "border-navy-800 bg-navy-800 text-white" : "border-line-strong bg-white text-ink-soft hover:border-gold-400"}`}>
+                      {item.label}{item.count !== undefined && <span className={`min-w-[22px] rounded-full px-1.5 text-center text-[12px] tabular-nums ${tab === item.id ? "bg-white/20" : "bg-frost-100"}`}>{item.count}</span>}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <label className="relative block flex-1 sm:w-56 sm:flex-none">
+                    <span className="sr-only">Search auctions</span>
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+                    <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search lots" className={`${CX.input} h-11 w-full pl-10`} />
+                  </label>
+                  <button type="button" onClick={() => setOnlyWatched((v) => !v)} aria-pressed={onlyWatched} aria-label="Show only watched lots" title="Watched lots" className={`flex size-11 shrink-0 items-center justify-center rounded-xl border transition-colors ${onlyWatched ? "border-rose-300 bg-rose-50 text-rose-600" : "border-line-strong bg-white text-ink-soft hover:border-gold-400"}`}>
+                    <Heart size={18} aria-hidden="true" fill={onlyWatched ? "currentColor" : "none"} />
+                  </button>
+                </div>
+              </div>
 
-          <aside className="space-y-4">
-            <section className={`${CX.cardNavy} p-5 text-white`}>
-              <div className="flex items-center gap-2 text-gold-300"><ShieldCheck size={18} /><h2 className="text-sm font-semibold">Before bidding</h2></div>
-              <ol className="mt-4 space-y-3 text-xs leading-5 text-white/75">
-                <li className="flex gap-3"><span className="font-bold text-gold-300">01</span><span>Confirm your account and contact details.</span></li>
-                <li className="flex gap-3"><span className="font-bold text-gold-300">02</span><span>Review item condition and collection requirements.</span></li>
-                <li className="flex gap-3"><span className="font-bold text-gold-300">03</span><span>Attend the announced in-person auction to participate.</span></li>
-              </ol>
+              {loading ? (
+                <div className="space-y-5" aria-busy="true" aria-label="Loading auctions">{[0, 1].map((i) => <div key={i} className={`${CX.card} h-[420px] animate-pulse`} />)}</div>
+              ) : error && !feed ? (
+                <div role="alert" className={`${CX.card} p-8 text-center`}>
+                  <p className="font-semibold text-navy-800">We couldn't load the auctions.</p>
+                  <p className="mt-1 text-[14px] text-ink-muted">{error}</p>
+                  <button type="button" onClick={() => void refresh()} className={`${CX.btnNavy} mt-4`}>Try again</button>
+                </div>
+              ) : tab === "live" ? (
+                <>
+                  {live.length > 0 && (
+                    <div className="mb-3 flex items-center justify-end gap-2 text-[13px] text-ink-muted">
+                      <label htmlFor="auction-sort">Sort by</label>
+                      <select id="auction-sort" value={sort} onChange={(event) => setSort(event.target.value as Sort)} className="rounded-lg border border-line-strong bg-white px-2.5 py-1.5 text-[13px] font-semibold text-navy-800">
+                        {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {live.length === 0 ? (
+                    <div className={`${CX.card} p-10 text-center`}>
+                      <Sparkles size={26} className="mx-auto text-gold-600" aria-hidden="true" />
+                      <p className="mt-3 font-semibold text-navy-800">{liveAll.length === 0 ? "No live auctions right now" : "No lots match your search"}</p>
+                      <p className="mx-auto mt-1 max-w-[40ch] text-[14px] leading-6 text-ink-muted">{liveAll.length === 0 ? "New lots are added when items go unclaimed for a month. See what sold recently." : "Try a different word or clear the watched filter."}</p>
+                      {liveAll.length === 0 && <button type="button" onClick={() => setTab("sold")} className={`${CX.btnGhost} mt-4`}>View sold lots</button>}
+                    </div>
+                  ) : (
+                    <div className="mx-auto max-w-[680px] space-y-6 lg:mx-0">
+                      {live.map((a) => <AuctionPost key={a.id} auction={a} now={now} offset={offset} watching={watch.watching(a.id)} onToggleWatch={watch.toggle} onOpen={openAuction} />)}
+                    </div>
+                  )}
+                </>
+              ) : tab === "upcoming" ? (
+                upcoming.length === 0 ? <div className={`${CX.card} p-10 text-center text-[14.5px] text-ink-muted`}>No upcoming auctions are scheduled.</div> : (
+                  <div className="grid gap-4 sm:grid-cols-2">{upcoming.map((a) => <AuctionTile key={a.id} auction={a} now={now} offset={offset} onOpen={(auction) => openAuction(auction)} />)}</div>
+                )
+              ) : tab === "sold" ? (
+                soldGroups.length === 0 ? <div className={`${CX.card} p-10 text-center text-[14.5px] text-ink-muted`}>Nothing has sold yet. Finished auctions appear here.</div> : (
+                  <div className="space-y-8">
+                    {soldGroups.map(([month, items]) => (
+                      <section key={month} aria-label={month}>
+                        <h2 className="mb-3 font-[family-name:var(--font-heading)] text-[22px] font-semibold text-navy-800">{month}</h2>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{items.map((a) => <SoldTile key={a.id} auction={a} onOpen={(auction) => openAuction(auction)} />)}</div>
+                      </section>
+                    ))}
+                  </div>
+                )
+              ) : (
+                mineError ? <p role="alert" className={CX.alertError}>{mineError}</p> : mine === null ? <div className={`${CX.card} h-40 animate-pulse`} aria-busy="true" /> : mine.length === 0 ? (
+                  <div className={`${CX.card} p-10 text-center text-[14.5px] text-ink-muted`}>You haven't placed any bids yet. Open a live lot to make your first bid.</div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {mine.map((a) => (
+                      <div key={a.id} className="relative">
+                        <AuctionTile auction={a} now={now} offset={offset} onOpen={(auction) => openAuction(auction)} />
+                        {a.my_state && <span className={`absolute right-3 top-3 rounded-full px-2.5 py-1 text-[12.5px] font-bold ${MY_STATE_LABEL[a.my_state].className}`}>{MY_STATE_LABEL[a.my_state].text}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
             </section>
-            <section className={`${CX.cardSm} p-5`}>
-              <div className="flex items-center gap-2 text-navy-800"><BellRing size={17} className="text-gold-700" /><h2 className="text-sm font-semibold">Auction notices</h2></div>
-              <p className="mt-2 text-xs leading-5 text-ink-muted">When auctions launch, schedule and eligibility notices will be posted here.</p>
-              <div className="mt-4 flex items-center gap-2 border-t border-[#e8edf4] pt-3 text-xs font-semibold text-ink-muted"><Sparkles size={14} className="text-gold-700" /> Preview mode · no bids are being accepted</div>
-            </section>
-          </aside>
-        </div>
+
+            <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+              {endingSoon.length > 0 && (
+                <section className={`${CX.cardSm} p-5`} aria-labelledby="ending-soon">
+                  <h2 id="ending-soon" className="flex items-center gap-2 text-[15px] font-semibold text-navy-800"><Clock3 size={16} className="text-gold-700" aria-hidden="true" /> Ending soon</h2>
+                  <ul className="mt-3 space-y-2.5">
+                    {endingSoon.map((a) => (
+                      <li key={a.id}>
+                        <button type="button" onClick={() => openAuction(a)} className="flex w-full items-center gap-3 rounded-xl p-1.5 text-left transition-colors hover:bg-navy-50">
+                          {a.image_url ? <img src={a.image_url} alt="" className="size-12 shrink-0 rounded-lg object-cover" /> : <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-navy-800 text-gold-300"><Gavel size={18} aria-hidden="true" /></span>}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[14px] font-semibold text-navy-800">{a.title}</span>
+                            <span className="block text-[13px] tabular-nums text-ink-muted">{pesoShort(a.current_price)}</span>
+                          </span>
+                          <AuctionClock auction={a} now={now} offset={offset} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+              <section className={`${CX.cardNavy} p-5 text-white`}>
+                <h2 className="flex items-center gap-2 text-[15px] font-semibold text-gold-300"><ShieldCheck size={17} aria-hidden="true" /> How bidding works</h2>
+                <ol className="mt-4 space-y-3 text-[13.5px] leading-6 text-white/80">
+                  <li className="flex gap-3"><ListChecks size={16} className="mt-1 shrink-0 text-gold-300" aria-hidden="true" /><span>Open a lot and enter at least the minimum bid. Bids are binding.</span></li>
+                  <li className="flex gap-3"><Clock3 size={16} className="mt-1 shrink-0 text-gold-300" aria-hidden="true" /><span>A bid in the last minutes extends the timer, so nobody gets sniped.</span></li>
+                  <li className="flex gap-3"><Trophy size={16} className="mt-1 shrink-0 text-gold-300" aria-hidden="true" /><span>The highest bid wins. We notify you in the app and by email.</span></li>
+                  <li className="flex gap-3"><BellRing size={16} className="mt-1 shrink-0 text-gold-300" aria-hidden="true" /><span>Bring your ID to the Lost and Found Office to pay and collect.</span></li>
+                </ol>
+              </section>
+            </aside>
+          </div>
+        )}
       </div>
+
+      {open && <AuctionDetail auction={open.auction} signedIn={signedIn} focus={open.focus} onClose={closeAuction} onChanged={changed} />}
     </main>
   );
 }

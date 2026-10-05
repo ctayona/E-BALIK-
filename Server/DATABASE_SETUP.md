@@ -82,6 +82,22 @@ the claimant, and any competing claims for that found item. Resolved item
 reports remain available in the admin registries and are excluded from active
 public search.
 
+### Auction Hall
+
+Run `manual_migrations/20261005_auction_hall.sql` in the Supabase SQL Editor once.
+It adds the `auctions`, `auction_bids` and `auction_comments` tables and the
+`auction_place_bid` and `auction_settle_due` functions. It is additive and safe
+to rerun, and it does not change any existing table. Until it is applied, the
+Auction Hall endpoints answer 503 and the admin Auctions page shows the setup
+steps. Verify with:
+
+```sql
+SELECT to_regclass('public.auctions'), to_regclass('public.auction_bids'), to_regclass('public.auction_comments');
+SELECT proname FROM pg_proc WHERE proname IN ('auction_place_bid', 'auction_settle_due');
+```
+
+Optional env var: `AUCTION_EMAIL_MODE` (`mock` logs the winner email, `sendgrid` sends it).
+
 ### Method 2: Using Python Script
 ```bash
 cd backend

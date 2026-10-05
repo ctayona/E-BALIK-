@@ -23,6 +23,7 @@ const STATUS_TONE: Record<FoundStatus, Tone> = {
   "Under Review": "iris",
   "Claimed": "mint",
   "Ready to Release": "mint",
+  "Auctioned": "iris",
   "Released": "slate",
 };
 
@@ -241,7 +242,7 @@ export default function FoundItems() {
 
   const statusTabs = [
     { value: ALL, label: t("common.allStatuses"), count: items.length },
-    ...(["Unclaimed", "Under Review", "Claimed", "Ready to Release", "Released"] as FoundStatus[])
+    ...(["Unclaimed", "Under Review", "Claimed", "Ready to Release", "Auctioned", "Released"] as FoundStatus[])
       .filter((status) => statusCounts[status])
       .map((status) => ({ value: status, label: status, count: statusCounts[status] })),
   ];

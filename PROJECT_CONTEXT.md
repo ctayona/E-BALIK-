@@ -77,7 +77,8 @@ Each endpoint lives in the backend folder of the page that uses it. Where severa
 | Endpoint | Backend page | Frontend callers |
 |---|---|---|
 | `/api/auth/{register,verify-otp,login,google-login,admin-mfa/verify,forgot-password,reset-password,verify-token}` | `home` | Landing/Login/Register/ForgotPassword, App session |
-| `GET /api/found-items/public` | `home` | Landing |
+| `GET /api/found-items/public` | `home` | (older landing list; unused now) |
+| `GET /api/public/board` | `home` | Landing (newest missing reports, found items and totals; safe fields only, no login) |
 | `/api/auth/profile`, `/api/auth/profile/document-upload` | `profile` | Profile |
 | `POST/GET /api/found-items`, `GET /api/found-items/matches` | `found_item` | Found Item (list also My Reports) |
 | `POST/GET /api/missing-items`, `GET /api/missing-items/matches` | `missing_item` | Missing Item (list also Dashboard, Matches, My Reports) |
@@ -86,6 +87,7 @@ Each endpoint lives in the backend folder of the page that uses it. Where severa
 | `GET /api/missing-items/public` | `browse_items` | Browse Items |
 | `/api/claims` | `claim` | Claim |
 | `/api/notifications` | `notifications` | Notifications, UserHeader badge |
+| `/api/auctions/*` | `auctions` | Auction Hall, dashboard Live auctions shelf, Landing showcase |
 | `/api/admin/*` | Admin `Backend/<page>` matching the admin page | Chain of Custody reads found-items + claims; admin Notifications reads activity-logs + claims |
 
 Page-specific helpers live beside their page (for example `Users/Frontend/src/app/pages/home/OTPModal.tsx`, `Admin/Frontend/src/pages/users/AccountVerificationTab.tsx`). Anything used by more than one page belongs in that side's `shared/` (or `components/` in the admin frontend).
@@ -292,6 +294,33 @@ Lost-report status (`PUT /api/admin/lost-items/<ref>` with `status`) accepts onl
 - Dark mode is the `:root[data-theme="dark"]` layer at the end of `styles/theme.css`. It mirrors the admin: navy-black canvas, glass cards, gold primary actions, and remapped brand and utility colours. The shadcn tokens are navy-tinted. `.app-chrome` styles the header and tab bar, and `.ui-modal-panel` makes the shared modal opaque.
 - All-caps label styling has been removed from both apps; labels and headings use sentence case.
 
+### Auction Hall (`/api/auctions`, `Users/Backend/auctions`; admin `/api/admin/auctions`, `Admin/Backend/auctions`)
+
+Items in custody (found item status `unclaimed`) for at least 30 days with no open claim can be auctioned. The data layer is `Server/app/utils/auction_db.py` (`AuctionService`); email is `Server/app/utils/auction_email.py`.
+
+**Setup:** run `Server/manual_migrations/20261005_auction_hall.sql` once in the Supabase SQL Editor. Until then every auction endpoint answers `503 {"setup_required": true}`; the admin page shows the setup steps and the user pages show "opening soon".
+
+**Database:**
+- `auctions` holds a snapshot of the item (title, photo, gallery), pricing (`starting_price`, `bid_increment`, `current_price`), timer (`starts_at`, `ends_at`, `original_ends_at`), anti-snipe settings, status (`scheduled | active | ended | cancelled`), winner and pickup (`fulfillment_status`: `awaiting_pickup | collected | forfeited`). A unique partial index allows only one live auction per item.
+- `auction_bids` and `auction_comments` (comments can be hidden by admins).
+- Foreign keys use SET NULL or CASCADE, so deleting an item or a user is never blocked.
+- RLS is on with no policies; only the backend service key reads or writes.
+
+**Rules enforced in Postgres:**
+- `auction_place_bid(auction, bidder, amount)` locks the auction row and checks: account active, auction open, item still `unclaimed`, bidder isn't already leading, amount at least the starting bid or the current price plus the increment. It inserts the bid, updates the price, and extends the end time when a bid lands inside the anti-snipe window (capped by `max_extensions`). It returns `{ok, error, min_bid, extended, previous_bidder_id, auction}` rather than raising.
+- `auction_settle_due()` starts scheduled auctions, closes finished ones, awards the highest bid and marks the item `auctioned`. It cancels instead of awarding when the item is no longer unclaimed or an ownership claim is open, because a real owner has priority. Each finished auction is returned once.
+
+**Settlement is lazy:** the API calls `settle_and_notify()` on every auction read (throttled to 2s). Winners get an in-app notification (`notification_type auction_won`, link to the Auction Hall) and an email through `send_auction_won_email`. Winner notices are claimed atomically through `winner_notified_at`, so they send once. `AUCTION_EMAIL_MODE=mock` (default) only logs the email, with the address masked, and `sendgrid` sends it. The outbid leader and a cancelled auction's leader get in-app notices too.
+
+**Public API:** `GET /api/auctions` (live, upcoming and recent sold; no login), `GET /api/auctions/<id>` (bids and comments; optional login adds personal fields), `GET /api/auctions/mine`, `POST /api/auctions/<id>/bids`, `POST /api/auctions/<id>/comments`, `DELETE /api/auctions/<id>/comments/<comment>` (own comment). Bidders and commenters are shown as first name plus last initial; email and campus ID are never returned.
+
+**Admin API:** `GET /auctions`, `GET /auctions/eligible-items`, `POST /auctions`, `GET|PATCH /auctions/<id>`, `POST /auctions/<id>/{cancel,end,fulfillment}`, `PATCH /auctions/<id>/comments/<comment>` (hide or restore), `DELETE /auctions/<id>` (super admin only, never while live or awaiting pickup). Prices lock once bidding starts; after that the end time can only move later.
+
+**Frontends:**
+- Admin: `Admin/Frontend/src/pages/auctions/` (`Auctions`, `AuctionFormModal` with the live lot ticket, `AuctionDetailModal`) with `utils/auctionApi.ts` and `utils/countdown.ts`. The dashboard work queue shows "Auction pickups waiting".
+- User: `Users/Frontend/src/app/utils/auctions.ts` (typed client, `useAuctionFeed`, countdown helpers), `shared/auction/` (`Gallery`, `AuctionParts` with the clock, tile and SOLD tile, `AuctionDetail` bidding dialog, `AuctionShelf` for the dashboard, `AuctionShowcase` for the landing page, `useWatchlist`), and `pages/auction-hall/` (the feed page and post card). The Auction Hall is a social-style feed with swipeable photos, a two-step confirm to bid, comments and a Sold grid. Countdowns follow the server clock.
+- Landing: `pages/home/LiveBoard.tsx` shows recent missing reports and found items from `/api/public/board`; the hero counts are real data.
+
 ## Image Upload Rules
 
 The missing image upload bug was fixed in `Users/Frontend/src/app/utils/api.ts`.
@@ -342,6 +371,7 @@ The canonical schema is `Server/database_schema.sql`. It includes:
 - `missing_items`
 - `claims`
 - RLS setup and indexes
+- Auction Hall tables (`auctions`, `auction_bids`, `auction_comments`) are defined only in `Server/manual_migrations/20261005_auction_hall.sql`
 - `found-item-images` storage bucket
 - `missing-item-images` storage bucket
 

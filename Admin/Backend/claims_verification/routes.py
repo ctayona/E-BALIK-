@@ -116,7 +116,7 @@ def update_claim_status(claim_id):
         return jsonify({'error': 'Unable to update claim status', 'details': str(error)}), 500
 
 
-CLOSED_FOUND_ITEM_STATUSES = {'claimed', 'returned', 'closed', 'collected', 'disposed'}
+CLOSED_FOUND_ITEM_STATUSES = {'claimed', 'returned', 'closed', 'collected', 'disposed', 'auctioned'}
 MAX_CLAIM_REASON_LENGTH = 2000
 
 

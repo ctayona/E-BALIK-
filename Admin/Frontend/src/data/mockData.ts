@@ -23,7 +23,7 @@ export interface FoundItem {
   aiStatus: string;
   aiPercent: number | null;
   matchedItem?: string;
-  status: "Ready to Release" | "Under Review" | "Released" | "Claimed" | "Unclaimed";
+  status: "Ready to Release" | "Under Review" | "Released" | "Claimed" | "Unclaimed" | "Auctioned";
   photo?: string;
 }
 

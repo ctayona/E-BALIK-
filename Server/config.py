@@ -25,6 +25,9 @@ class Config:
     SENDGRID_API_KEY = os.getenv('SENDGRID_API_KEY')
     SENDGRID_FROM_EMAIL = os.getenv('SENDGRID_FROM_EMAIL')
     
+    # Auction winner notice: 'mock' logs the email instead of sending it; 'sendgrid' sends it for real.
+    AUCTION_EMAIL_MODE = os.getenv('AUCTION_EMAIL_MODE', 'mock').strip().lower()
+
     # JWT
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'dev-secret-key-change-in-production')
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=30)

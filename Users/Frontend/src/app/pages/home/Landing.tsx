@@ -7,10 +7,10 @@ import type { ModalState } from "@/app/types";
 import Login from "@/app/pages/home/Login";
 import Register from "@/app/pages/home/Register";
 import ForgotPasswordModal from "@/app/pages/home/ForgotPasswordModal";
-import { foundItemsApi } from "@/app/utils/api";
-import { SkeletonBlock } from "@/app/shared/LoadingSkeleton";
-import ItemImage, { type GalleryItem } from "@/app/shared/media/ItemImage";
-import ItemViewer from "@/app/shared/media/ItemViewer";
+import { publicApi, type PublicBoard } from "@/app/utils/api";
+import { useAuctionFeed } from "@/app/utils/auctions";
+import LiveBoard from "@/app/pages/home/LiveBoard";
+import AuctionShowcase from "@/app/shared/auction/AuctionShowcase";
 
 // ─── SVG icon components (all original paths preserved) ──────────────────────
 
@@ -57,42 +57,6 @@ function IconShield() {
     </svg>
   );
 }
-function IconMapPin() {
-  return (
-    <svg fill="none" height="13" viewBox="0 0 14 14" width="13">
-      <path d={svgPaths.p1b8a0e00} stroke="#d1a153" strokeLinecap="round" strokeWidth="2" />
-    </svg>
-  );
-}
-function IconCal() {
-  return (
-    <svg fill="none" height="13" viewBox="0 0 14 14" width="13">
-      <g clipPath="url(#cal)"><path d={svgPaths.p38abe4f0} stroke="#94a3b8" strokeLinecap="round" strokeWidth="2" /></g>
-      <defs><clipPath id="cal"><rect fill="white" height="14" width="14" /></clipPath></defs>
-    </svg>
-  );
-}
-
-// ─── Data & helpers ───────────────────────────────────────────────────────────
-
-type RecentFoundItem = {
-  fpost_id?: string; item_name?: string; category?: string;
-  location?: string; found_date?: string; image_url?: string;
-};
-
-function formatFoundDate(value?: string) {
-  if (!value) return "Found recently";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return `Found ${value}`;
-  const today = new Date();
-  const diff = Math.floor(
-    (new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() - date.getTime()) / 86400000
-  );
-  if (diff === 0) return "Found today";
-  if (diff === 1) return "Found yesterday";
-  return `Found ${date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
-}
-
 // ─── Clay design tokens ───────────────────────────────────────────────────────
 // Outer + inner double-shadow = the claymorphism "puff"
 
@@ -144,27 +108,18 @@ function FeatureCard({ icon, title, desc, step, color }: {
 
 export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const [modal, setModal] = useState<ModalState | "forgot-password">("none");
-  const [recentItems, setRecentItems] = useState<GalleryItem[]>([]);
-  const [recentItemsLoading, setRecentItemsLoading] = useState(true);
-  const [viewIndex, setViewIndex] = useState<number | null>(null);
+  const [board, setBoard] = useState<PublicBoard | null>(null);
+  const [boardLoading, setBoardLoading] = useState(true);
+  const { feed: auctionFeed } = useAuctionFeed(60000);
+  const liveAuctionCount = (auctionFeed?.live ?? []).filter((a) => a.status === "live").length;
 
-  // Fetch live found items (original logic untouched)
+  // Newest missing reports and found items (safe public fields only)
   useEffect(() => {
     let active = true;
-    void foundItemsApi.publicList().then((response) => {
-      if (!active || response.error || !response.data?.items?.length) return;
-      const items = (response.data.items as RecentFoundItem[]).map((item, index): GalleryItem => ({
-        id:       item.fpost_id || `recent-${index}`,
-        title:    item.item_name || "Found item",
-        kind:     "found",
-        image:    item.image_url || undefined,
-        category: item.category || undefined,
-        location: item.location || "University of Makati campus",
-        date:     formatFoundDate(item.found_date),
-      }));
-      setRecentItems(items);
+    void publicApi.board().then((response) => {
+      if (active && !response.error && response.data) setBoard(response.data);
     }).finally(() => {
-      if (active) setRecentItemsLoading(false);
+      if (active) setBoardLoading(false);
     });
     return () => { active = false; };
   }, []);
@@ -347,9 +302,9 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
               className="flex flex-col sm:flex-row gap-4 mt-2"
             >
               {[
-                { value: "500+", label: "Items recovered",  bg: "bg-gold-500", text: "#1f3160" },
-                { value: "98%",  label: "Match accuracy",   bg: "bg-navy-700",  text: "white"   },
-                { value: "24/7", label: "System active",    bg: "bg-gold-500",  text: "#1f3160" },
+                { value: boardLoading ? "–" : String(board?.counts.missing ?? 0), label: "Missing reports", bg: "bg-gold-500", text: "#1f3160" },
+                { value: boardLoading ? "–" : String(board?.counts.found ?? 0), label: "Items in custody", bg: "bg-navy-700", text: "white" },
+                ...(auctionFeed ? [{ value: String(liveAuctionCount), label: "Live auctions", bg: "bg-gold-500", text: "#1f3160" }] : []),
               ].map(({ value, label, bg, text }, i) => (
                 <motion.div
                   key={label}
@@ -375,8 +330,14 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
           </div>
         </section>
 
+        {/* ══════════════════════════════════════════════ LIVE BOARD: recent missing reports + found items */}
+        <LiveBoard board={board} loading={boardLoading} onLogin={() => setModal("login")} />
+
+        {/* ══════════════════════════════════════════════ AUCTION HALL SHOWCASE */}
+        <AuctionShowcase onLogin={() => setModal("login")} />
+
         {/* ══════════════════════════════════════════════ HOW IT WORKS */}
-        <section className="bg-slate-50 flex flex-col gap-14 items-center px-8 md:px-16 pt-24 pb-24 w-full">
+        <section className="bg-white border-t border-[#e8edf5] flex flex-col gap-14 items-center px-8 md:px-16 pt-24 pb-24 w-full">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -405,109 +366,6 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
             <FeatureCard step="03" icon={<IconShield />}  title="Secure pickup verification" color="linear-gradient(135deg,#ecfdf5,#d1fae5)" desc="Claimed items require verified student or employee ID and signature authentication upon pickup." />
           </div>
         </section>
-
-        {/* ══════════════════════════════════════════════ RECENT ITEMS */}
-        <section className="bg-white flex flex-col gap-12 items-center pt-20 pb-28 px-8 md:px-16 w-full border-t border-[#e8edf5]">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-            viewport={{ once: true }}
-            className="text-center"
-          >
-            <span className="mb-3 inline-block text-[12px] font-semibold text-gold-700">
-              Real-Time Logs
-            </span>
-            <h2
-              className="font-semibold text-navy-800 text-[32px] md:text-[36px]"
-              style={{ fontFamily: "var(--font-heading)" }}
-            >
-              Recently Found Items
-            </h2>
-            <p className="text-ink-muted text-[15px] mt-3 max-w-[480px] mx-auto leading-relaxed">
-              These items are currently held at UMak Campus Security — is one yours?
-            </p>
-          </motion.div>
-
-          {recentItemsLoading ? (
-            <div className="grid w-full max-w-[1140px] grid-cols-2 gap-5 md:grid-cols-4">
-              {Array.from({ length: 4 }, (_, index) => (
-                <div key={`recent-skeleton-${index}`} aria-label="Loading recent found items" aria-busy="true" className="overflow-hidden rounded-[22px] bg-white shadow-card">
-                  <SkeletonBlock className="aspect-[4/5] w-full rounded-none" />
-                </div>
-              ))}
-            </div>
-          ) : recentItems.length === 0 ? (
-            <p className="max-w-[460px] rounded-[22px] border border-dashed border-line-strong bg-frost-50 px-6 py-10 text-center text-[15px] text-ink-muted">
-              Nothing is in custody right now. New found items appear here as soon as they're turned over to campus security.
-            </p>
-          ) : (
-            <ul className="flex w-full max-w-[1140px] flex-wrap justify-center gap-5">
-              {recentItems.map((item, index) => (
-                <motion.li
-                  key={item.id}
-                  className="w-[calc(50%-10px)] md:w-[calc(25%-15px)]"
-                  initial={{ opacity: 0, y: 24 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.45, delay: index * 0.07, ease: [0.2, 0.8, 0.2, 1] }}
-                  viewport={{ once: true }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setViewIndex(index)}
-                    className="group relative block aspect-[4/5] w-full overflow-hidden rounded-[22px] bg-navy-950 text-left shadow-card transition-[box-shadow,transform] duration-300 ease-out hover:-translate-y-1.5 hover:shadow-raised"
-                  >
-                    <ItemImage item={item} size="lg" className="absolute inset-0 h-full w-full" imgClassName="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.08]" />
-                    <div className="scrim-bottom absolute inset-0" aria-hidden="true" />
-                    {item.category && (
-                      <span className="glass-dark absolute left-3 top-3 max-w-[calc(100%-24px)] truncate rounded-full px-3 py-1 text-[12px] font-semibold">{item.category}</span>
-                    )}
-                    <div className="absolute inset-x-0 bottom-0 p-4 text-white">
-                      <p className="truncate font-[family-name:var(--font-heading)] text-[17px] font-semibold">{item.title}</p>
-                      <div className="mt-1.5 flex flex-col gap-1 text-[12px] text-navy-100">
-                        <span className="flex items-center gap-1.5 truncate"><IconMapPin />{item.location}</span>
-                        <span className="flex items-center gap-1.5"><IconCal />{item.date}</span>
-                      </div>
-                    </div>
-                  </button>
-                </motion.li>
-              ))}
-            </ul>
-          )}
-
-          {/* View All clay CTA */}
-          <motion.button
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            whileHover={{ y: -4, scale: 1.04 }}
-            whileTap={{ scale: 0.97 }}
-            transition={spring}
-            viewport={{ once: true }}
-            onClick={() => setModal("login")}
-            className={`${clay.btn} text-white font-bold text-[15px] px-10 py-4`}
-          >
-            View All Found Items →
-          </motion.button>
-        </section>
-
-        {viewIndex !== null && (
-          <ItemViewer
-            items={recentItems}
-            index={viewIndex}
-            onIndexChange={setViewIndex}
-            onClose={() => setViewIndex(null)}
-            note={() => <p className="rounded-xl border border-iris-200 bg-iris-50 px-4 py-3 text-[14px] leading-5 text-iris-700">Sign in with your UMak account to claim this item or report one you lost.</p>}
-            actions={() => (
-              <button
-                type="button"
-                onClick={() => { setViewIndex(null); setModal("login"); }}
-                className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-gold-600/40 bg-[linear-gradient(180deg,#e6be76_0%,#d1a153_100%)] px-5 text-[14px] font-semibold text-navy-950 shadow-[0_1px_0_rgba(255,255,255,0.45)_inset] transition hover:shadow-[0_1px_0_rgba(255,255,255,0.45)_inset,var(--shadow-glow-gold)]"
-              >
-                Log in to claim this item
-              </button>
-            )}
-          />
-        )}
 
         {/* ══════════════════════════════════════════════ FOOTER */}
         <footer className="bg-navy-900 flex flex-col w-full">

@@ -1,7 +1,7 @@
 import { showInfoModal, type InfoModalVariant } from "../components/info-modal/infoModalStore";
 import { tr } from "./preferences";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 /**
  * Reports a finished admin process through the global information modal.
@@ -17,7 +17,7 @@ export function reportAdminProcess(result: { success: boolean; title: string; me
   });
 }
 
-async function adminMutationRequest(url: string, options: RequestInit, title: string): Promise<Response> {
+export async function adminMutationRequest(url: string, options: RequestInit, title: string): Promise<Response> {
   try {
     const response = await fetch(url, options);
     const payload = await response.clone().json().catch(() => ({}));
@@ -168,7 +168,7 @@ export interface AdminFoundItemRow {
   aiStatus: string;
   aiPercent: number | null;
   matchedItem?: string;
-  status: "Ready to Release" | "Under Review" | "Released" | "Claimed" | "Unclaimed";
+  status: "Ready to Release" | "Under Review" | "Released" | "Claimed" | "Unclaimed" | "Auctioned";
   /** Stored found_items.status (unclaimed, review, claimed, ready_to_release, returned...). */
   rawStatus?: string;
   photo?: string;
@@ -231,7 +231,7 @@ interface LoginResponse {
   [key: string]: unknown;
 }
 
-function getAuthHeaders(): Record<string, string> {
+export function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("ebalik_admin_token");
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
