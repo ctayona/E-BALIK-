@@ -21,10 +21,10 @@ All API integration code is ready. Follow this guide to connect your frontend to
 ### 1. Create Environment File
 ```bash
 # In the project root directory
-cp .env.local.example .env.local
+cp Environment_Configs/frontend/.env.local.example Environment_Configs/frontend/.env.local
 ```
 
-Edit `.env.local`:
+Edit `Environment_Configs/frontend/.env.local`:
 ```
 VITE_API_URL=http://localhost:5000
 VITE_API_TIMEOUT=30000
@@ -431,7 +431,7 @@ console.log('Authenticated:', !!token);
 
 ### Issue: "OTP not received"
 **Solution**:
-- Check SENDGRID_API_KEY in backend/.env
+- Check SENDGRID_API_KEY in `Environment_Configs/backend/.env`
 - Verify email is correct
 - Check spam folder
 
@@ -445,8 +445,8 @@ console.log('Authenticated:', !!token);
 | `src/app/utils/useAuth.ts` | Authentication React hook |
 | `src/app/components/OTPModal.tsx` | OTP input modal |
 | `backend/app/routes/auth.py` | Backend authentication endpoints |
-| `.env.local` | Frontend configuration |
-| `backend/.env` | Backend configuration |
+| `Environment_Configs/frontend/.env.local` | Frontend configuration |
+| `Environment_Configs/backend/.env` | Backend configuration |
 
 ---
 

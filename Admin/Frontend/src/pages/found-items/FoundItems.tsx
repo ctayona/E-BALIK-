@@ -1,219 +1,214 @@
-import { ImagePlus } from "lucide-react";
-import { useEffect, useState } from "react";
-import { FoundItem, foundItems as initialItems } from "../../data/mockData";
-import { createAdminFoundItem, deleteAdminFoundItem, fetchAdminFoundItems, getStoredAdmin, reportAdminProcess, updateAdminFoundItem, type AdminFoundItemRow } from "../../utils/api";
+import { useEffect, useMemo, useState } from "react";
+import { Eye, ImagePlus, PackageCheck, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
+import { createAdminFoundItem, deleteAdminFoundItem, fetchAdminFoundItems, updateAdminFoundItem, type AdminFoundItemRow } from "../../utils/api";
+import { canDelete } from "../../utils/permissions";
+import { useT, tr } from "../../utils/preferences";
+import { downloadCsv } from "../../utils/csv";
+import { CAMPUS_LOCATIONS, ITEM_CATEGORIES, categoryOptions, uniqueSorted } from "../../utils/itemOptions";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
-import { showInfoModal } from "../../components/info-modal/infoModalStore";
+import AdminModal from "../../components/ui/AdminModal";
+import { BTN, Field, PageHeader, RolePill, SelectInput, TextArea, TextInput } from "../../components/ui/primitives";
+import { DataTable, DetailGrid, ExportButton, FilterSelect, IconAction, RowActions, SearchField, SegmentedFilter, StatusPill, TableFooter, Thumb, Toolbar, usePagination, type Tone } from "../../components/ui/management";
 
-const statuses = ["All Statuses", "Claimed", "Unclaimed", "Released"];
-
-function StatusBadge({ status }: { status: FoundItem["status"] }) {
-  const map: Record<FoundItem["status"], { bg: string; text: string; dot: string }> = {
-    "Ready to Release": { bg: "#ecfdf5", text: "#059669", dot: "#10b981" },
-    "Under Review": { bg: "#fffbeb", text: "#d97706", dot: "#f59e0b" },
-    "Released": { bg: "#eff6ff", text: "#2563eb", dot: "#3b82f6" },
-    "Claimed": { bg: "#ecfdf5", text: "#059669", dot: "#10b981" },
-    "Unclaimed": { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444" },
-  };
-  const s = map[status];
-  return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium" style={{ background: s.bg, color: s.text }}>
-      <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.dot }}></span>
-      {status}
-    </span>
-  );
-}
-
-interface RegisterModalProps {
-  item?: FoundItem;
-  onClose: () => void;
-  onSave: (data: Omit<FoundItem, "id" | "aiStatus" | "aiPercent" | "status">) => void;
-}
-
-type FoundItemForm = Omit<FoundItem, "id" | "aiStatus" | "aiPercent" | "status">;
+type FoundItem = AdminFoundItemRow;
+type FoundStatus = FoundItem["status"];
+type FoundForm = { item: string; description: string; category: string; locationFound: string; dateFound: string; storage: string; photo: string; status?: string };
 type PendingAction =
-  | { type: "save"; data: FoundItemForm; reference?: string }
+  | { type: "save"; data: Partial<FoundForm>; reference?: string }
   | { type: "delete"; reference: string };
 
-function mapFoundItems(data: AdminFoundItemRow[]): FoundItem[] {
-  return data.map((item) => ({
-    id: item.id,
-    item: item.item,
-    description: item.description,
-    category: item.category,
-    locationFound: item.locationFound,
-    dateFound: item.dateFound,
-    storage: item.storage,
-    aiStatus: item.aiStatus,
-    aiPercent: item.aiPercent,
-    matchedItem: item.matchedItem,
-    status: item.status,
-    photo: item.photo,
-  }));
-}
+const STATUS_TONE: Record<FoundStatus, Tone> = {
+  "Unclaimed": "gold",
+  "Under Review": "iris",
+  "Claimed": "mint",
+  "Ready to Release": "mint",
+  "Released": "slate",
+};
 
-function RegisterModal({ item, onClose, onSave }: RegisterModalProps) {
-  const [form, setForm] = useState({
+/** Holding states an admin may set directly. Claimed, ready-to-release and returned come from the claim workflow. */
+const HOLDING_STATUSES = [
+  { value: "unclaimed", label: "In storage, waiting for the owner" },
+  { value: "review", label: "Under review (on hold)" },
+];
+
+const ALL = "__all__";
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+
+function FoundItemFormModal({ item, busy, onClose, onSubmit }: { item?: FoundItem; busy: boolean; onClose: () => void; onSubmit: (data: Partial<FoundForm>) => void }) {
+  const editing = Boolean(item);
+  const workflowOwnsStatus = Boolean(item?.rawStatus && !HOLDING_STATUSES.some((status) => status.value === item.rawStatus));
+  const [form, setForm] = useState<FoundForm>({
     item: item?.item ?? "",
-    description: item?.description ?? "",
-    category: item?.category ?? "Electronics",
-    locationFound: item?.locationFound ?? "",
-    dateFound: item?.dateFound ?? "",
-    storage: item?.storage ?? "",
+    description: item && item.description !== "No description" ? item.description : "",
+    category: item?.category ?? ITEM_CATEGORIES[0],
+    locationFound: item?.locationFound && item.locationFound !== "Unknown" ? item.locationFound : "",
+    dateFound: item?.dateFound?.slice(0, 10) ?? "",
+    storage: item?.storage && item.storage !== "Unknown" ? item.storage : "",
     photo: item?.photo ?? "",
+    status: item?.rawStatus ?? "unclaimed",
   });
-  const [aiRunning, setAiRunning] = useState(false);
-  const [aiComplete, setAiComplete] = useState(false);
-  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const [error, setError] = useState("");
+  const set = (key: keyof FoundForm, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const today = new Date().toISOString().slice(0, 10);
 
-  const uploadPhoto = (file?: File) => {
+  const choosePhoto = (file?: File) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      reportAdminProcess({ success: false, title: "Upload item photo", message: "Please upload a PNG or JPG image." });
+    if (!["image/png", "image/jpeg"].includes(file.type)) {
+      setError(tr("Use a PNG or JPG photo."));
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      reportAdminProcess({ success: false, title: "Upload item photo", message: "The image must be smaller than 10 MB." });
+    if (file.size > MAX_PHOTO_BYTES) {
+      setError(tr("The photo must be 10 MB or smaller."));
       return;
     }
+    setError("");
     const reader = new FileReader();
     reader.onload = () => set("photo", String(reader.result));
     reader.readAsDataURL(file);
-    setAiComplete(false);
   };
 
-  const runRecognition = () => {
-    if (!form.photo) return;
-    setAiRunning(true);
-    window.setTimeout(() => {
-      setAiRunning(false);
-      setAiComplete(true);
-    }, 700);
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const required: [keyof FoundForm, string][] = [["item", tr("item name")], ["category", "category"], ["locationFound", tr("place found")], ["dateFound", tr("date found")], ["storage", tr("storage location")]];
+    const missing = required.filter(([key]) => !String(form[key] ?? "").trim()).map(([, label]) => label);
+    if (missing.length) {
+      setError(tr("Add the {0} before saving.", { "0": missing.join(", ") }));
+      return;
+    }
+    if (form.dateFound > today) {
+      setError(tr("The date found can't be in the future."));
+      return;
+    }
+    setError("");
+    const data: Partial<FoundForm> = {
+      item: form.item.trim(),
+      description: form.description.trim(),
+      category: form.category,
+      locationFound: form.locationFound.trim(),
+      dateFound: form.dateFound,
+      storage: form.storage.trim(),
+    };
+    // Only send the photo when it changed, so edits don't re-upload the stored image.
+    if (form.photo && form.photo !== item?.photo) data.photo = form.photo;
+    if (editing && !workflowOwnsStatus && form.status !== item?.rawStatus) data.status = form.status;
+    onSubmit(data);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)" }}>
-      <div className="max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-bold text-slate-900">{item ? "Edit Found Item" : "Register Found Item"}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-            <svg width="20" height="20" fill="none" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-          </button>
-        </div>
-        <div className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-2">AI Visual Recognition</label>
-            <label onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); uploadPhoto(e.dataTransfer.files[0]); }} className={`flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-4 py-3 text-center transition-colors ${form.photo ? "border-tide-200 bg-tide-50/40" : "border-gray-300 bg-slate-50 hover:border-tide-500 hover:bg-tide-50/30"}`}>
-              <input type="file" accept="image/png,image/jpeg" className="sr-only" onChange={e => uploadPhoto(e.target.files?.[0])} />
-              {form.photo ? (
-                <img src={form.photo} alt="Found item preview" className="h-24 max-w-full rounded-lg object-contain" />
-              ) : (
-                <>
-                  <svg width="24" height="24" fill="none" viewBox="0 0 24 24" className="mb-1 text-slate-300"><path d="M12 16V4m0 0L8 8m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                  <span className="text-xs text-slate-600">Drop photos here or click to upload</span>
-                  <span className="mt-1 text-[12px] text-slate-400">PNG, JPG up to 10MB each</span>
-                </>
-              )}
-            </label>
-            <button type="button" disabled={!form.photo || aiRunning} onClick={runRecognition} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50" style={{ background: "#7c3aed" }}>
-              <ImagePlus size={16} aria-hidden="true" />
-              {aiRunning ? "Analyzing photo..." : aiComplete ? "AI Recognition Complete" : "Run AI Recognition"}
-            </button>
-            <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] leading-snug text-amber-800">
-              <span className="font-bold">Note:</span> AI recognition assists in categorization but does not automatically verify ownership. Admin review is required.
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Item Name *</label>
-              <input value={form.item} onChange={e => set("item", e.target.value)} className="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-600/20" placeholder="e.g. iPhone 13" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Category *</label>
-              <select value={form.category} onChange={e => set("category", e.target.value)} className="w-full border border-line rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-navy-600/20">
-                {["Electronics","Bags","Documents","Personal Items","School Supplies","Clothing"].map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Description</label>
-            <input value={form.description} onChange={e => set("description", e.target.value)} className="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-600/20" placeholder="Color, brand, condition..." />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Location Found *</label>
-              <input value={form.locationFound} onChange={e => set("locationFound", e.target.value)} className="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-600/20" placeholder="Building — specific area" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Date Found *</label>
-              <input type="date" value={form.dateFound} onChange={e => set("dateFound", e.target.value)} className="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-600/20" />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1">Storage Location *</label>
-            <input value={form.storage} onChange={e => set("storage", e.target.value)} className="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-600/20" placeholder="e.g. Admin Locker A-12" />
-          </div>
-        </div>
-        <div className="flex justify-end gap-3 mt-6">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 border border-line rounded-lg hover:bg-navy-50">Cancel</button>
-          <button
-            onClick={() => {
-              if (!form.item || !form.category || !form.locationFound || !form.dateFound || !form.storage) {
-                reportAdminProcess({ success: false, title: "Save found item", message: "Complete all required fields before saving this record." });
-                return;
-              }
-              onSave(form);
-            }}
-            className="px-5 py-2 text-sm text-white rounded-lg font-semibold hover:opacity-90 transition-opacity"
-            style={{ background: "#0f8077" }}
+    <AdminModal
+      title={editing ? tr("Edit {0}", { "0": item?.id }) : tr("Register a found item")}
+      description={editing ? tr("Update the record and where the item is stored.") : tr("Log an item turned over to the Lost and Found Office. It's matched against open lost reports.")}
+      icon={editing ? <Pencil size={19} /> : <PackageCheck size={20} />}
+      tone={editing ? "navy" : "gold"}
+      size="lg"
+      busy={busy}
+      onClose={onClose}
+      footer={<>
+        <button type="button" onClick={onClose} disabled={busy} className={BTN.ghost}>{tr("Cancel")}</button>
+        <button type="submit" form="found-item-form" disabled={busy} className={editing ? BTN.primary : BTN.gold}>{editing ? tr("Save changes") : tr("Register item")}</button>
+      </>}
+    >
+      <form id="found-item-form" onSubmit={submit} className="grid gap-5 md:grid-cols-[220px_minmax(0,1fr)]" noValidate>
+        <div>
+          <span className="mb-1.5 block text-[14px] font-semibold text-ink-soft">{tr("Photo")}</span>
+          <label
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); choosePhoto(e.dataTransfer.files[0]); }}
+            className="group relative flex aspect-square cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-line-strong bg-frost-50 text-center transition-colors hover:border-gold-400"
           >
-            {item ? "Save Changes" : "Register Item"}
-          </button>
+            <input type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(e) => choosePhoto(e.target.files?.[0])} />
+            {form.photo ? (
+              <>
+                <img src={form.photo} alt={tr("Found item preview")} className="absolute inset-0 size-full object-cover" />
+                <span className="absolute inset-x-2 bottom-2 rounded-xl bg-navy-950/70 px-2 py-1.5 text-[12.5px] font-semibold text-white opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">{tr("Replace photo")}</span>
+              </>
+            ) : (
+              <>
+                <ImagePlus size={26} className="mb-2 text-ink-muted" aria-hidden="true" />
+                <span className="px-4 text-[13.5px] font-medium text-ink-soft">{tr("Drop a photo or click to upload")}</span>
+                <span className="mt-1 text-[12.5px] text-ink-muted">{tr("PNG or JPG, up to 10 MB")}</span>
+              </>
+            )}
+          </label>
         </div>
-      </div>
-    </div>
+        <div className="grid content-start gap-4 sm:grid-cols-2">
+          <Field label={tr("Item name")} required>{(id) => <TextInput id={id} data-autofocus value={form.item} onChange={(e) => set("item", e.target.value)} maxLength={255} placeholder={tr("Silver Casio watch")} />}</Field>
+          <Field label={tr("Category")} required>{(id) => (
+            <SelectInput id={id} value={form.category} onChange={(e) => set("category", e.target.value)}>
+              {categoryOptions(item?.category).map((category) => <option key={category}>{category}</option>)}
+            </SelectInput>
+          )}</Field>
+          <div className="sm:col-span-2">
+            <Field label={tr("Description")} hint={tr("Visible condition and marks. Leave out details only the owner should know.")}>{(id) => <TextArea id={id} rows={3} value={form.description} onChange={(e) => set("description", e.target.value)} maxLength={2000} />}</Field>
+          </div>
+          <Field label={tr("Found at")} required>{(id) => (
+            <>
+              <TextInput id={id} list="found-location-options" value={form.locationFound} onChange={(e) => set("locationFound", e.target.value)} maxLength={255} placeholder={tr("Cafeteria, near the stairs")} />
+              <datalist id="found-location-options">{CAMPUS_LOCATIONS.map((location) => <option key={location} value={location} />)}</datalist>
+            </>
+          )}</Field>
+          <Field label={tr("Date found")} required>{(id) => <TextInput id={id} type="date" max={today} value={form.dateFound} onChange={(e) => set("dateFound", e.target.value)} />}</Field>
+          <div className="sm:col-span-2">
+            <Field label={tr("Storage location")} required>{(id) => <TextInput id={id} value={form.storage} onChange={(e) => set("storage", e.target.value)} maxLength={255} placeholder={tr("Admin locker A-12")} />}</Field>
+          </div>
+          {editing && (
+            <div className="sm:col-span-2">
+              <Field label={tr("Holding status")} hint={workflowOwnsStatus ? tr("This item is {0}. The claim workflow manages its status from here.", { "0": item?.status.toLowerCase() }) : tr("Put an item on hold while ownership is being checked.")}>{(id) => (
+                <SelectInput id={id} value={workflowOwnsStatus ? "" : form.status} disabled={workflowOwnsStatus} onChange={(e) => set("status", e.target.value)}>
+                  {workflowOwnsStatus && <option value="">{item?.status}</option>}
+                  {HOLDING_STATUSES.map((status) => <option key={status.value} value={status.value}>{tr(status.label)}</option>)}
+                </SelectInput>
+              )}</Field>
+            </div>
+          )}
+        </div>
+        {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] text-rose-800 md:col-span-2">{error}</p>}
+      </form>
+    </AdminModal>
   );
 }
 
 export default function FoundItems() {
+  const t = useT();
   const [items, setItems] = useState<FoundItem[]>([]);
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("All Statuses");
-  const [showModal, setShowModal] = useState(false);
-  const [editItem, setEditItem] = useState<FoundItem | undefined>();
+  const [statusFilter, setStatusFilter] = useState<string>(ALL);
+  const [category, setCategory] = useState(ALL);
+  const [formItem, setFormItem] = useState<{ item?: FoundItem } | null>(null);
   const [viewItem, setViewItem] = useState<FoundItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
-  const isSuperAdmin = getStoredAdmin()?.access_level === "super_admin";
+  const isSuperAdmin = canDelete();
 
   useEffect(() => {
     let active = true;
+    localStorage.removeItem("e-balik-found-items"); // retired cache, nothing reads it
     fetchAdminFoundItems()
-      .then((data) => {
-        if (!active) return;
-        setItems(mapFoundItems(data));
-      })
-      .catch(() => {
-        setItems([]);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+      .then((data) => { if (active) setItems(data); })
+      .catch(() => { if (active) setItems([]); })
+      .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem("e-balik-found-items", JSON.stringify(items));
-  }, [items]);
+  const statusCounts = useMemo(() => items.reduce<Record<string, number>>((counts, item) => {
+    counts[item.status] = (counts[item.status] ?? 0) + 1;
+    return counts;
+  }, {}), [items]);
+  const categories = useMemo(() => uniqueSorted([...ITEM_CATEGORIES, ...items.map((item) => item.category)]), [items]);
+  const inCustody = items.filter((item) => item.status !== "Released").length;
 
-  const filtered = items.filter(it => {
-    const q = search.toLowerCase();
-    const matchesSearch = !q || it.item.toLowerCase().includes(q) || it.id.toLowerCase().includes(q) || it.locationFound.toLowerCase().includes(q);
-    const matchesStatus = status === "All Statuses" || it.status === status;
-    return matchesSearch && matchesStatus;
-  });
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return items.filter((item) => {
+      if (statusFilter !== ALL && item.status !== statusFilter) return false;
+      if (category !== ALL && item.category !== category) return false;
+      return !query || [item.item, item.id, item.locationFound, item.storage, item.description].some((value) => value?.toLowerCase().includes(query));
+    });
+  }, [items, search, statusFilter, category]);
+  const paging = usePagination(filtered, 12, `${search}|${statusFilter}|${category}`);
+  const hasFilters = Boolean(search) || statusFilter !== ALL || category !== ALL;
 
   const confirmPendingAction = async () => {
     if (!pendingAction || actionBusy) return;
@@ -221,154 +216,154 @@ export default function FoundItems() {
     try {
       if (pendingAction.type === "delete") {
         await deleteAdminFoundItem(pendingAction.reference);
+        setViewItem(null);
       } else if (pendingAction.reference) {
         await updateAdminFoundItem(pendingAction.reference, pendingAction.data);
       } else {
         await createAdminFoundItem(pendingAction.data);
       }
-      setItems(mapFoundItems(await fetchAdminFoundItems()));
-      if (pendingAction.type === "save") {
-        setShowModal(false);
-        setEditItem(undefined);
-      }
-      setPendingAction(null);
-    } catch (error) {
-      showInfoModal({ variant: "error", title: "Changes not saved", message: error instanceof Error ? error.message : "Unable to save item changes.", replaceAuto: true });
-      setPendingAction(null);
+      setItems(await fetchAdminFoundItems());
+      if (pendingAction.type === "save") setFormItem(null);
+    } catch {
+      // adminItemMutation already reported the server's reason in the global result modal.
     } finally {
+      setPendingAction(null);
       setActionBusy(false);
     }
   };
 
+  const exportCsv = () => downloadCsv("found-items", ["Reference", "Item", "Category", "Description", "Found at", "Date found", "Storage", "Status", "AI match"],
+    filtered.map((item) => [item.id, item.item, item.category, item.description, item.locationFound, item.dateFound, item.storage, item.status, item.aiPercent ? `${item.aiPercent}%` : ""]));
+
   if (loading) {
-    return <div className="p-6 space-y-5" aria-busy="true"><div><SkeletonBlock className="mb-2 h-7 w-56" /><SkeletonBlock className="h-4 w-40" /></div><div className="rounded-xl border border-line bg-white p-4"><SkeletonBlock className="h-10 w-full" /></div><AdminTableSkeleton columns={9} rows={7} /></div>;
+    return <div className="space-y-5 p-4 sm:p-6" aria-busy="true"><div><SkeletonBlock className="mb-2 h-8 w-56" /><SkeletonBlock className="h-4 w-80" /></div><SkeletonBlock className="h-14 w-full rounded-2xl" /><AdminTableSkeleton columns={8} rows={7} /></div>;
   }
 
+  const statusTabs = [
+    { value: ALL, label: t("common.allStatuses"), count: items.length },
+    ...(["Unclaimed", "Under Review", "Claimed", "Ready to Release", "Released"] as FoundStatus[])
+      .filter((status) => statusCounts[status])
+      .map((status) => ({ value: status, label: status, count: statusCounts[status] })),
+  ];
+
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Found Items Registry</h1>
-          <p className="text-sm text-slate-500">{items.filter(i => i.status !== "Released").length} items currently in custody · record collection from the approved claim to close related reports</p>
-        </div>
-        <button onClick={() => { setEditItem(undefined); setShowModal(true); }} className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-lg shadow-sm hover:opacity-90 transition-opacity" style={{ background: "#0f8077" }}>
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
-          Register Found Item
-        </button>
-      </div>
+    <div className="space-y-5 p-4 sm:p-6">
+      <PageHeader
+        title={t("found.title")}
+        description={t("found.description", { count: inCustody })}
+        meta={<RolePill superAdmin={isSuperAdmin} />}
+        actions={<>
+          <ExportButton onClick={exportCsv} disabled={!filtered.length} />
+          <button type="button" onClick={() => setFormItem({})} className={BTN.primary}><Plus size={17} aria-hidden="true" />{t("found.add")}</button>
+        </>}
+      />
 
+      <SegmentedFilter label={t("common.status")} value={statusFilter} onChange={setStatusFilter} options={statusTabs} />
 
-      <div className="bg-white rounded-2xl border border-line shadow-card p-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative min-w-[240px] flex-[3]">
-          <svg className="absolute left-3 top-2.5 text-slate-400" width="15" height="15" fill="none" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2"/><path d="m21 21-3-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item or ID..." className="w-full pl-9 pr-3 py-2 text-sm border border-line rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-600/20" />
-          </div>
-        <select value={status} onChange={e => setStatus(e.target.value)} className="w-40 flex-none border border-line rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-navy-600/20">
-          {statuses.map(option => <option key={option}>{option}</option>)}
-        </select>
-        </div>
-      </div>
+      <Toolbar trailing={hasFilters ? <button type="button" onClick={() => { setSearch(""); setStatusFilter(ALL); setCategory(ALL); }} className={BTN.ghost}>{t("common.clearFilters")}</button> : undefined}>
+        <SearchField value={search} onChange={setSearch} placeholder={t("found.search")} />
+        <FilterSelect label={t("found.col.category")} value={category} onChange={setCategory} options={[{ value: ALL, label: t("common.allCategories") }, ...categories.map((value) => ({ value, label: value }))]} />
+      </Toolbar>
 
-      <div className="bg-white rounded-2xl border border-line shadow-card overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-line">
-              {["ITEM ID","PHOTO","ITEM","CATEGORY","LOCATION FOUND","DATE FOUND","STORAGE","STATUS","ACTIONS"].map(h => (
-                <th key={h} className="text-left px-4 py-3.5 text-xs font-semibold text-slate-400 tracking-wide">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr><td colSpan={9} className="text-center py-12 text-slate-400">No items found</td></tr>
-            ) : filtered.map(it => (
-              <tr key={it.id} className="border-b border-line hover:bg-navy-50 transition-colors">
-                <td className="px-4 py-3 text-xs text-slate-400 font-mono whitespace-nowrap">{it.id}</td>
-                <td className="px-4 py-3">
-                  {it.photo ? (
-                    <img src={it.photo} alt={`${it.item} photo`} className="h-10 w-10 rounded-lg object-cover" />
-                  ) : (
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
-                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/><path d="m21 15-5-5L5 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="font-semibold text-slate-900">{it.item}</div>
-                  <div className="text-xs text-slate-400 max-w-36 truncate">{it.description}</div>
-                </td>
-                <td className="px-4 py-3 text-slate-600">{it.category}</td>
-                <td className="px-4 py-3 text-slate-600">{it.locationFound}</td>
-                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{it.dateFound}</td>
-                <td className="px-4 py-3 text-slate-600">{it.storage}</td>
-                <td className="px-4 py-3"><StatusBadge status={it.status} /></td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-1.5">
-                    <button onClick={() => setViewItem(it)} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600" title="View">
-                      <svg width="15" height="15" fill="none" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" strokeWidth="2"/><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/></svg>
-                    </button>
-                    <button onClick={() => { setEditItem(it); setShowModal(true); }} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-500" title="Edit">
-                      <svg width="15" height="15" fill="none" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-                    </button>
-                    {isSuperAdmin && <button onClick={() => setPendingAction({ type: "delete", reference: it.id })} className="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-red-500" title="Delete">
-                      <svg width="15" height="15" fill="none" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-                    </button>}
+      <DataTable
+        caption={t("found.title")}
+        columns={[
+          { key: "ref", label: t("found.col.reference") },
+          { key: "item", label: t("found.col.item") },
+          { key: "category", label: t("found.col.category") },
+          { key: "location", label: t("found.col.location") },
+          { key: "date", label: t("found.col.date") },
+          { key: "storage", label: t("found.col.storage") },
+          { key: "status", label: t("common.status") },
+          { key: "actions", label: t("common.actions") },
+        ]}
+        isEmpty={paging.pageItems.length === 0}
+        empty={items.length === 0 ? t("found.empty") : t("common.noMatches")}
+        footer={<TableFooter {...paging} onPage={paging.setPage} />}
+      >
+        {paging.pageItems.map((item) => (
+          <tr key={item.id} data-tone={STATUS_TONE[item.status]}>
+            <td className="whitespace-nowrap font-semibold text-ink">{item.id}</td>
+            <td>
+              <div className="flex min-w-[220px] max-w-[320px] items-center gap-3">
+                <Thumb src={item.photo} alt={tr("{0} photo", { "0": item.item })} />
+                <div className="min-w-0">
+                  <div className="truncate font-semibold text-ink">{item.item}</div>
+                  <div className="flex items-center gap-1.5 truncate text-[13px] text-ink-muted">
+                    {item.aiPercent ? <><Sparkles size={13} className="shrink-0 text-gold-500" aria-hidden="true" /><span className="truncate">{item.aiPercent}% match{item.matchedItem ? tr(" with {0}", { "0": item.matchedItem }) : ""}</span></> : <span className="truncate" title={item.description}>{item.description}</span>}
                   </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="px-4 py-3 border-t border-line text-sm text-slate-500">
-          Showing {filtered.length} of {items.length} records
-        </div>
-      </div>
+                </div>
+              </div>
+            </td>
+            <td className="whitespace-nowrap">{item.category}</td>
+            <td><div className="max-w-[180px] truncate" title={item.locationFound}>{item.locationFound}</div></td>
+            <td className="whitespace-nowrap">{item.dateFound?.slice(0, 10) || "—"}</td>
+            <td><div className="max-w-[160px] truncate" title={item.storage}>{item.storage}</div></td>
+            <td><StatusPill tone={STATUS_TONE[item.status]}>{item.status}</StatusPill></td>
+            <RowActions>
+              <IconAction label={`${t("common.view")} ${item.id}`} onClick={() => setViewItem(item)} icon={<Eye size={17} aria-hidden="true" />} />
+              <IconAction label={`${t("common.edit")} ${item.id}`} tone="gold" onClick={() => setFormItem({ item })} icon={<Pencil size={16} aria-hidden="true" />} />
+              {isSuperAdmin && <IconAction label={`${t("common.delete")} ${item.id}`} tone="danger" onClick={() => setPendingAction({ type: "delete", reference: item.id })} icon={<Trash2 size={16} aria-hidden="true" />} />}
+            </RowActions>
+          </tr>
+        ))}
+      </DataTable>
 
       {viewItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)" }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <div className="text-xs font-mono text-slate-400">{viewItem.id}</div>
-                <h2 className="text-xl font-bold text-slate-900">{viewItem.item}</h2>
-              </div>
-              <button onClick={() => setViewItem(null)} className="text-slate-400 hover:text-slate-600">
-                <svg width="20" height="20" fill="none" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              {[ ["Description", viewItem.description], ["Category", viewItem.category], ["Location Found", viewItem.locationFound], ["Date Found", viewItem.dateFound], ["Storage", viewItem.storage], ["AI Status", viewItem.aiPercent ? (viewItem.matchedItem ? `Matched with ${viewItem.matchedItem} (${viewItem.aiPercent}%)` : `Matched (${viewItem.aiPercent}%)`) : "No Match"] ].map(([k, v]) => (
-                <div key={String(k)} className="bg-slate-50 rounded-lg p-3">
-                  <div className="text-xs text-slate-400 font-semibold mb-0.5">{String(k)}</div>
-                  <div className="font-medium text-slate-800">{String(v)}</div>
-                </div>
-              ))}
-            </div>
-            {viewItem.photo && (
-              <img src={viewItem.photo} alt={`${viewItem.item} preview`} className="mt-4 h-48 w-full rounded-xl bg-slate-50 object-contain" />
+        <AdminModal
+          title={viewItem.item}
+          description={tr("Found item {0}, stored at {1}", { "0": viewItem.id, "1": viewItem.storage })}
+          icon={<PackageCheck size={20} />}
+          size="lg"
+          onClose={() => setViewItem(null)}
+          footer={<>
+            {isSuperAdmin && <button type="button" onClick={() => setPendingAction({ type: "delete", reference: viewItem.id })} className={`${BTN.ghost} sm:mr-auto`}><Trash2 size={16} aria-hidden="true" />{t("common.delete")}</button>}
+            <button type="button" onClick={() => setViewItem(null)} className={BTN.ghost}>{t("common.close")}</button>
+            <button type="button" onClick={() => { setFormItem({ item: viewItem }); setViewItem(null); }} className={BTN.primary}><Pencil size={16} aria-hidden="true" />{t("common.edit")}</button>
+          </>}
+        >
+          <div className="grid gap-5 sm:grid-cols-[200px_minmax(0,1fr)]">
+            {viewItem.photo ? (
+              <img src={viewItem.photo} alt={tr("{0} photo", { "0": viewItem.item })} className="aspect-square w-full rounded-2xl object-cover ring-1 ring-line" />
+            ) : (
+              <div className="flex aspect-square w-full items-center justify-center rounded-2xl bg-frost-100 text-[13px] text-ink-muted ring-1 ring-line">{tr("No photo")}</div>
             )}
-            <div className="mt-4"><StatusBadge status={viewItem.status} /></div>
+            <div className="space-y-3">
+              <StatusPill tone={STATUS_TONE[viewItem.status]}>{viewItem.status}</StatusPill>
+              <DetailGrid items={[
+                ["Description", viewItem.description],
+                ["Category", viewItem.category],
+                ["Found at", viewItem.locationFound],
+                ["Date found", viewItem.dateFound?.slice(0, 10)],
+                ["Storage", viewItem.storage],
+                ["Logged by", viewItem.guardName],
+                ["AI match", viewItem.aiPercent ? `${viewItem.aiPercent}%${viewItem.matchedItem ? ` with ${viewItem.matchedItem}` : ""}` : "No strong match yet"],
+              ]} />
+            </div>
           </div>
-        </div>
+        </AdminModal>
       )}
 
-      {showModal && (
-        <RegisterModal
-          item={editItem}
-          onClose={() => { setShowModal(false); setEditItem(undefined); }}
-          onSave={(data) => setPendingAction({ type: "save", data, reference: editItem?.id })}
+      {formItem && (
+        <FoundItemFormModal
+          item={formItem.item}
+          busy={actionBusy}
+          onClose={() => setFormItem(null)}
+          onSubmit={(data) => setPendingAction({ type: "save", data, reference: formItem.item?.id })}
         />
       )}
-      {pendingAction && <ConfirmActionDialog
-        title={pendingAction.type === "delete" ? "delete this found item" : pendingAction.reference ? "save these found-item changes" : "register this found item"}
-        description={pendingAction.type === "delete" ? `This permanently deletes ${pendingAction.reference} and its linked claim records from the database.` : "The change will be saved to the shared item registry."}
-        confirmLabel={pendingAction.type === "delete" ? "Delete item" : "Confirm"}
-        danger={pendingAction.type === "delete"}
-        busy={actionBusy}
-        onCancel={() => setPendingAction(null)}
-        onConfirm={confirmPendingAction}
-      />}
+
+      {pendingAction && (
+        <ConfirmActionDialog
+          title={pendingAction.type === "delete" ? tr("delete found item {0}?", { "0": pendingAction.reference }) : pendingAction.reference ? tr("save these found-item changes?") : tr("register this found item?")}
+          description={pendingAction.type === "delete" ? tr("This permanently deletes {0}, its photo, and its linked claim records.", { "0": pendingAction.reference }) : tr("The change is saved to the shared item registry.")}
+          confirmLabel={pendingAction.type === "delete" ? tr("Delete item") : pendingAction.reference ? tr("Save changes") : tr("Register item")}
+          danger={pendingAction.type === "delete"}
+          busy={actionBusy}
+          onCancel={() => { if (!actionBusy) setPendingAction(null); }}
+          onConfirm={() => void confirmPendingAction()}
+        />
+      )}
     </div>
   );
 }

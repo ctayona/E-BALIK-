@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 export function SkeletonBlock({ className = "" }: { className?: string }) {
-  return <div aria-hidden="true" className={`animate-pulse rounded-xl bg-[#e4e9f2] ${className}`} />;
+  return <div aria-hidden="true" className={`animate-pulse rounded-xl bg-slate-200 ${className}`} />;
 }
 
 export function ReportGridSkeleton({ count = 4 }: { count?: number }) {

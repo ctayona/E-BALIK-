@@ -1,10 +1,15 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
-import { ArrowLeft, CalendarRange, ChevronDown, Clock3, ImagePlus, MapPin, PackageSearch, ShieldCheck, Tag, Upload } from "lucide-react";
+import { ArrowLeft, BadgeCheck, CalendarRange, ChevronDown, ClipboardList, FileStack, ImagePlus, MapPin, PackageSearch, RefreshCw, ShieldCheck, Tag, UserRound, X } from "lucide-react";
 import { useAuth } from "@/app/utils/useAuth";
 import { CX } from "@/app/utils/clay";
 import type { Page } from "@/app/types";
-import { ReportListSkeleton } from "@/app/shared/LoadingSkeleton";
+import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
+import ItemCollection from "@/app/shared/media/ItemCollection";
+import ItemImage, { type GalleryItem } from "@/app/shared/media/ItemImage";
+import ViewToggle from "@/app/shared/view/ViewToggle";
+import { useViewMode } from "@/app/shared/view/useViewMode";
+import Modal, { CountdownConsent } from "@/app/shared/modal/Modal";
 
 const CATEGORIES = ["Bags & Luggage", "Electronics", "Accessories", "Personal Effects", "Documents & Cards", "Clothing", "Keys", "Valuables", "Others"];
 const FOUND_LOCATIONS = ["Main Building Lobby", "Student Center", "Library", "ICT Building", "Faculty Hall", "Cafeteria", "Gym", "Other"];
@@ -56,6 +61,8 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
   const [reportLocation, setReportLocation] = useState("");
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const [mode] = useViewMode();
+  const [openReport, setOpenReport] = useState<Report | null>(null);
 
   const filteredReports = useMemo(() => {
     const query = reportSearch.trim().toLowerCase();
@@ -67,6 +74,11 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
       return matchesQuery && matchesCategory && matchesStatus && matchesLocation;
     });
   }, [reports, reportSearch, reportCategory, reportStatus, reportLocation]);
+
+  const galleryReports = useMemo<GalleryItem[]>(() => filteredReports.map((report) => ({
+    id: report.fpost_id, title: report.item_name, kind: "found", image: report.image_url || undefined, category: report.category,
+    location: report.location, date: report.found_date, description: report.description, heldAt: report.turnover_location, status: report.status,
+  })), [filteredReports]);
 
   useEffect(() => {
     if (!confirmationOpen || countdown <= 0) return;
@@ -147,75 +159,245 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
     if (tab === "reports") void loadReports();
   }
 
-  if (!focused && activeTab === "reports" && reportsLoading) {
-    return <main className="flex-1 min-h-screen bg-page p-6 md:p-10"><div className="mx-auto max-w-[980px] space-y-5"><div className="h-8 w-64 animate-pulse rounded-lg bg-slate-200" /><ReportListSkeleton count={5} /></div></main>;
-  }
+  const filtersActive = Boolean(reportSearch || reportCategory || reportStatus || reportLocation);
+  const summaryOf = (id: string) => matchSummaries[id] || { matched_above_55: 0, matched_below_54: 0, total_matches: 0 };
 
   return (
-    <div className="flex-1 min-h-screen bg-page p-6 md:p-10">
-      <div className="mx-auto max-w-[980px]">
-        <div className="mb-5 flex items-center gap-4">
-          <div className="flex size-[52px] items-center justify-center rounded-[16px] bg-navy-800 text-gold-300 border">
-            <PackageSearch size={22} />
+    <main className={CX.page}>
+      <div className="mx-auto w-full max-w-[1040px]">
+        <header className="mb-6 flex items-start gap-4">
+          <span className="flex size-14 shrink-0 items-center justify-center rounded-[18px] bg-[linear-gradient(145deg,#e6be76,#c9953f)] text-navy-950 shadow-[0_14px_30px_-14px_rgba(209,161,83,0.9)]">
+            <PackageSearch size={24} aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className={CX.eyebrow}>Found items</p>
+            <h1 className={`${CX.pageTitle} mt-0.5`}>{focused || activeTab === "intake" ? "Report a found item" : "My found reports"}</h1>
+            <p className={CX.pageLead}>Log what you found and where you handed it over. Owners are matched automatically.</p>
           </div>
-          <div>
-            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-gold-700">Found items</p>
-            <h1 className="text-[26px] font-semibold text-navy-800" style={{ fontFamily: 'var(--font-heading)' }}>Secure item reporting</h1>
-          </div>
-        </div>
+        </header>
 
-        {!focused && <div className="mb-5 flex gap-1 rounded-2xl border border-line bg-white p-1.5">
-          <button type="button" onClick={() => switchTab("intake")} className={`flex-1 rounded-[12px] px-4 py-3 text-[13px] font-bold transition-colors duration-200 ${activeTab === "intake" ? "bg-navy-800 hover:bg-navy-700 text-white border" : "text-ink-soft hover:bg-slate-100"}`}>Found Item Intake</button>
-          <button type="button" onClick={() => switchTab("reports")} className={`flex-1 rounded-[12px] px-4 py-3 text-[13px] font-bold transition-colors duration-200 ${activeTab === "reports" ? "bg-navy-800 hover:bg-navy-700 text-white border" : "text-ink-soft hover:bg-slate-100"}`}>My Found Reports</button>
-        </div>}
-        {focused && <button type="button" onClick={() => onBack?.("report-item")} className="mb-5 inline-flex items-center gap-2 rounded-xl border border-line-strong bg-white px-4 py-2.5 text-[13px] font-bold text-navy-800 transition-colors"><ArrowLeft size={14} /> Back to report choices</button>}
-
-        {error && <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-800">{error}</div>}
-
-        {focused || activeTab === "intake" ? (
-          <form onSubmit={handleSubmit} className="overflow-hidden rounded-2xl border border-line bg-white">
-            <div className="border-b border-line/60 bg-slate-50 px-6 py-5"><p className="text-[14px] text-ink-soft">Reporter: <span className="font-bold text-navy-800">{user?.email}</span> · {user?.campus_id || "Campus ID unavailable"}</p><p className="mt-1 text-[12px] text-ink-muted">The account identity above is recorded automatically and cannot be edited.</p></div>
-            <div className="grid gap-6 p-6 md:grid-cols-2">
-              <div className="md:col-span-2">
-                <label className="mb-2 block font-semibold text-[14px] text-ink">Item image</label>
-                <div onClick={() => fileRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); selectImage(event.dataTransfer.files[0]); }} className="flex min-h-[170px] cursor-pointer items-center justify-center rounded-[12px] border-2 border-dashed border-gold-400 bg-gold-50 p-4">
-                  {imagePreview ? <img src={imagePreview} alt="Found item preview" className="max-h-[210px] rounded-[9px] object-contain" /> : <div className="text-center text-ink-muted"><ImagePlus className="mx-auto mb-2 text-[#d1a153]" size={30} /><p className="text-[13px] font-semibold">Upload an image of the found item</p><p className="mt-1 text-[12px]">The image is stored in the found-item-images bucket.</p></div>}
-                </div>
-                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(event) => selectImage(event.target.files?.[0])} />
-                <button type="button" onClick={() => fileRef.current?.click()} className="mt-2 inline-flex items-center gap-2 text-[12px] font-semibold text-navy-800"><Upload size={14} /> Choose image</button>
-              </div>
-
-              <Field label="Item title / short description" value={title} onChange={setTitle} placeholder="Blue backpack with red zipper" required />
-              <SelectField label="Category" value={category} onChange={setCategory} options={CATEGORIES} />
-              <SelectField label="Where was it found?" value={location} onChange={setLocation} options={FOUND_LOCATIONS} icon={<MapPin size={15} />} />
-              <Field label="Date found" value={dateFound} onChange={setDateFound} type="date" icon={<CalendarRange size={15} />} required />
-              <div className="md:col-span-2"><TextAreaField label="Description / identifying details" value={description} onChange={setDescription} placeholder="Brand, color, size, and visible details." /></div>
-              <div className="md:col-span-2"><TextAreaField label="Distinctive marks / proof-of-ownership notes" value={distinctiveMarks} onChange={setDistinctiveMarks} placeholder="Keep private marks useful for later claim verification." icon={<Tag size={15} />} /></div>
-
-              <div className="md:col-span-2 rounded-[12px] border border-amber-200 bg-amber-50 p-5">
-                <div className="flex items-start gap-3"><ShieldCheck size={20} className="mt-0.5 text-gold-700" /><div><p className="font-bold text-navy-800">Turn over the item to security guard personnel</p><p className="mt-1 text-[12px] text-ink-muted">The report status is controlled by the system. Record where and to whom the item was handed over.</p></div></div>
-                <div className="mt-4 grid gap-4 md:grid-cols-2"><SelectField label="Security guard location" value={turnoverLocation} onChange={setTurnoverLocation} options={TURNOVER_LOCATIONS} /><Field label="Guard name or ID number" value={guardNameOrId} onChange={setGuardNameOrId} placeholder="Guard Santos / SG-014" required /></div>
-              </div>
-            </div>
-            <div className="flex justify-end border-t border-line/60 bg-slate-50 px-6 py-4"><button type="submit" disabled={isLoading} className="inline-flex items-center gap-2 rounded-xl border bg-navy-800 hover:bg-navy-700 text-gold-300 px-6 py-3 text-[14px] font-bold transition-colors disabled:opacity-60 disabled:cursor-not-allowed">{isLoading ? "Saving…" : "Publish Found Report"}</button></div>
-          </form>
+        {focused ? (
+          <button type="button" onClick={() => onBack?.("report-item")} className={`${CX.btnGhost} mb-5`}>
+            <ArrowLeft size={16} aria-hidden="true" /> Back to report choices
+          </button>
         ) : (
-          <div className="space-y-4">
-            <div className="grid gap-3 rounded-xl border border-line bg-white p-4 md:grid-cols-4">
-              <input value={reportSearch} onChange={(event) => setReportSearch(event.target.value)} placeholder="Search ID, item, guard..." className="h-[42px] rounded-[8px] border border-line px-3 text-[13px] md:col-span-2" />
-              <select value={reportCategory} onChange={(event) => setReportCategory(event.target.value)} className="h-[42px] rounded-[8px] border border-line bg-white px-3 text-[13px]"><option value="">All types</option>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select>
-              <select value={reportStatus} onChange={(event) => setReportStatus(event.target.value)} className="h-[42px] rounded-[8px] border border-line bg-white px-3 text-[13px]"><option value="">All statuses</option><option value="unclaimed">Unclaimed</option><option value="claimed">Claimed</option><option value="returned">Returned</option></select>
-              <input value={reportLocation} onChange={(event) => setReportLocation(event.target.value)} placeholder="Filter location..." className="h-[42px] rounded-[8px] border border-line px-3 text-[13px] md:col-span-2" />
-            </div>
-            <div className="max-h-[610px] space-y-4 overflow-y-auto pr-1">{filteredReports.length === 0 ? <div className="rounded-2xl border border-dashed border-line-strong bg-white p-10 text-center text-[14px] text-ink-muted">No found reports match these filters.</div> : filteredReports.map((report) => { const summary = matchSummaries[report.fpost_id] || { matched_above_55: 0, matched_below_54: 0, total_matches: 0 }; return <article key={report.fpost_id} className="overflow-hidden rounded-[16px] border border-line bg-white shadow-sm"><div className="flex flex-col gap-4 p-5 md:flex-row">{report.image_url ? <img src={report.image_url} alt={report.item_name} className="h-[130px] w-full rounded-[10px] object-cover md:w-[170px]" /> : <div className="flex h-[130px] w-full items-center justify-center rounded-[10px] bg-slate-50 text-[12px] text-slate-500 md:w-[170px]">No image</div>}<div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-[18px] font-semibold text-navy-800">{report.item_name}</p><div className="flex items-center gap-2"><span className="rounded-full bg-emerald-50 px-3 py-1 text-[12px] font-bold text-emerald-700">{report.status || "unclaimed"}</span><span className="rounded-full bg-[#eef4ff] px-3 py-1 text-[12px] font-bold text-navy-800">{report.fpost_id}</span></div></div><p className="mt-1 text-[12px] text-ink-muted">{report.category} · Found {report.found_date} · {report.location}</p><p className="mt-3 whitespace-pre-line text-[13px] text-ink-soft">{report.description || "No description provided."}</p><div className="mt-4 grid gap-2 text-[12px] text-ink-soft md:grid-cols-2"><p><span className="font-bold text-navy-800">Turned over at:</span> {report.turnover_location}</p><p><span className="font-bold text-navy-800">Guard:</span> {report.guard_name_or_id}</p><p><span className="font-bold text-navy-800">Reporter:</span> {report.reporter_email}</p><p><span className="font-bold text-navy-800">Campus ID:</span> {report.reporter_campus_id}</p></div><div className="mt-4 grid grid-cols-3 gap-2 rounded-[10px] bg-slate-50 p-3 text-center text-[12px]"><div><p className="text-[20px] font-semibold text-emerald-700">{summary.matched_above_55}</p><p className="font-semibold text-ink-soft">55%+ matched</p></div><div><p className="text-[20px] font-semibold text-gold-700">{summary.matched_below_54}</p><p className="font-semibold text-ink-soft">54% or lower</p></div><div><p className="text-[20px] font-semibold text-navy-800">{summary.total_matches}</p><p className="font-semibold text-ink-soft">Total matches</p></div></div></div></div></article>; })}</div>
+          <div role="tablist" aria-label="Found item views" className="glass mb-6 inline-flex w-full gap-1 rounded-[18px] p-1.5 sm:w-auto">
+            {([["intake", "Report form", ClipboardList], ["reports", "My found reports", FileStack]] as const).map(([tab, label, Icon]) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                onClick={() => switchTab(tab)}
+                className={`inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-[14px] font-semibold transition-colors sm:flex-none ${
+                  activeTab === tab ? "bg-[linear-gradient(180deg,#2b4282_0%,#1f3160_100%)] text-white shadow-[0_8px_18px_-10px_rgba(17,27,66,0.8)]" : "text-ink-soft hover:bg-white/80"
+                }`}
+              >
+                <Icon size={16} aria-hidden="true" />{label}
+              </button>
+            ))}
           </div>
         )}
 
-        {confirmationOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/55 px-4 backdrop-blur-[4px]"><div className="w-full max-w-lg rounded-2xl border border-line bg-white p-8"><div className="flex items-center gap-3 mb-4"><div className="flex size-[48px] items-center justify-center rounded-[16px] bg-amber-50 text-amber-700 border border-amber-300/50"><ShieldCheck size={22} /></div><div><p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-gold-700">Authenticity confirmation</p><h2 className="text-[22px] font-semibold text-navy-800" style={{ fontFamily: 'var(--font-heading)' }}>Confirm this found report</h2></div></div><p className="text-[14px] leading-6 text-ink-soft mb-4">I understand that this report must be valid and authentic. False, fraudulent, or intentionally misleading reports may be subject to disciplinary or legal action under applicable university rules.</p><div className="rounded-xl border border-blue-200 bg-tide-50 px-4 py-3 text-[13px] text-blue-700 mb-4"><Clock3 className="mr-2 inline text-blue-500" size={14} />Please review carefully. Confirmation unlocks in <span className="font-bold text-blue-800">{countdown} seconds</span>.</div><label className={`flex items-start gap-3 text-[13px] ${countdown > 0 ? "text-slate-500" : "text-navy-800"} mb-5 cursor-pointer`}><input type="checkbox" disabled={countdown > 0} checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className="mt-0.5 size-4 accent-navy-800 cursor-pointer" />I agree that the information submitted is truthful and that the item has been turned over as recorded.</label><div className="flex justify-end gap-3"><button type="button" onClick={() => setConfirmationOpen(false)} className="rounded-xl border border-line-strong bg-white px-5 py-2.5 text-[13px] font-bold text-navy-800 transition-colors">Cancel</button><button type="button" disabled={!agreed || countdown > 0 || isLoading} onClick={() => void confirmSubmit()} className="rounded-xl border bg-navy-800 hover:bg-navy-700 px-5 py-2.5 text-[13px] font-bold text-white disabled:opacity-50 transition-colors">{isLoading ? "Publishing…" : "Confirm and Publish"}</button></div></div></div>}
+        {error && <div role="alert" className={`${CX.alertError} mb-5`}>{error}</div>}
+
+        {focused || activeTab === "intake" ? (
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <section className={`${CX.card} overflow-hidden`} aria-labelledby="found-photo-heading">
+              <div className="flex items-center gap-3 border-b border-line px-5 py-4 sm:px-6">
+                <span className="flex size-9 items-center justify-center rounded-xl bg-iris-50 text-iris-600"><ImagePlus size={17} aria-hidden="true" /></span>
+                <div>
+                  <h2 id="found-photo-heading" className="text-[16px] font-semibold text-ink">Photo of the item</h2>
+                  <p className="text-[13px] text-ink-muted">A clear photo helps the owner recognise it quickly.</p>
+                </div>
+              </div>
+              <div className="p-5 sm:p-6">
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => { event.preventDefault(); selectImage(event.dataTransfer.files[0]); }}
+                  className="group relative flex min-h-[200px] w-full items-center justify-center overflow-hidden rounded-[20px] border-2 border-dashed border-gold-300 bg-[radial-gradient(80%_80%_at_50%_0%,#fdf8ee,#ffffff)] dark:border-gold-500/40 dark:bg-[radial-gradient(80%_80%_at_50%_0%,rgba(209,161,83,0.16),rgba(255,255,255,0.02))] p-4 transition-colors hover:border-gold-500"
+                  aria-label={imagePreview ? "Change item photo" : "Upload item photo"}
+                >
+                  {imagePreview ? (
+                    <>
+                      <img src={imagePreview} alt="Found item preview" className="max-h-[260px] rounded-2xl object-contain shadow-card" />
+                      <span className="glass-dark absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold"><RefreshCw size={13} aria-hidden="true" />Change photo</span>
+                    </>
+                  ) : (
+                    <span className="flex flex-col items-center text-center">
+                      <span className="flex size-16 items-center justify-center rounded-2xl bg-white text-gold-600 shadow-card transition-transform group-hover:scale-105"><ImagePlus size={28} aria-hidden="true" /></span>
+                      <span className="mt-3 text-[15px] font-semibold text-ink">Tap to add a photo</span>
+                      <span className="mt-1 text-[13px] text-ink-muted">or drag and drop an image here</span>
+                    </span>
+                  )}
+                </button>
+                <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => selectImage(event.target.files?.[0])} />
+              </div>
+            </section>
+
+            <section className={`${CX.card} p-5 sm:p-6`} aria-labelledby="found-details-heading">
+              <h2 id="found-details-heading" className="mb-4 text-[16px] font-semibold text-ink">Item details</h2>
+              <div className="grid gap-5 md:grid-cols-2">
+                <Field label="Item title / short description" value={title} onChange={setTitle} placeholder="Blue backpack with red zipper" required />
+                <SelectField label="Category" value={category} onChange={setCategory} options={CATEGORIES} />
+                <SelectField label="Where was it found?" value={location} onChange={setLocation} options={FOUND_LOCATIONS} icon={<MapPin size={15} />} />
+                <Field label="Date found" value={dateFound} onChange={setDateFound} type="date" icon={<CalendarRange size={15} />} required />
+                <div className="md:col-span-2"><TextAreaField label="Description / identifying details" value={description} onChange={setDescription} placeholder="Brand, color, size, and visible details." /></div>
+                <div className="md:col-span-2"><TextAreaField label="Distinctive marks / proof-of-ownership notes" value={distinctiveMarks} onChange={setDistinctiveMarks} placeholder="Keep private marks useful for later claim verification." icon={<Tag size={15} />} /></div>
+              </div>
+            </section>
+
+            <section className="relative overflow-hidden rounded-[20px] border border-gold-200 bg-[linear-gradient(135deg,#fdf8ee_0%,#ffffff_70%)] dark:border-gold-500/25 dark:bg-[linear-gradient(135deg,rgba(209,161,83,0.14)_0%,rgba(19,29,58,0.62)_70%)] p-5 shadow-card sm:p-6" aria-labelledby="found-handover-heading">
+              <div className="flex items-start gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[linear-gradient(145deg,#e6be76,#c9953f)] text-navy-950"><ShieldCheck size={19} aria-hidden="true" /></span>
+                <div>
+                  <h2 id="found-handover-heading" className="text-[16px] font-semibold text-ink">Hand it over to campus security</h2>
+                  <p className="mt-0.5 text-[13px] text-ink-muted">The report status is controlled by the system. Record where and to whom the item was handed over.</p>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-5 md:grid-cols-2">
+                <SelectField label="Security guard location" value={turnoverLocation} onChange={setTurnoverLocation} options={TURNOVER_LOCATIONS} />
+                <Field label="Guard name or ID number" value={guardNameOrId} onChange={setGuardNameOrId} placeholder="Guard Santos / SG-014" required />
+              </div>
+            </section>
+
+            <div className="glass sticky bottom-[calc(76px+env(safe-area-inset-bottom))] z-10 flex flex-col gap-3 rounded-[20px] p-4 sm:flex-row sm:items-center sm:justify-between lg:bottom-4">
+              <p className="flex items-center gap-2 text-[13px] text-ink-muted">
+                <UserRound size={15} className="shrink-0 text-iris-600" aria-hidden="true" />
+                <span className="min-w-0 truncate">Reporting as <span className="font-semibold text-ink">{user?.email}</span>{user?.campus_id ? ` · ${user.campus_id}` : ""}</span>
+              </p>
+              <button type="submit" disabled={isLoading} className={`${CX.btnGold} shrink-0 px-6`}>
+                <BadgeCheck size={17} aria-hidden="true" />{isLoading ? "Saving…" : "Publish found report"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="space-y-5">
+            <div className="glass sticky top-[calc(76px+env(safe-area-inset-top))] z-20 rounded-[20px] p-3">
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))_auto]">
+                <label className="sr-only" htmlFor="found-report-search">Search your found reports</label>
+                <input id="found-report-search" type="search" value={reportSearch} onChange={(event) => setReportSearch(event.target.value)} placeholder="Search ID, item, guard…" className={`${CX.input} w-full`} />
+                <label className="sr-only" htmlFor="found-report-category">Category</label>
+                <select id="found-report-category" value={reportCategory} onChange={(event) => setReportCategory(event.target.value)} className={`${CX.input} w-full`}><option value="">All types</option>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select>
+                <label className="sr-only" htmlFor="found-report-status">Status</label>
+                <select id="found-report-status" value={reportStatus} onChange={(event) => setReportStatus(event.target.value)} className={`${CX.input} w-full`}><option value="">All statuses</option><option value="unclaimed">Unclaimed</option><option value="claimed">Claimed</option><option value="returned">Returned</option></select>
+                <label className="sr-only" htmlFor="found-report-location">Location</label>
+                <input id="found-report-location" value={reportLocation} onChange={(event) => setReportLocation(event.target.value)} placeholder="Location…" className={`${CX.input} w-full`} />
+                <div className="flex items-center justify-end gap-2">
+                  {filtersActive && (
+                    <button type="button" onClick={() => { setReportSearch(""); setReportCategory(""); setReportStatus(""); setReportLocation(""); }} className="inline-flex h-11 items-center gap-1 rounded-xl px-3 text-[13px] font-semibold text-iris-700 hover:bg-iris-50">
+                      <X size={14} aria-hidden="true" />Clear
+                    </button>
+                  )}
+                  <ViewToggle compact />
+                </div>
+              </div>
+            </div>
+
+            {reportsLoading ? <ReportGridSkeleton count={4} /> : (
+              <ItemCollection
+                label="Your found reports"
+                items={galleryReports}
+                mode={mode}
+                showKind={false}
+                onOpen={(_item, index) => setOpenReport(filteredReports[index])}
+                badge={(item) => <span className="inline-flex rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold capitalize text-navy-800 ring-1 ring-line">{item.status || "unclaimed"}</span>}
+                extra={(item) => {
+                  const summary = summaryOf(item.id);
+                  return (
+                    <span className="flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-800 ring-1 ring-emerald-200 tabular-nums">{summary.matched_above_55} likely</span>
+                      <span className="rounded-full bg-frost-100 px-2 py-0.5 text-ink-soft ring-1 ring-line tabular-nums">{summary.total_matches} total</span>
+                    </span>
+                  );
+                }}
+                empty={
+                  <div className="glass flex flex-col items-center gap-3 rounded-[22px] px-6 py-14 text-center">
+                    <span className="flex size-14 items-center justify-center rounded-2xl bg-frost-100 text-iris-600"><FileStack size={26} aria-hidden="true" /></span>
+                    <p className="text-[16px] font-semibold text-ink">{filtersActive ? "No found reports match these filters" : "You haven't reported a found item yet"}</p>
+                    <button type="button" onClick={() => switchTab("intake")} className={CX.btnGold}>Report a found item</button>
+                  </div>
+                }
+              />
+            )}
+          </div>
+        )}
       </div>
-    </div>
+
+      {/* Report details */}
+      <Modal
+        open={Boolean(openReport)}
+        onClose={() => setOpenReport(null)}
+        size="lg"
+        tone="gold"
+        icon={<ShieldCheck size={21} />}
+        eyebrow={openReport ? `Found report · ${openReport.fpost_id}` : undefined}
+        title={openReport?.item_name}
+        hero={openReport?.image_url ? <ItemImage item={{ image: openReport.image_url, title: openReport.item_name, category: openReport.category }} className="h-[200px] w-full sm:h-[240px]" /> : undefined}
+        footer={<button type="button" onClick={() => setOpenReport(null)} className={CX.btnNavy}>Done</button>}
+      >
+        {openReport && (
+          <div className="space-y-4">
+            <p className="whitespace-pre-line text-[15px] leading-7 text-ink-soft">{openReport.description || "No description provided."}</p>
+            <dl className="grid gap-3 sm:grid-cols-2">
+              {[
+                ["Category", openReport.category], ["Status", openReport.status || "unclaimed"],
+                ["Found at", openReport.location], ["Date found", openReport.found_date],
+                ["Turned over at", openReport.turnover_location], ["Guard", openReport.guard_name_or_id],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl border border-line bg-frost-50 p-3.5">
+                  <dt className="text-[12px] font-medium text-ink-muted">{label}</dt>
+                  <dd className="mt-0.5 break-words text-[15px] font-semibold capitalize text-ink">{value || "Not recorded"}</dd>
+                </div>
+              ))}
+            </dl>
+            <div className="grid grid-cols-3 gap-2 rounded-2xl border border-line bg-white p-3 text-center">
+              {[
+                ["55%+ matched", summaryOf(openReport.fpost_id).matched_above_55, "text-emerald-700"],
+                ["54% or lower", summaryOf(openReport.fpost_id).matched_below_54, "text-gold-700"],
+                ["Total matches", summaryOf(openReport.fpost_id).total_matches, "text-navy-800"],
+              ].map(([label, value, tone]) => (
+                <div key={label as string}>
+                  <p className={`font-[family-name:var(--font-heading)] text-[22px] font-semibold tabular-nums ${tone}`}>{value as number}</p>
+                  <p className="text-[12px] font-medium text-ink-muted">{label as string}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Authenticity confirmation */}
+      <Modal
+        open={confirmationOpen}
+        onClose={() => setConfirmationOpen(false)}
+        dismissible={!isLoading}
+        size="sm"
+        tone="gold"
+        icon={<ShieldCheck size={21} />}
+        eyebrow="Authenticity confirmation"
+        title="Confirm this found report"
+        description="Reports must be valid and authentic. False or misleading reports may lead to disciplinary or legal action under university rules."
+        footer={
+          <>
+            <button type="button" disabled={isLoading} onClick={() => setConfirmationOpen(false)} className={CX.btnGhost}>Cancel</button>
+            <button type="button" disabled={!agreed || countdown > 0 || isLoading} onClick={() => void confirmSubmit()} className={CX.btnGold}>{isLoading ? "Publishing…" : "Confirm and publish"}</button>
+          </>
+        }
+      >
+        <CountdownConsent
+          countdown={countdown}
+          checked={agreed}
+          onCheckedChange={setAgreed}
+          label="I agree that the information submitted is truthful and that the item has been turned over as recorded."
+        />
+      </Modal>
+    </main>
   );
 }
+
 
 function FieldLabel({ htmlFor, label, required, icon }: { htmlFor: string; label: string; required?: boolean; icon?: React.ReactNode }) {
   return (

@@ -5,7 +5,24 @@
       "name": "ebalik-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
+      "port": 5173,
+      "autoPort": false
+    },
+    {
+      "name": "ebalik-frontend-running",
+      "url": "http://localhost:5173",
       "port": 5173
+    },
+    {
+      "name": "ebalik-admin-running",
+      "url": "http://localhost:8443",
+      "port": 8443
+    },
+    {
+      "name": "ebalik-pwa-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "preview", "--config", "Users/Frontend/vite.config.ts", "--port", "4173", "--strictPort"],
+      "port": 4173
     }
   ]
 }

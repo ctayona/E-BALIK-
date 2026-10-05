@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
-import { ActivityLog, activityLogs as initialLogs } from "../../data/mockData";
-import { fetchAdminActivityLogs, fetchAdminAdministratorActivityLogs, getStoredAdmin, reportAdminProcess, type UserActivityLog } from "../../utils/api";
+import type { ActivityLog } from "../../data/mockData";
+import { fetchAdminActivityLogs, fetchAdminAdministratorActivityLogs, reportAdminProcess, type UserActivityLog } from "../../utils/api";
+import { isSuperAdmin as isSuperAdminRole } from "../../utils/permissions";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
+import { T } from "../../components/ui/management";
 
+import { tr } from "../../utils/preferences";
 type FilterType = "All Types" | "Lost Item" | "Found Item" | "Claim Actions" | "AI Matching" | "Admin & Security";
 const FILTER_TABS: FilterType[] = ["All Types", "Lost Item", "Found Item", "Claim Actions", "AI Matching", "Admin & Security"];
 
@@ -47,7 +50,7 @@ export default function ActivityLogs() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [adminLogView, setAdminLogView] = useState(false);
-  const isSuperAdmin = getStoredAdmin()?.access_level === "super_admin";
+  const isSuperAdmin = isSuperAdminRole();
 
   useEffect(() => {
     let active = true;
@@ -90,7 +93,7 @@ export default function ActivityLogs() {
       reportAdminProcess({
         success: true,
         title: adminLogView ? "User activity logs" : "Administrator activity logs",
-        message: `${data.length} audit record${data.length === 1 ? "" : "s"} loaded.`,
+        message: tr("{0} audit record{1} loaded.", { "0": data.length, "1": data.length === 1 ? "" : "s" }),
       });
     } catch (error) {
       reportAdminProcess({
@@ -117,7 +120,7 @@ export default function ActivityLogs() {
     link.download = `${adminLogView ? "admin" : "user"}-activity-logs.csv`;
     link.click();
     URL.revokeObjectURL(blobUrl);
-    reportAdminProcess({ success: true, title: "Export activity logs", message: `${filtered.length} records exported to CSV.` });
+    reportAdminProcess({ success: true, title: "Export activity logs", message: tr("{0} records exported to CSV.", { "0": filtered.length }) });
   };
 
   if (loading) {
@@ -132,18 +135,18 @@ export default function ActivityLogs() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Activity Logs</h1>
-          <p className="text-sm text-slate-500">{logs.length} {adminLogView ? "administrator" : "user"} audit records</p>
+          <h1 className="font-[family-name:var(--font-heading)] text-[26px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[30px]"><T k="page.activityLogs" /></h1>
+          <p className="mt-1 max-w-[68ch] text-[14px] leading-6 text-ink-muted">{adminLogView ? tr("{0} administrator audit records", { "0": logs.length }) : tr("{0} user audit records", { "0": logs.length })}</p>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
         {isSuperAdmin && <button onClick={() => void toggleAdminLogs()} className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100">
-          {adminLogView ? "View User Logs" : "View Admin / Superadmin Logs"}
+          {adminLogView ? tr("View User Logs") : tr("View Admin / Superadmin Logs")}
         </button>}
         <button onClick={exportLogs} className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border border-line rounded-lg hover:bg-navy-50 text-slate-700">
           <svg width="15" height="15" fill="none" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          Export CSV
+          {tr("Export CSV")}
         </button>
         </div>
       </div>
@@ -152,14 +155,14 @@ export default function ActivityLogs() {
       <div className="bg-white rounded-2xl border border-line shadow-card p-4 flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-52">
           <svg className="absolute left-3 top-2.5 text-slate-400" width="15" height="15" fill="none" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2"/><path d="m21 21-3-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search action, admin, item ID..." className="w-full pl-9 pr-3 py-2 text-sm border border-line rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-600/20" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={tr("Search action, admin, item ID...")} className="w-full pl-9 pr-3 py-2 text-sm border border-line rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-600/20" />
         </div>
         <div className="flex gap-1 flex-wrap">
           {FILTER_TABS.map(tab => (
             <button key={tab} onClick={() => setActiveFilter(tab)}
               className="px-3 py-2 rounded-lg text-xs font-semibold transition-all"
               style={activeFilter === tab ? { background: "#1f3160", color: "white" } : { background: "#f8fafc", color: "#64748b" }}>
-              {tab}
+              {tr(tab)}
             </button>
           ))}
         </div>
@@ -170,14 +173,14 @@ export default function ActivityLogs() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line">
-              {["LOG ID","TIMESTAMP","ADMIN","ACTION","MODULE","TARGET","RESULT",""].map(h => (
-                <th key={h} className="text-left px-5 py-4 text-xs font-semibold text-slate-400 tracking-wide">{h}</th>
+              {["Log ID","Timestamp","Admin","Action","Module","Target","Result",""].map(h => (
+                <th key={h} className="text-left px-5 py-4 text-xs font-semibold text-slate-400">{tr(h)}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={8} className="text-center py-12 text-slate-400">No logs found</td></tr>
+              <tr><td colSpan={8} className="text-center py-12 text-slate-400">{tr("No logs found")}</td></tr>
             ) : filtered.map(log => {
               const rs = resultStyle(log.result);
               const mc = moduleColors[log.module] ?? { bg: "#f8fafc", text: "#64748b" };
@@ -218,9 +221,9 @@ export default function ActivityLogs() {
                   <tr key={`${log.id}-expanded`}>
                     <td colSpan={8} className="px-5 py-3 bg-blue-50 border-b border-blue-100">
                       <div className="text-xs text-blue-800 space-y-1">
-                        <div><strong>Full Log Entry:</strong> {log.id}</div>
-                        <div><strong>Admin:</strong> {log.admin} ({log.adminId}) performed <strong>{log.action}</strong> on {log.target} ({log.targetId})</div>
-                        <div><strong>Module:</strong> {log.module} · <strong>Result:</strong> {log.result} · <strong>Timestamp:</strong> {log.timestamp}</div>
+                        <div><strong>{tr("Full Log Entry:")}</strong> {log.id}</div>
+                        <div><strong>{tr("Admin:")}</strong> {log.admin} ({log.adminId}) {tr("performed")} <strong>{log.action}</strong> {tr("on")} {log.target} ({log.targetId})</div>
+                        <div><strong>{tr("Module:")}</strong> {log.module} · <strong>{tr("Result:")}</strong> {log.result} · <strong>{tr("Timestamp:")}</strong> {log.timestamp}</div>
                       </div>
                     </td>
                   </tr>

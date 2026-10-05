@@ -224,7 +224,7 @@ Authorization: Bearer <jwt-token>
 
 ## 📝 ENVIRONMENT VARIABLES
 
-All configured in `backend/.env`:
+All configured in `Environment_Configs/backend/.env`:
 
 ```
 # SUPABASE

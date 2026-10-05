@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { IdCard, Save, Upload, UserRound, CheckCircle2, ShieldCheck } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { ArrowLeft, IdCard, Save, Upload, UserRound, CheckCircle2, ShieldCheck } from "lucide-react";
+import { motion } from "motion/react";
 import type { Page } from "@/app/types";
 import { useAuth } from "@/app/utils/useAuth";
 import type { User } from "@/app/utils/useAuth";
 import { CX, SPRING } from "@/app/utils/clay";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
+import Modal from "@/app/shared/modal/Modal";
 
 export default function Profile({
   user,
@@ -120,7 +121,7 @@ export default function Profile({
           <div>
             <span className={CX.sectionLabel}>Profile</span>
             <h1 className="text-[30px] font-semibold text-navy-800 mt-1" style={{ fontFamily: "var(--font-heading)" }}>
-              Account Details
+              Account details
             </h1>
           </div>
           <motion.button
@@ -131,7 +132,7 @@ export default function Profile({
             onClick={() => onNavigate("dashboard")}
             className={`${CX.btnGhost} px-5 py-2.5 text-[13px]`}
           >
-            ← Dashboard
+            <ArrowLeft size={15} aria-hidden="true" /> Back to dashboard
           </motion.button>
         </motion.div>
 
@@ -153,7 +154,7 @@ export default function Profile({
                 <p className="text-[13px] text-white/60 mt-0.5">{user?.email || "No email on file"}</p>
               </div>
             </div>
-            <span className={CX.badgeGold}>Active Account</span>
+            <span className={CX.badgeGold}>Active account</span>
           </div>
 
           {/* Form body */}
@@ -162,7 +163,7 @@ export default function Profile({
             <div className={`${user?.verification_status === "verified" ? CX.alertSuccess : CX.alertInfo} flex items-start gap-3`}>
               <ShieldCheck size={18} className="shrink-0 mt-0.5" />
               <div>
-                <p className="text-[12px] font-bold uppercase tracking-[0.18em] mb-1">Account Verification</p>
+                <p className="text-[13px] font-semibold mb-1">Account verification</p>
                 <p className="text-[14px] text-navy-800">
                   {user?.verification_status === "verified"
                     ? "Your identity document has been reviewed and your account is verified."
@@ -181,12 +182,12 @@ export default function Profile({
             {/* Name fields */}
             <div className="grid gap-4 md:grid-cols-3">
               {[
-                { label: "First Name",  field: "fname" as const, placeholder: "Juan" },
-                { label: "Middle Name", field: "mname" as const, placeholder: "(Optional)" },
-                { label: "Last Name",   field: "lname" as const, placeholder: "Dela Cruz" },
+                { label: "First name",  field: "fname" as const, placeholder: "Juan" },
+                { label: "Middle name", field: "mname" as const, placeholder: "(Optional)" },
+                { label: "Last name",   field: "lname" as const, placeholder: "Dela Cruz" },
               ].map(({ label, field, placeholder }) => (
                 <div key={field} className="flex flex-col gap-2">
-                  <label className="text-[12px] font-bold uppercase tracking-[0.16em] text-navy-800">{label}</label>
+                  <label className="text-[12px] font-bold text-navy-800">{label}</label>
                   <input
                     value={formData[field]}
                     onChange={(e) => handleChange(field, e.target.value)}
@@ -200,20 +201,20 @@ export default function Profile({
             {/* ID + Role (read-only) */}
             <div className="grid gap-4 md:grid-cols-2">
               <div className="flex flex-col gap-2">
-                <label className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.16em] text-navy-800">
+                <label className="flex items-center gap-2 text-[12px] font-bold text-navy-800">
                   <IdCard size={14} className="text-[#d1a153]" /> Campus ID
                 </label>
                 <input value={formData.campus_id} readOnly className={clayFieldReadonly} />
               </div>
               <div className="flex flex-col gap-2">
-                <label className="text-[12px] font-bold uppercase tracking-[0.16em] text-navy-800">Role</label>
+                <label className="text-[12px] font-bold text-navy-800">Role</label>
                 <input value={formData.user_role || "Others"} readOnly className={clayFieldReadonly} />
               </div>
             </div>
 
             {/* Role info */}
             <div className={`${CX.alertInfo}`}>
-              <p className="text-[12px] font-bold text-blue-800 mb-1">Incorrect Role?</p>
+              <p className="text-[12px] font-bold text-blue-800 mb-1">Incorrect role?</p>
               <p>If your account type was detected incorrectly, complete your verification steps below to confirm your role before continuing.</p>
             </div>
 
@@ -240,7 +241,7 @@ export default function Profile({
                   transition={SPRING}
                   className={`${CX.btnNavy} flex items-center gap-2 px-5 py-3 text-[13px] shrink-0`}
                 >
-                  <Upload size={15} /> {isLoading ? "Uploading…" : user?.verification_status === "verified" ? "Verified" : user?.verification_status === "pending" ? "Replace Document" : "Upload Document"}
+                  <Upload size={15} /> {isLoading ? "Uploading…" : user?.verification_status === "verified" ? "Verified" : user?.verification_status === "pending" ? "Replace document" : "Upload document"}
                 </motion.button>
               </div>
             </div>
@@ -261,120 +262,90 @@ export default function Profile({
         </motion.div>
       </div>
 
-      {/* ── Upload type modal ── */}
-      <AnimatePresence>
-        {showUploadModal && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/55 px-4 backdrop-blur-[4px]"
-          >
-            <motion.div
-              initial={{ scale: 0.88, y: 24 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 16 }}
-              transition={SPRING}
-              className={`${CX.modal} w-full max-w-lg`}
-            >
-              <span className={CX.sectionLabel}>Verification Document</span>
-              <h3 className="text-[22px] font-semibold text-navy-800" style={{ fontFamily: "var(--font-heading)" }}>
-                Choose document type
-              </h3>
-              <p className="text-[14px] text-ink-muted">
-                {user?.email?.endsWith('@umak.edu.ph')
-                  ? (user?.user_role === 'Faculty'
-                    ? 'Faculty accounts are encouraged to upload a Student / Campus ID.'
-                    : 'Student accounts are encouraged to upload a Certificate of Registration (COR).')
-                  : 'Upload the document that best confirms your identity for account verification.'}
-              </p>
+      {/* Upload type modal */}
+      <Modal
+        open={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        size="md"
+        tone="iris"
+        icon={<IdCard size={21} />}
+        eyebrow="Verification document"
+        title="Choose a document type"
+        description={user?.email?.endsWith("@umak.edu.ph")
+          ? (user?.user_role === "Faculty"
+            ? "Faculty accounts are encouraged to upload a Student / Campus ID."
+            : "Student accounts are encouraged to upload a Certificate of Registration (COR).")
+          : "Upload the document that best confirms your identity for account verification."}
+        footer={
+          <>
+            <button type="button" onClick={() => setShowUploadModal(false)} className={CX.btnGhost}>Cancel</button>
+            <button type="button" onClick={() => { setShowUploadModal(false); fileInputRef.current?.click(); }} className={CX.btnNavy}>Choose file</button>
+          </>
+        }
+      >
+        <div role="radiogroup" aria-label="Document type" className="flex flex-col gap-3">
+          {[
+            { id: "cor", label: "Certificate of Registration (COR)", description: "Recommended for students." },
+            { id: "student_id", label: "Student / Campus ID", description: "Recommended for faculty or staff." },
+            { id: "government_id", label: "Government ID", description: "Alternative valid identification." },
+          ].map((doc) => {
+            const active = selectedDocumentType === doc.id;
+            return (
+              <button
+                key={doc.id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => setSelectedDocumentType(doc.id as "cor" | "student_id" | "government_id")}
+                className={`flex w-full items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-[border-color,background-color,box-shadow] ${
+                  active ? "border-iris-400 bg-iris-50 shadow-[0_0_0_4px_rgba(110,142,240,0.15)]" : "border-line bg-white hover:border-iris-200 hover:bg-frost-50"
+                }`}
+              >
+                <span>
+                  <span className="block text-[15px] font-semibold text-ink">{doc.label}</span>
+                  <span className="mt-0.5 block text-[13px] text-ink-muted">{doc.description}</span>
+                </span>
+                <span className={`flex size-6 shrink-0 items-center justify-center rounded-full border-2 ${active ? "border-iris-500 bg-iris-500 text-white" : "border-line-strong"}`}>
+                  {active && <CheckCircle2 size={14} aria-hidden="true" />}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p className={`${CX.helper} mt-3`}>JPG, PNG, WEBP or PDF up to 10 MB. Only administrators can see this document.</p>
+      </Modal>
 
-              <div className="flex flex-col gap-3 w-full">
-                {[
-                  { id: 'cor',          label: 'Certificate of Registration (COR)', description: 'Recommended for students.' },
-                  { id: 'student_id',   label: 'Student / Campus ID',               description: 'Recommended for faculty or staff.' },
-                  { id: 'government_id',label: 'Government ID',                     description: 'Alternative valid identification.' },
-                ].map((doc) => (
-                  <button
-                    key={doc.id}
-                    type="button"
-                    onClick={() => setSelectedDocumentType(doc.id as "cor" | "student_id" | "government_id")}
-                    className={`w-full rounded-[16px] border p-4 text-left transition-colors duration-200 ${
-                      selectedDocumentType === doc.id
-                        ? 'border-[#1f3160] bg-[#dbeafe] '
-                        : 'border-line bg-slate-50 hover:border-line-strong '
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[14px] font-bold text-navy-800">{doc.label}</p>
-                        <p className="mt-1 text-[12px] text-ink-muted">{doc.description}</p>
-                      </div>
-                      {selectedDocumentType === doc.id && <CheckCircle2 size={18} className="text-navy-800 shrink-0" />}
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex justify-end gap-3 w-full">
-                <button type="button" onClick={() => setShowUploadModal(false)} className={`${CX.btnGhost} px-5 py-2.5 text-[13px]`}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setShowUploadModal(false); fileInputRef.current?.click(); }}
-                  className={`${CX.btnNavy} px-5 py-2.5 text-[13px]`}
-                >
-                  Continue
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Confirm save modal ── */}
-      <AnimatePresence>
-        {showConfirmModal && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/55 px-4 backdrop-blur-[4px]"
-          >
-            <motion.div
-              initial={{ scale: 0.88, y: 24 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 16 }}
-              transition={SPRING}
-              className={`${CX.modal} w-full max-w-md`}
-            >
-              <span className={CX.sectionLabel}>Confirmation Required</span>
-              <h3 className="text-[22px] font-semibold text-navy-800" style={{ fontFamily: "var(--font-heading)" }}>
-                Save profile changes?
-              </h3>
-              <p className="text-[14px] text-ink-muted">
-                Type <strong className="text-navy-800">YES</strong> to confirm that you want to save these changes to your account.
-              </p>
-              <input
-                value={confirmValue}
-                onChange={(e) => setConfirmValue(e.target.value)}
-                placeholder="YES"
-                className={`${CX.input} h-[50px] w-full`}
-              />
-              {errorMessage && <div className={CX.alertError}>{errorMessage}</div>}
-              <div className="flex justify-end gap-3 w-full">
-                <button
-                  type="button"
-                  onClick={() => { setShowConfirmModal(false); setConfirmValue(""); }}
-                  className={`${CX.btnGhost} px-5 py-2.5 text-[13px]`}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleConfirmSave()}
-                  className={`${CX.btnNavy} px-5 py-2.5 text-[13px]`}
-                >
-                  Confirm Save
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Confirm save modal */}
+      <Modal
+        open={showConfirmModal}
+        onClose={() => { setShowConfirmModal(false); setConfirmValue(""); }}
+        size="sm"
+        tone="navy"
+        icon={<Save size={20} />}
+        eyebrow="Confirmation required"
+        title="Save profile changes?"
+        description="Type YES to confirm you want to save these changes to your account."
+        footer={
+          <>
+            <button type="button" onClick={() => { setShowConfirmModal(false); setConfirmValue(""); }} className={CX.btnGhost}>Cancel</button>
+            <button type="button" disabled={confirmValue.trim() !== "YES"} onClick={() => void handleConfirmSave()} className={CX.btnNavy}>Save changes</button>
+          </>
+        }
+      >
+        <label htmlFor="profile-confirm-yes" className={CX.label}>Type YES to continue</label>
+        <input
+          id="profile-confirm-yes"
+          data-autofocus
+          value={confirmValue}
+          onChange={(e) => setConfirmValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && confirmValue.trim() === "YES") void handleConfirmSave(); }}
+          placeholder="YES"
+          autoComplete="off"
+          autoCapitalize="characters"
+          className={`${CX.input} w-full text-center font-semibold tracking-[0.3em]`}
+        />
+        {errorMessage && <div role="alert" className={`${CX.alertError} mt-3`}>{errorMessage}</div>}
+      </Modal>
 
       {/* Hidden file input (unchanged) */}
       <input

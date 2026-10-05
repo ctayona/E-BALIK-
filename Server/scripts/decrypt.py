@@ -8,7 +8,7 @@ sys.path.insert(0, backend_path)
 
 # Load environment variables
 from dotenv import load_dotenv
-load_dotenv(os.path.join(backend_path, '.env'))
+load_dotenv(os.path.join(os.path.dirname(backend_path), 'Environment_Configs', 'backend', '.env'))
 
 # Now import CryptoService
 from app.utils.crypto_service import CryptoService

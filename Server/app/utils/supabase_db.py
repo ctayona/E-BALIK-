@@ -241,6 +241,22 @@ class SupabaseDB:
         created = response.data[0] if response.data else {}
         return self._decrypt_claim_sensitive_fields(created) or created
 
+    def find_open_claim(self, found_item_id: str, account_id: str) -> Optional[Dict[str, Any]]:
+        """Return an existing pending/approved claim by this account for this found item, if any."""
+        response = self.client.table('claims').select('claim_id, claim_reference, status').eq(
+            'found_item_id', found_item_id
+        ).eq('claimant_account_id', account_id).in_('status', ['pending', 'approved_for_pickup']).limit(1).execute()
+        return response.data[0] if response.data else None
+
+    def update_claim_details(self, claim_id: str, claim_reason: str) -> Optional[Dict[str, Any]]:
+        """Edit the reason of an open (pending or approved) claim; closed claims stay immutable."""
+        response = self.client.table('claims').update({
+            'claim_reason': CryptoService.encrypt(claim_reason),
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+        }).eq('claim_id', claim_id).in_('status', ['pending', 'approved_for_pickup']).execute()
+        updated = response.data[0] if response.data else None
+        return self._decrypt_claim_sensitive_fields(updated) if updated else None
+
     def cancel_claim(self, claim_id: str, account_id: str) -> bool:
         response = self.client.table('claims').delete().eq(
             'claim_id', claim_id
@@ -1055,7 +1071,8 @@ class SupabaseDB:
                     'studentId': reporter_profile.get('campus_id') or item.get('reporter_campus_id') or 'N/A',
                     'photo': item.get('image_url') or '',
                     'aiMatch': None,
-                    'status': 'Resolved' if report_status in {'found', 'returned', 'resolved'} else 'Potential Match' if report_status in {'missing', 'open'} else 'Searching',
+                    'status': 'Resolved' if report_status in {'returned', 'resolved', 'closed'} else 'Found' if report_status == 'found' else 'Potential Match' if report_status == 'matched' else 'Searching',
+                    'rawStatus': report_status or 'missing',
                 })
             return mapped
         except Exception as e:
@@ -1122,6 +1139,7 @@ class SupabaseDB:
                     'aiPercent': int(ai_score) if ai_matched else None,
                     'matchedItem': best_match_names.get(item_key, '') if ai_matched else '',
                     'status': ui_status,
+                    'rawStatus': report_status or 'unclaimed',
                     'photo': item.get('image_url') or '',
                 })
             return mapped
@@ -1260,6 +1278,9 @@ class SupabaseDB:
         deleted_user['storage_cleanup_failures'] = cleanup_failures
         return deleted_user
 
+    # Lifecycle values documented on missing_items.status ('returned' is also written by claim collection).
+    ADMIN_MISSING_ITEM_STATUSES = frozenset({'missing', 'found', 'returned'})
+
     def update_admin_missing_item(self, reference: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         field_map = {
             'item': 'item_name',
@@ -1271,6 +1292,11 @@ class SupabaseDB:
             'studentId': 'reporter_campus_id',
         }
         update = {column: payload[key] for key, column in field_map.items() if key in payload}
+        if 'status' in payload:
+            status = str(payload['status'] or '').strip().lower()
+            if status not in self.ADMIN_MISSING_ITEM_STATUSES:
+                raise ValueError('Invalid lost item status')
+            update['status'] = status
         if not update:
             return {}
         update['updated_at'] = self._utc_now_iso()

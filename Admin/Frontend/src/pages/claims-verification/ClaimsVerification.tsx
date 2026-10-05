@@ -1,28 +1,39 @@
 import { useEffect, useState } from "react";
 import type { Claim } from "../../data/mockData";
-import { deleteAdminClaim, fetchAdminClaimHistory, fetchAdminClaims, getStoredAdmin, updateAdminClaimStatus, type AdminClaimHistoryRow, type AdminClaimRow } from "../../utils/api";
+import { deleteAdminClaim, fetchAdminClaimHistory, fetchAdminClaims, updateAdminClaimStatus, type AdminClaimHistoryRow, type AdminClaimRow } from "../../utils/api";
+import { canDelete } from "../../utils/permissions";
+import { CheckCircle2, ClipboardCheck, Eye, FilePlus2, ShieldCheck, Trash2, XCircle, ZoomIn } from "lucide-react";
+import ClaimFormModal from "./ClaimFormModal";
+import { BTN, INPUT, PageHeader, RolePill } from "../../components/ui/primitives";
+import AdminModal from "../../components/ui/AdminModal";
+import { DataTable, ExportButton, IconAction, RowActions, SegmentedFilter, StatusPill, type Tone } from "../../components/ui/management";
+import { useT, tr } from "../../utils/preferences";
+import { downloadCsv } from "../../utils/csv";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import { showInfoModal } from "../../components/info-modal/infoModalStore";
 
-function StatusBadge({ status }: { status: Claim["status"] }) {
-  const map: Record<Claim["status"], { bg: string; text: string; dot: string }> = {
-    "Under Review": { bg: "#fffbeb", text: "#d97706", dot: "#f59e0b" },
-    Pending: { bg: "#eff6ff", text: "#2563eb", dot: "#60a5fa" },
-    Verified: { bg: "#ecfdf5", text: "#059669", dot: "#10b981" },
-    Approved: { bg: "#ecfdf5", text: "#059669", dot: "#10b981" },
-    "Approved for Pickup": { bg: "#ecfdf5", text: "#047857", dot: "#10b981" },
-    Collected: { bg: "#f0fdf4", text: "#15803d", dot: "#22c55e" },
-    Rejected: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444" },
-    Unknown: { bg: "#f3f4f6", text: "#4b5563", dot: "#9ca3af" },
-  };
-  const badge = map[status];
+const CLAIM_TONE: Record<Claim["status"], Tone> = {
+  "Under Review": "gold",
+  Pending: "gold",
+  Verified: "iris",
+  Approved: "iris",
+  "Approved for Pickup": "iris",
+  Collected: "mint",
+  Rejected: "rose",
+  Unknown: "slate",
+};
 
+function StatusBadge({ status }: { status: Claim["status"] }) {
+  return <StatusPill tone={CLAIM_TONE[status]}>{status}</StatusPill>;
+}
+
+function InfoTile({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium" style={{ background: badge.bg, color: badge.text }}>
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: badge.dot }} />
-      {status}
-    </span>
+    <div className="rounded-2xl border border-line bg-frost-50 p-4">
+      <div className="mb-1 text-[12.5px] font-medium text-ink-muted">{label}</div>
+      {children}
+    </div>
   );
 }
 
@@ -32,9 +43,10 @@ interface ReviewModalProps {
   onApprove: (id: string) => Promise<void>;
   onReject: (id: string, reason: string) => Promise<void>;
   onCollect: (id: string) => Promise<void>;
+  onEditReason?: () => void;
 }
 
-function ReviewModal({ claim, onClose, onApprove, onReject, onCollect }: ReviewModalProps) {
+function ReviewModal({ claim, onClose, onApprove, onReject, onCollect, onEditReason }: ReviewModalProps) {
   const isPending = claim.status === "Under Review" || claim.status === "Pending";
   const isApprovedForPickup = claim.status === "Approved for Pickup" || claim.status === "Approved";
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
@@ -43,8 +55,8 @@ function ReviewModal({ claim, onClose, onApprove, onReject, onCollect }: ReviewM
   const [confirmAction, setConfirmAction] = useState<"approve" | "reject" | "collect" | null>(null);
   const [confirmValue, setConfirmValue] = useState("");
 
-  const itemDescription = claim.itemDescription || "No description provided for this item.";
-  const claimReason = claim.claimReason || "No additional reason was provided by the claimant.";
+  const itemDescription = claim.itemDescription || tr("No description provided for this item.");
+  const claimReason = claim.claimReason || tr("No additional reason was provided by the claimant.");
 
   const closeConfirm = () => {
     setConfirmAction(null);
@@ -58,7 +70,7 @@ function ReviewModal({ claim, onClose, onApprove, onReject, onCollect }: ReviewM
       return;
     }
     if (confirmValue !== "CONFIRM") {
-      setDecisionState({ type: "error", message: "Type CONFIRM to approve this claim." });
+      setDecisionState({ type: "error", message: tr("Type CONFIRM to approve this claim.") });
       return;
     }
 
@@ -79,12 +91,12 @@ function ReviewModal({ claim, onClose, onApprove, onReject, onCollect }: ReviewM
       return;
     }
     if (!rejectionReason.trim()) {
-      setDecisionState({ type: "error", message: "Enter a reason so the claimant knows what needs attention." });
+      setDecisionState({ type: "error", message: tr("Enter a reason so the claimant knows what needs attention.") });
       closeConfirm();
       return;
     }
     if (confirmValue !== "CONFIRM") {
-      setDecisionState({ type: "error", message: "Type CONFIRM to reject this claim." });
+      setDecisionState({ type: "error", message: tr("Type CONFIRM to reject this claim.") });
       return;
     }
 
@@ -105,7 +117,7 @@ function ReviewModal({ claim, onClose, onApprove, onReject, onCollect }: ReviewM
       return;
     }
     if (confirmValue !== "CONFIRM") {
-      setDecisionState({ type: "error", message: "Type CONFIRM to record collection." });
+      setDecisionState({ type: "error", message: tr("Type CONFIRM to record collection.") });
       return;
     }
 
@@ -119,226 +131,174 @@ function ReviewModal({ claim, onClose, onApprove, onReject, onCollect }: ReviewM
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(15,23,42,0.6)" }}>
-      <div className="mx-4 flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[24px] border border-line bg-white shadow-overlay">
-        <div className="flex items-center justify-between border-b border-line bg-gradient-to-r from-slate-900 via-[#1d2f67] to-[#1f6c7f] px-6 py-5 text-white">
-          <div>
-            <div className="text-[12px] font-medium uppercase tracking-[0.18em] text-slate-200">Claim {claim.claimReference || claim.id}</div>
-            <h2 className="mt-1 text-xl font-bold">Claim Review</h2>
-          </div>
-          <button onClick={onClose} className="rounded-full border border-white/20 bg-white/5 p-2 text-white transition hover:bg-white/10" aria-label="Close review dialog">
-            <svg width="20" height="20" fill="none" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
-          </button>
-        </div>
+  const confirmCopy = {
+    approve: { title: tr("Approve this claim for pickup?"), body: tr("This approves the claimant for in-person verification at the office and notifies them."), button: tr("Approve claim"), className: BTN.success },
+    reject: { title: tr("Reject this claim?"), body: tr("The claimant is notified with the reason you enter below."), button: tr("Reject claim"), className: BTN.danger },
+    collect: { title: tr("Record the in-person collection?"), body: tr("Check the claimant's original ID and confirm the item was handed over. This closes the found report and this claim, resolves the claimant's confirmed matching lost report, and closes competing claims for the same item."), button: tr("Record collection"), className: BTN.success },
+  } as const;
 
-        <div className="flex-1 space-y-5 overflow-y-auto p-6">
+  return (
+    <>
+      <AdminModal
+        title={tr("Review claim {0}", { "0": claim.claimReference || claim.id })}
+        description={tr("{0} is claiming {1}.", { "0": claim.claimant, "1": claim.item })}
+        icon={<ClipboardCheck size={20} />}
+        size="xl"
+        busy={Boolean(confirmAction)}
+        onClose={onClose}
+        footer={
+          isPending ? <>
+            <button type="button" onClick={onClose} className={`${BTN.ghost} sm:mr-auto`}>{tr("Close")}</button>
+            <button type="button" onClick={() => { setConfirmAction("reject"); setConfirmValue(""); }} className={BTN.ghost}><XCircle size={16} aria-hidden="true" />{tr("Reject claim")}</button>
+            <button type="button" onClick={() => { setConfirmAction("approve"); setConfirmValue(""); }} className={BTN.success}><CheckCircle2 size={16} aria-hidden="true" />{tr("Approve for pickup")}</button>
+          </> : isApprovedForPickup ? <>
+            <button type="button" onClick={onClose} className={`${BTN.ghost} sm:mr-auto`}>{tr("Close")}</button>
+            <button type="button" onClick={() => { setConfirmAction("collect"); setConfirmValue(""); }} className={BTN.success}><ShieldCheck size={16} aria-hidden="true" />{tr("Record in-person collection")}</button>
+          </> : <button type="button" onClick={onClose} className={BTN.ghost}>{tr("Close")}</button>
+        }
+      >
+        <div className="space-y-5">
           {decisionState && (
-            <div
-              className={`rounded-lg border px-3 py-2 text-sm font-medium ${
-                decisionState.type === "approved"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : decisionState.type === "rejected"
-                    ? "border-red-200 bg-red-50 text-red-700"
-                    : "border-amber-200 bg-amber-50 text-amber-700"
-              }`}
-            >
+            <div role="alert" className={`rounded-xl border px-4 py-3 text-sm font-medium ${decisionState.type === "approved" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : decisionState.type === "rejected" ? "border-red-200 bg-red-50 text-red-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
               {decisionState.message}
             </div>
           )}
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <div className="rounded-xl border border-line bg-slate-50 p-3">
-              <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-500">Claimant</div>
-              <div className="font-semibold text-slate-900">{claim.claimant}</div>
-              <div className="mt-1 text-xs text-slate-500">{claim.studentId}</div>
-              {claim.claimantEmail && <div className="mt-2 break-all text-xs text-slate-600">{claim.claimantEmail}</div>}
-            </div>
-            <div className="rounded-xl border border-line bg-slate-50 p-3">
-              <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-500">Item Claimed</div>
-              <div className="font-semibold text-slate-900">{claim.item}</div>
-              <div className="mt-1 text-xs text-slate-500">{claim.itemId}</div>
-            </div>
-            <div className="rounded-xl border border-line bg-slate-50 p-3">
-              <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-500">Submitted</div>
-              <div className="font-semibold text-slate-900">{claim.submitted}</div>
-            </div>
-            <div className="rounded-xl border border-line bg-slate-50 p-3">
-              <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-500">Claim status</div>
-              <StatusBadge status={claim.status} />
-            </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <InfoTile label={tr("Claimant")}>
+              <div className="font-semibold text-ink">{claim.claimant}</div>
+              <div className="mt-0.5 text-[13px] text-ink-muted">{claim.studentId}</div>
+              {claim.claimantEmail && <div className="mt-1.5 break-all text-[13px] text-ink-soft">{claim.claimantEmail}</div>}
+            </InfoTile>
+            <InfoTile label={tr("Item claimed")}>
+              <div className="font-semibold text-ink">{claim.item}</div>
+              <div className="mt-0.5 text-[13px] text-ink-muted">{claim.itemId}</div>
+            </InfoTile>
+            <InfoTile label={tr("Submitted")}><div className="font-semibold text-ink">{claim.submitted}</div></InfoTile>
+            <InfoTile label={tr("Status")}><StatusBadge status={claim.status} /></InfoTile>
           </div>
 
-          <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
-            <span className="font-semibold">Verification checklist:</span> Confirm student ID matches, review the item record, inspect the proof and item photos, and verify ownership before approval.
-          </div>
+          <p className="rounded-2xl border border-gold-200 bg-gold-50 px-4 py-3 text-[14px] leading-6 text-ink-soft dark:border-gold-500/25">
+            {tr("Before approving, match the campus ID, compare the proof with the item photo, and confirm details only the owner would know.")}
+          </p>
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-xl bg-slate-50 p-4">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Found item details</div>
-              <p className="text-sm text-slate-700">{[claim.itemCategory, claim.itemLocation, claim.itemFoundDate].filter(Boolean).join(" · ") || "Details unavailable"}</p>
-            </div>
-            <div className="rounded-xl bg-slate-50 p-4">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Item description</div>
-              <p className="text-sm leading-6 text-slate-700">{itemDescription}</p>
-            </div>
-            <div className="rounded-xl bg-slate-50 p-4">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Claim reason</div>
-              <p className="text-sm leading-6 text-slate-700">{claimReason}</p>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-xl border border-line bg-white p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wide text-red-500">Claim proof</span>
-              </div>
-              {claim.proofImage ? (
-                <img src={claim.proofImage} alt="Claim proof" className="h-64 w-full cursor-zoom-in rounded-lg border border-line object-cover" onClick={() => setZoomedImage(claim.proofImage ?? null)} />
-              ) : (
-                <div className="flex h-64 w-full items-center justify-center rounded-lg border border-dashed border-line bg-slate-50 text-sm text-slate-400">No proof image</div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <InfoTile label={tr("Found item details")}>
+              <p className="text-[14px] text-ink-soft">{[claim.itemCategory, claim.itemLocation, claim.itemFoundDate].filter(Boolean).join(", ") || tr("Details unavailable")}</p>
+            </InfoTile>
+            <InfoTile label={tr("Item description")}><p className="text-[14px] leading-6 text-ink-soft">{itemDescription}</p></InfoTile>
+            <InfoTile label={tr("Claim reason")}>
+              <p className="text-[14px] leading-6 text-ink-soft">{claimReason}</p>
+              {onEditReason && (isPending || isApprovedForPickup) && (
+                <button type="button" onClick={onEditReason} className="mt-2 rounded-lg px-2 py-1 text-[13px] font-semibold text-iris-700 hover:bg-iris-50">{tr("Edit reason")}</button>
               )}
-            </div>
+            </InfoTile>
+          </div>
 
-            <div className="rounded-xl border border-line bg-white p-3">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700">Claimant ID · {claim.identityDocumentType || "Identity document"}</div>
+          <div className="grid gap-3 md:grid-cols-3">
+            {([["Claim proof", claim.proofImage, tr("No proof image")], ["Found item photo", claim.foundImage, tr("No item photo")]] as const).map(([label, src, empty]) => (
+              <figure key={label} className="rounded-2xl border border-line bg-frost-50 p-3">
+                <figcaption className="mb-2 text-[12.5px] font-medium text-ink-muted">{label}</figcaption>
+                {src ? (
+                  <button type="button" onClick={() => setZoomedImage(src)} className="group relative block w-full overflow-hidden rounded-xl" aria-label={tr("Enlarge {0}", { "0": label.toLowerCase() })}>
+                    <img src={src} alt={label} className="h-56 w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
+                    <span className="absolute right-2 top-2 flex size-8 items-center justify-center rounded-lg bg-navy-950/60 text-white opacity-0 backdrop-blur transition-opacity group-hover:opacity-100"><ZoomIn size={16} aria-hidden="true" /></span>
+                  </button>
+                ) : (
+                  <div className="flex h-56 items-center justify-center rounded-xl border border-dashed border-line-strong text-[13px] text-ink-muted">{empty}</div>
+                )}
+              </figure>
+            ))}
+            <figure className="rounded-2xl border border-line bg-frost-50 p-3">
+              <figcaption className="mb-2 text-[12.5px] font-medium text-ink-muted">{tr("Claimant ID ({0})", { "0": claim.identityDocumentType === "verified_in_person" ? tr("checked in person") : claim.identityDocumentType || tr("identity document") })}</figcaption>
               {claim.identityDocument ? (
-                <a href={claim.identityDocument} target="_blank" rel="noreferrer" className="flex h-64 flex-col items-center justify-center gap-3 rounded-lg border border-blue-100 bg-blue-50 text-sm font-semibold text-blue-800 hover:bg-blue-100">
-                  <span>Open private ID document</span>
-                  <span className="text-xs font-normal">Temporary secure link</span>
+                <a href={claim.identityDocument} target="_blank" rel="noreferrer" className="flex h-56 flex-col items-center justify-center gap-1.5 rounded-xl border border-iris-200 bg-iris-50 text-[14px] font-semibold text-iris-700 transition hover:brightness-105 dark:border-iris-500/30">
+                  <ShieldCheck size={22} aria-hidden="true" />
+                  {tr("Open private ID document")}
+                  <span className="text-[12.5px] font-normal text-ink-muted">{tr("Temporary secure link")}</span>
                 </a>
               ) : (
-                <div className="flex h-64 w-full items-center justify-center rounded-lg border border-dashed border-line bg-slate-50 text-sm text-slate-400">No ID document</div>
+                <div className="flex h-56 items-center justify-center rounded-xl border border-dashed border-line-strong px-4 text-center text-[13px] text-ink-muted">{claim.identityDocumentType === "verified_in_person" ? tr("ID was checked at the office") : tr("No ID document")}</div>
               )}
-            </div>
-
-            <div className="rounded-xl border border-line bg-white p-3 md:col-span-2">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wide text-emerald-600">Found item</span>
-              </div>
-              {claim.foundImage ? (
-                <img src={claim.foundImage} alt="Found item" className="h-64 w-full cursor-zoom-in rounded-lg border border-line object-cover" onClick={() => setZoomedImage(claim.foundImage ?? null)} />
-              ) : (
-                <div className="flex h-64 w-full items-center justify-center rounded-lg border border-dashed border-line bg-slate-50 text-sm text-slate-400">No item image</div>
-              )}
-            </div>
+            </figure>
           </div>
         </div>
-
-        <div className="border-t border-line bg-slate-50 p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <StatusBadge status={claim.status} />
-            {isPending ? (
-              <div className="flex flex-col gap-2 sm:flex-row">
-                  <button onClick={() => { setConfirmAction("reject"); setConfirmValue(""); }} className="rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">
-                    Reject Claim
-                  </button>
-
-                  <button
-                    onClick={() => { setConfirmAction("approve"); setConfirmValue(""); }}
-                    className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-95"
-                    style={{ background: "#0f766e" }}
-                  >
-                    Approve for Office
-                  </button>
-              </div>
-            ) : isApprovedForPickup ? (
-              <button onClick={() => { setConfirmAction("collect"); setConfirmValue(""); }} className="rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">Record In-Person Collection</button>
-            ) : (
-              <button onClick={onClose} className="rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">Close</button>
-            )}
-          </div>
-        </div>
-      </div>
+      </AdminModal>
 
       {confirmAction && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/65 p-4">
-          <div className="w-full max-w-md rounded-[20px] border border-line bg-white p-5 shadow-overlay">
-            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Confirmation required</div>
-            <h3 className="text-lg font-bold text-slate-900">
-              Are you sure? {confirmAction === "approve" ? "Approve claim for pickup" : confirmAction === "reject" ? "Reject this claim" : "Record collection"}
-            </h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              {confirmAction === "approve"
-                ? "Double-check the claim details. This approves the claimant for office verification and sends a notice to the user."
-                : confirmAction === "reject"
-                  ? "Double-check the claim details. This rejects the claim and enters a rejection reason for the user."
-                  : "Double-check the claimant's original ID and confirm the item was physically handed over. This closes the found report and this claim, resolves any confirmed matching missing report belonging to this claimant, and closes competing claims for the same item."}
-            </p>
+        <AdminModal
+          title={confirmCopy[confirmAction].title}
+          description={confirmCopy[confirmAction].body}
+          icon={confirmAction === "reject" ? <XCircle size={20} /> : <CheckCircle2 size={20} />}
+          tone={confirmAction === "reject" ? "danger" : "mint"}
+          size="sm"
+          onClose={closeConfirm}
+          footer={<>
+            <button type="button" onClick={closeConfirm} className={BTN.ghost}>{tr("Cancel")}</button>
+            <button
+              type="button"
+              onClick={confirmAction === "approve" ? handleApprove : confirmAction === "reject" ? handleReject : handleCollect}
+              disabled={confirmValue !== "CONFIRM" || (confirmAction === "reject" && !rejectionReason.trim())}
+              className={confirmCopy[confirmAction].className}
+            >
+              {confirmCopy[confirmAction].button}
+            </button>
+          </>}
+        >
+          <div className="space-y-4">
             {confirmAction === "reject" && (
-              <div className="mt-4">
-                <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-500">Reason for rejection</label>
-                <textarea
-                  value={rejectionReason}
-                  onChange={(event) => setRejectionReason(event.target.value)}
-                  placeholder="Explain what needs attention"
-                  rows={3}
-                  className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-red-500 focus:ring-2 focus:ring-red-100"
-                />
-              </div>
+              <label className="block">
+                <span className="mb-1.5 block text-[14px] font-semibold text-ink-soft">{tr("Reason the claimant will see")}</span>
+                <textarea value={rejectionReason} onChange={(event) => setRejectionReason(event.target.value)} placeholder={tr("The proof photo doesn't show the engraving described.")} rows={3} className={`${INPUT} resize-y py-3 leading-6`} data-autofocus />
+              </label>
             )}
-            <div className="mt-4">
-              <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-500">Type CONFIRM</label>
-              <input
-                value={confirmValue}
-                onChange={(event) => setConfirmValue(event.target.value)}
-                placeholder="CONFIRM"
-                className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
-              />
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button onClick={closeConfirm} className="rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">Cancel</button>
-              <button
-                onClick={confirmAction === "approve" ? handleApprove : confirmAction === "reject" ? handleReject : handleCollect}
-                disabled={confirmValue !== "CONFIRM" || (confirmAction === "reject" && !rejectionReason.trim())}
-                className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-40"
-                style={{ background: confirmAction === "reject" ? "#dc2626" : confirmAction === "collect" ? "#15803d" : "#0f766e" }}
-              >
-                {confirmAction === "approve" ? "Approve" : confirmAction === "reject" ? "Reject" : "Confirm collection"}
-              </button>
-            </div>
+            <label className="block">
+              <span className="mb-1.5 block text-[14px] font-semibold text-ink-soft">{tr("Type CONFIRM to continue")}</span>
+              <input value={confirmValue} onChange={(event) => setConfirmValue(event.target.value)} placeholder={tr("CONFIRM")} autoComplete="off" className={`${INPUT} text-center font-semibold tracking-[0.2em]`} data-autofocus={confirmAction !== "reject" ? true : undefined} />
+            </label>
           </div>
-        </div>
+        </AdminModal>
       )}
 
       {zoomedImage && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-6" onClick={() => setZoomedImage(null)}>
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-6 backdrop-blur-sm" onClick={() => setZoomedImage(null)} role="dialog" aria-modal="true" aria-label={tr("Enlarged image")}>
           <div className="relative max-h-[90vh] w-full max-w-5xl" onClick={(event) => event.stopPropagation()}>
-            <button onClick={() => setZoomedImage(null)} className="absolute -right-3 -top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-700 shadow-lg">×</button>
-            <img src={zoomedImage} alt="Zoomed comparison" className="max-h-[90vh] w-full rounded-xl bg-white object-contain p-2" />
+            <button type="button" onClick={() => setZoomedImage(null)} aria-label={tr("Close image")} className="absolute -right-3 -top-3 z-10 flex size-10 items-center justify-center rounded-full bg-white text-xl text-navy-950 shadow-lg">×</button>
+            <img src={zoomedImage} alt={tr("Enlarged claim evidence")} className="max-h-[90vh] w-full rounded-2xl object-contain" />
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
 function claimHistorySummary(entry: AdminClaimHistoryRow): string {
-  if (entry.action === "created") return "Claim submitted";
-  if (entry.action === "deleted") return "Claim deleted by Superadmin";
+  if (entry.action === "created") return tr("Claim submitted");
+  if (entry.action === "deleted") return tr("Claim deleted by Superadmin");
 
   const labels: Record<string, string> = {
     status: "Status",
-    rejection_reason: "Rejection reason",
-    reviewed_at: "Review date",
-    collected_at: "Collection date",
-    pickup_deadline: "Pickup deadline",
+    rejection_reason: tr("Rejection reason"),
+    reviewed_at: tr("Review date"),
+    collected_at: tr("Collection date"),
+    pickup_deadline: tr("Pickup deadline"),
   };
   const fields = Object.entries(labels).flatMap(([key, label]) => {
     const oldValue = entry.oldValues?.[key];
     const newValue = entry.newValues?.[key];
     if (oldValue === newValue || (oldValue == null && newValue == null)) return [];
     if (key === "status") {
-      return [`${label}: ${String(oldValue ?? "None").replace(/_/g, " ")} → ${String(newValue ?? "None").replace(/_/g, " ")}`];
+      return [`${label}: ${String(oldValue ?? tr("None")).replace(/_/g, " ")} → ${String(newValue ?? tr("None")).replace(/_/g, " ")}`];
     }
-    if (key === "rejection_reason") return [`${label}: ${String(newValue || "Removed")}`];
+    if (key === "rejection_reason") return [`${label}: ${String(newValue || tr("Removed"))}`];
     return [`${label} updated`];
   });
 
-  return fields.join(" · ") || "Claim details updated";
+  return fields.join(" · ") || tr("Claim details updated");
 }
 
 export default function ClaimsVerification() {
+  const t = useT();
   const [claims, setClaims] = useState<Claim[]>([]);
   const [history, setHistory] = useState<AdminClaimHistoryRow[]>([]);
   const [reviewClaim, setReviewClaim] = useState<Claim | null>(null);
@@ -355,11 +315,12 @@ export default function ClaimsVerification() {
   const [dateOrder, setDateOrder] = useState<"newest" | "oldest">("newest");
   const [currentPage, setCurrentPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<Claim | null>(null);
+  const [claimForm, setClaimForm] = useState<{ mode: "create" } | { mode: "edit"; claim: Claim } | null>(null);
   const [deleteConfirmValue, setDeleteConfirmValue] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [collectionTarget, setCollectionTarget] = useState<Claim | null>(null);
   const [collectionBusy, setCollectionBusy] = useState(false);
-  const isSuperAdmin = getStoredAdmin()?.access_level === "super_admin";
+  const isSuperAdmin = canDelete();
   const pageSize = 10;
 
   const normalizeClaimStatus = (status: string | null | undefined): Claim["status"] => {
@@ -407,7 +368,7 @@ export default function ClaimsVerification() {
       setLoadError("");
       return mappedClaims;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to load claims.";
+      const message = error instanceof Error ? error.message : tr("Unable to load claims.");
       setLoadError(message);
       throw error;
     }
@@ -427,7 +388,7 @@ export default function ClaimsVerification() {
       } catch (error) {
         if (!active) return;
         setClaims([]);
-        setLoadError(error instanceof Error ? error.message : "Unable to load claims.");
+        setLoadError(error instanceof Error ? error.message : tr("Unable to load claims."));
       } finally {
         if (active) setLoading(false);
       }
@@ -469,7 +430,7 @@ export default function ClaimsVerification() {
         setHistoryError("");
       } catch (error) {
         if (!active) return;
-        setHistoryError(error instanceof Error ? error.message : "Unable to load claim history.");
+        setHistoryError(error instanceof Error ? error.message : tr("Unable to load claim history."));
       } finally {
         if (active) setHistoryLoading(false);
       }
@@ -622,9 +583,12 @@ export default function ClaimsVerification() {
     }
   };
 
+  const exportCsv = () => downloadCsv("claims", ["Claim", "Claimant", "Campus ID", "Item", "Found item", "Submitted", "Status"],
+    filteredClaims.map((claim) => [claim.claimReference || claim.id, claim.claimant, claim.studentId, claim.item, claim.itemId, claim.submitted, claim.status]));
+
   if (loading) {
     return (
-      <div className="space-y-5 p-6" aria-busy="true">
+      <div className="space-y-5 p-4 sm:p-6" aria-busy="true">
         <div>
           <SkeletonBlock className="mb-2 h-7 w-56" />
           <SkeletonBlock className="h-4 w-32" />
@@ -639,246 +603,217 @@ export default function ClaimsVerification() {
   }
 
   return (
-    <div className="space-y-5 p-6">
+    <div className="space-y-5 p-4 sm:p-6">
 
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Claims & Verification</h1>
-        <p className="text-sm text-slate-500">{claims.length} total claims</p>
-      </div>
+      <PageHeader
+        title={t("claims.title")}
+        description={t("claims.description", { count: claims.length })}
+        meta={<RolePill superAdmin={isSuperAdmin} />}
+        actions={<>
+          {activeTab !== "history" && <ExportButton onClick={exportCsv} disabled={!filteredClaims.length} />}
+          <button type="button" onClick={() => setClaimForm({ mode: "create" })} className={BTN.primary}><FilePlus2 size={17} aria-hidden="true" />{t("claims.add")}</button>
+        </>}
+      />
 
-      <div className="flex w-fit gap-1 rounded-xl border border-line bg-white p-1.5 shadow-sm">
-        {[
-          { id: "claims", label: "Claims", count: claims.length },
-          { id: "all", label: "Active Claims", count: activeClaims.length },
-          { id: "closed", label: "Closed / Completed", count: closedClaims.length },
-          { id: "history", label: "Claim History", count: history.length },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => {
-              setActiveTab(tab.id as "claims" | "all" | "closed" | "history");
-              if (tab.id !== "history") clearFilters();
-            }}
-            className="rounded-lg px-4 py-2 text-sm font-medium transition-all"
-            style={activeTab === tab.id ? { background: "#1f3160", color: "white" } : { color: "#6b7280" }}
-            aria-pressed={activeTab === tab.id}
-          >
-            {tab.label} <span className="ml-1 opacity-70">{tab.count}</span>
-          </button>
-        ))}
-      </div>
+      <SegmentedFilter
+        label={tr("Claim views")}
+        value={activeTab}
+        onChange={(tab) => {
+          setActiveTab(tab);
+          if (tab !== "history") clearFilters();
+        }}
+        options={[
+          { value: "claims", label: "All claims", count: claims.length },
+          { value: "all", label: "Active", count: activeClaims.length },
+          { value: "closed", label: "Closed and completed", count: closedClaims.length },
+          { value: "history", label: "Change history", count: history.length },
+        ]}
+      />
 
-      {loadError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Unable to load claims: {loadError}</div>}
+      {loadError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{tr("Unable to load claims: {0}", { "0": loadError })}</div>}
 
       {activeTab !== "history" && (
-        <div className="grid gap-3 rounded-xl border border-line bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_minmax(170px,1fr)_repeat(2,minmax(145px,0.8fr))_minmax(145px,0.8fr)_auto]">
-          <label className="block text-xs font-semibold text-slate-500">
-            Claimant name
+        <div className="glass-panel grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_minmax(180px,1fr)_minmax(170px,1fr)_repeat(2,minmax(145px,0.8fr))_minmax(145px,0.8fr)_auto]">
+          <label className="block text-[13px] font-semibold text-ink-soft">
+            {tr("Claimant name")}
             <input
               type="search"
               value={claimantFilter}
               onChange={(event) => setFilter(() => setClaimantFilter(event.target.value))}
-              placeholder="Search claimant"
-              className="mt-1.5 w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm font-normal text-slate-800 outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20"
+              placeholder={tr("Search claimant")}
+              className={`mt-1.5 font-normal ${INPUT}`}
             />
           </label>
-          <label className="block text-xs font-semibold text-slate-500">
-            Found item ID
+          <label className="block text-[13px] font-semibold text-ink-soft">
+            {tr("Found item ID")}
             <input
               type="search"
               value={foundItemFilter}
               onChange={(event) => setFilter(() => setFoundItemFilter(event.target.value))}
-              placeholder="Found-item ID or reference"
-              className="mt-1.5 w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm font-normal text-slate-800 outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20"
+              placeholder={tr("Found-item ID or reference")}
+              className={`mt-1.5 font-normal ${INPUT}`}
             />
           </label>
-          <label className="block text-xs font-semibold text-slate-500">
-            Status
+          <label className="block text-[13px] font-semibold text-ink-soft">
+            {tr("Status")}
             <select
               value={statusFilter}
               onChange={(event) => setFilter(() => setStatusFilter(event.target.value as typeof statusFilter))}
-              className="mt-1.5 w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm font-normal text-slate-700 outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20"
+              className={`mt-1.5 font-normal ${INPUT}`}
             >
-              <option value="All">All statuses</option>
-              {availableStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+              <option value="All">{tr("All statuses")}</option>
+              {availableStatuses.map((status) => <option key={status} value={status}>{tr(status)}</option>)}
             </select>
           </label>
-          <label className="block text-xs font-semibold text-slate-500">
-            Submitted from
-            <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(event) => setFilter(() => setDateFrom(event.target.value))} className="mt-1.5 w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm font-normal text-slate-700 outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20" />
+          <label className="block text-[13px] font-semibold text-ink-soft">
+            {tr("Submitted from")}
+            <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(event) => setFilter(() => setDateFrom(event.target.value))} className={`mt-1.5 font-normal ${INPUT}`} />
           </label>
-          <label className="block text-xs font-semibold text-slate-500">
-            Submitted to
-            <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setFilter(() => setDateTo(event.target.value))} className="mt-1.5 w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm font-normal text-slate-700 outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20" />
+          <label className="block text-[13px] font-semibold text-ink-soft">
+            {tr("Submitted to")}
+            <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setFilter(() => setDateTo(event.target.value))} className={`mt-1.5 font-normal ${INPUT}`} />
           </label>
-          <label className="block text-xs font-semibold text-slate-500">
-            Date order
-            <select value={dateOrder} onChange={(event) => setFilter(() => setDateOrder(event.target.value as typeof dateOrder))} className="mt-1.5 w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm font-normal text-slate-700 outline-none focus:border-navy-600 focus:ring-2 focus:ring-navy-600/20">
-              <option value="newest">Most recent first</option>
-              <option value="oldest">Oldest first</option>
+          <label className="block text-[13px] font-semibold text-ink-soft">
+            {tr("Date order")}
+            <select value={dateOrder} onChange={(event) => setFilter(() => setDateOrder(event.target.value as typeof dateOrder))} className={`mt-1.5 font-normal ${INPUT}`}>
+              <option value="newest">{tr("Most recent first")}</option>
+              <option value="oldest">{tr("Oldest first")}</option>
             </select>
           </label>
           <button
             type="button"
             onClick={clearFilters}
             disabled={!claimantFilter && !foundItemFilter && statusFilter === "All" && !dateFrom && !dateTo && dateOrder === "newest"}
-            className="self-end rounded-lg border border-line px-3 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-navy-50 disabled:cursor-not-allowed disabled:opacity-40"
+            className={`self-end ${BTN.ghost}`}
           >
-            Clear
+            {t("common.clearFilters")}
           </button>
         </div>
       )}
 
-      {activeTab !== "history" && dateRangeInvalid && <p role="alert" className="-mt-3 text-sm text-red-600">From date must be on or before the To date.</p>}
+      {activeTab !== "history" && dateRangeInvalid && <p role="alert" className="-mt-3 text-sm text-red-600">{tr("From date must be on or before the To date.")}</p>}
 
       {activeTab === "history" ? (
-        <section className="overflow-hidden rounded-xl border border-line bg-white shadow-sm">
+        <section className="glass-panel overflow-hidden">
           <div className="border-b border-line px-5 py-4">
-            <h2 className="text-sm font-semibold text-slate-900">Recent claim changes</h2>
-            <p className="mt-1 text-xs text-slate-500">Newest activity first. This log is not filterable.</p>
+            <h2 className="font-[family-name:var(--font-heading)] text-[17px] font-semibold text-ink">{tr("Recent claim changes")}</h2>
+            <p className="mt-1 text-[13px] text-ink-muted">{tr("Newest first.")}</p>
           </div>
-          {historyError && <div role="alert" className="m-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Unable to load claim history: {historyError}. Run the new claim history migration before using this tab.</div>}
+          {historyError && <div role="alert" className="m-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{tr("Unable to load claim history: {0}. Run the claim history migration before using this tab.", { "0": historyError })}</div>}
           {historyLoading ? (
             <div className="space-y-3 p-5"><SkeletonBlock className="h-16 w-full" /><SkeletonBlock className="h-16 w-full" /><SkeletonBlock className="h-16 w-full" /></div>
           ) : history.length === 0 && !historyError ? (
-            <p className="px-5 py-10 text-center text-sm text-slate-500">No claim changes have been recorded yet.</p>
+            <p className="px-5 py-10 text-center text-sm text-slate-500">{tr("No claim changes have been recorded yet.")}</p>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-line">
               {history.map((entry) => (
                 <article key={entry.id} className="grid gap-2 px-5 py-4 md:grid-cols-[minmax(0,1fr)_minmax(230px,0.7fr)] md:items-center">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${entry.action === "deleted" ? "bg-red-50 text-red-700" : entry.action === "created" ? "bg-sky-50 text-sky-700" : "bg-emerald-50 text-emerald-700"}`}>
-                        {entry.action === "created" ? "Submitted" : entry.action === "deleted" ? "Deleted" : "Updated"}
+                        {entry.action === "created" ? tr("Submitted") : entry.action === "deleted" ? tr("Deleted") : tr("Updated")}
                       </span>
-                      <span className="font-semibold text-slate-900">{entry.claimReference || "Claim reference unavailable"}</span>
+                      <span className="font-semibold text-slate-900">{entry.claimReference || tr("Claim reference unavailable")}</span>
                     </div>
                     <p className="mt-1 text-sm text-slate-700">{claimHistorySummary(entry)}</p>
-                    <p className="mt-1 text-xs text-slate-500">{entry.claimant} · {entry.item} · Found item {entry.foundItemReference || entry.foundItemId || "unavailable"}</p>
+                    <p className="mt-1 text-xs text-slate-500">{entry.claimant}, {entry.item}, found item {entry.foundItemReference || entry.foundItemId || "unavailable"}</p>
                   </div>
                   <div className="text-xs text-slate-500 md:text-right">
                     <div>{new Date(entry.changedAt).toLocaleString()}</div>
-                    <div className="mt-1">Changed by {entry.actor}</div>
+                    <div className="mt-1">{tr("Changed by {0}", { "0": entry.actor })}</div>
                   </div>
                 </article>
               ))}
             </div>
           )}
-          <div className="border-t border-line px-5 py-3 text-sm text-slate-500">{history.length} recorded changes</div>
+          <div className="border-t border-line px-5 py-3 text-sm text-slate-500">{tr("{0} recorded changes", { "0": history.length })}</div>
         </section>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-line bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-sm">
-              <thead>
-                <tr className="border-b border-line">
-                  {["CLAIM REFERENCE", "CLAIMANT", "FOUND ITEM", "SUBMITTED", "STATUS", "ACTIONS"].map((heading) => (
-                    <th key={heading} className="px-5 py-4 text-left text-xs font-semibold tracking-wide text-slate-400">{heading}</th>
+        <DataTable
+          caption={t("claims.title")}
+          minWidth={980}
+          columns={[
+            { key: "ref", label: t("claims.col.reference") },
+            { key: "claimant", label: t("claims.col.claimant") },
+            { key: "item", label: t("claims.col.item") },
+            { key: "submitted", label: t("claims.col.submitted") },
+            { key: "status", label: t("common.status") },
+            { key: "actions", label: t("common.actions") },
+          ]}
+          isEmpty={!loadError && visibleClaims.length === 0}
+          empty={tabClaims.length === 0
+            ? activeTab === "closed" ? tr("No claims have been closed or completed yet.") : tr("No active claims need review.")
+            : t("common.noMatches")}
+          footer={
+            <div className="flex flex-col gap-3 border-t border-line px-4 py-3 text-[13px] text-ink-muted sm:flex-row sm:items-center sm:justify-between sm:px-5">
+              <span className="tabular-nums">{t("common.showing", { from: filteredClaims.length === 0 ? 0 : (boundedPage - 1) * pageSize + 1, to: Math.min(boundedPage * pageSize, filteredClaims.length), total: filteredClaims.length })}</span>
+              {totalPages > 1 && (
+                <nav aria-label={tr("Claim pages")} className="flex items-center gap-1">
+                  <button type="button" onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={boundedPage === 1} aria-label={t("common.previous")} className="icon-action">‹</button>
+                  {pageNumbers.map((page) => (
+                    <button key={page} type="button" onClick={() => setCurrentPage(page)} aria-current={boundedPage === page ? "page" : undefined} className={`min-h-9 min-w-9 rounded-xl px-2.5 text-[13px] font-semibold tabular-nums transition-colors ${boundedPage === page ? "bg-navy-800 text-white dark:bg-[linear-gradient(180deg,#ecc787,#d1a153)] dark:text-navy-950" : "text-ink-soft hover:bg-navy-50"}`}>
+                      {page}
+                    </button>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {!loading && !loadError && visibleClaims.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-500">
-                      {tabClaims.length === 0
-                        ? activeTab === "closed" ? "No claims have been closed or completed yet." : "No active claims need review."
-                        : "No claims match these filters."}
-                    </td>
-                  </tr>
+                  <button type="button" onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={boundedPage === totalPages} aria-label={t("common.next")} className="icon-action">›</button>
+                </nav>
+              )}
+            </div>
+          }
+        >
+          {visibleClaims.map((claim) => (
+            <tr key={claim.id} data-tone={CLAIM_TONE[claim.status]}>
+              <td className="whitespace-nowrap font-semibold text-ink">{claim.claimReference || claim.id}</td>
+              <td>
+                <div className="max-w-[220px] truncate font-semibold text-ink">{claim.claimant}</div>
+                <div className="text-[13px] text-ink-muted">{claim.studentId}</div>
+              </td>
+              <td>
+                <div className="max-w-[260px] truncate font-medium text-ink">{claim.item}</div>
+                <div className="text-[13px] text-ink-muted">{claim.itemId}</div>
+              </td>
+              <td className="whitespace-nowrap">{claim.submitted}</td>
+              <td><StatusBadge status={claim.status} /></td>
+              <RowActions>
+                <IconAction label={`${t("claims.review")} ${claim.claimReference || claim.id}`} onClick={() => setReviewClaim(claim)} icon={<Eye size={17} aria-hidden="true" />} />
+                {activeTab !== "closed" && claim.status === "Approved for Pickup" && (
+                  <IconAction label={`${t("claims.complete")} ${claim.claimReference || claim.id}`} tone="success" onClick={() => setCollectionTarget(claim)} icon={<ShieldCheck size={17} aria-hidden="true" />} />
                 )}
-                {visibleClaims.map((claim) => (
-                  <tr key={claim.id} className="border-b border-line transition-colors hover:bg-navy-50">
-                    <td className="px-5 py-4 font-mono text-xs font-semibold text-slate-700">{claim.claimReference || claim.id}</td>
-                    <td className="px-5 py-4">
-                      <div className="font-semibold text-slate-900">{claim.claimant}</div>
-                      <div className="text-xs text-slate-400">{claim.studentId}</div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="font-medium text-slate-800">{claim.item}</div>
-                      <div className="text-xs text-slate-500">{claim.itemId}</div>
-                      <div className="break-all font-mono text-[12px] text-slate-400">{claim.foundItemId}</div>
-                    </td>
-                    <td className="px-5 py-4 text-slate-600">{claim.submitted}</td>
-                    <td className="px-5 py-4"><StatusBadge status={claim.status} /></td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button onClick={() => setReviewClaim(claim)} className="flex items-center gap-1.5 text-sm font-medium transition-colors hover:opacity-80" style={{ color: "#2563eb" }}>
-                          <svg width="15" height="15" fill="none" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" strokeWidth="2" /><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" /></svg>
-                          Review
-                        </button>
-                        {activeTab !== "closed" && claim.status === "Approved for Pickup" && (
-                          <button
-                            type="button"
-                            onClick={() => setCollectionTarget(claim)}
-                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 transition-colors hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1"
-                            aria-label={`Record collection and close reports for ${claim.claimReference || claim.id}`}
-                          >
-                            <svg width="15" height="15" fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                            Complete &amp; Close
-                          </button>
-                        )}
-                        {isSuperAdmin && (
-                          <button
-                            onClick={() => { setDeleteTarget(claim); setDeleteConfirmValue(""); }}
-                            aria-label={`Delete claim ${claim.claimReference || claim.id}`}
-                            title="Delete claim"
-                            className="inline-flex size-9 items-center justify-center rounded-lg border border-red-200 text-red-600 transition hover:bg-red-50"
-                          >
-                            <svg width="16" height="16" fill="none" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex flex-col gap-3 border-t border-line px-5 py-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span>Showing {filteredClaims.length === 0 ? 0 : (boundedPage - 1) * pageSize + 1}–{Math.min(boundedPage * pageSize, filteredClaims.length)} of {filteredClaims.length} claims</span>
-            <nav aria-label={`${activeTab === "closed" ? "Closed claims" : "Active claims"} pages`} className="flex items-center gap-1">
-              <button type="button" onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={boundedPage === 1} aria-label="Previous page" className="rounded border border-line px-2.5 py-2 text-xs hover:bg-navy-50 disabled:cursor-not-allowed disabled:opacity-40">‹</button>
-              {pageNumbers.map((page) => (
-                <button key={page} type="button" onClick={() => setCurrentPage(page)} aria-current={boundedPage === page ? "page" : undefined} className={`min-w-9 rounded border px-2.5 py-2 text-xs font-semibold ${boundedPage === page ? "border-navy-800 bg-navy-800 text-white" : "border-line text-slate-600 hover:bg-navy-50"}`}>
-                  {page}
-                </button>
-              ))}
-              <button type="button" onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={boundedPage === totalPages} aria-label="Next page" className="rounded border border-line px-2.5 py-2 text-xs hover:bg-navy-50 disabled:cursor-not-allowed disabled:opacity-40">›</button>
-            </nav>
-          </div>
-        </div>
+                {isSuperAdmin && (
+                  <IconAction label={`${t("common.delete")} ${claim.claimReference || claim.id}`} tone="danger" onClick={() => { setDeleteTarget(claim); setDeleteConfirmValue(""); }} icon={<Trash2 size={16} aria-hidden="true" />} />
+                )}
+              </RowActions>
+            </tr>
+          ))}
+        </DataTable>
       )}
 
       {deleteTarget && isSuperAdmin && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/65 p-4">
-          <section role="dialog" aria-modal="true" aria-labelledby="delete-claim-title" className="w-full max-w-md rounded-[20px] border border-red-100 bg-white p-5 shadow-overlay">
-            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-red-600">Superadmin action</div>
-            <h2 id="delete-claim-title" className="text-lg font-bold text-slate-900">Are you sure? Delete this claim?</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Double-check the reference. This permanently removes <strong>{deleteTarget.claimReference || deleteTarget.id}</strong> and its uploaded proof/ID files. A deletion event will remain in Claim History.
-            </p>
-            <label className="mb-1 mt-4 block text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-500">Type CONFIRM to delete</label>
-            <input
-              value={deleteConfirmValue}
-              onChange={(event) => setDeleteConfirmValue(event.target.value)}
-              placeholder="CONFIRM"
-              className="w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
-            />
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => { setDeleteTarget(null); setDeleteConfirmValue(""); }} disabled={deleting} className="rounded-xl border border-line bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50">Cancel</button>
-              <button type="button" onClick={() => void confirmDeleteClaim()} disabled={deleteConfirmValue !== "CONFIRM" || deleting} className="rounded-xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-40">{deleting ? "Deleting…" : "Delete claim"}</button>
-            </div>
-          </section>
-        </div>
+        <AdminModal
+          title={tr("Delete claim {0}?", { "0": deleteTarget.claimReference || deleteTarget.id })}
+          description={tr("This permanently removes the claim and its uploaded proof and ID files. A deletion entry stays in the change history.")}
+          icon={<Trash2 size={19} />}
+          tone="danger"
+          size="sm"
+          busy={deleting}
+          onClose={() => { setDeleteTarget(null); setDeleteConfirmValue(""); }}
+          footer={<>
+            <button type="button" onClick={() => { setDeleteTarget(null); setDeleteConfirmValue(""); }} disabled={deleting} className={BTN.ghost}>{tr("Cancel")}</button>
+            <button type="button" onClick={() => void confirmDeleteClaim()} disabled={deleteConfirmValue !== "CONFIRM" || deleting} className={BTN.danger}>{deleting ? tr("Deleting…") : tr("Delete claim")}</button>
+          </>}
+        >
+          <label className="block">
+            <span className="mb-1.5 block text-[14px] font-semibold text-ink-soft">{tr("Type CONFIRM to delete")}</span>
+            <input value={deleteConfirmValue} onChange={(event) => setDeleteConfirmValue(event.target.value)} placeholder={tr("CONFIRM")} autoComplete="off" data-autofocus className={`${INPUT} text-center font-semibold tracking-[0.2em]`} />
+          </label>
+        </AdminModal>
       )}
 
       {collectionTarget && (
         <ConfirmActionDialog
-          title="record collection and close linked reports?"
-          description={`Confirm that ${collectionTarget.claimant} passed in-person ownership verification and received ${collectionTarget.item}. This completes the approved claim, closes its found report, resolves any confirmed matching missing report for this claimant, and closes other claims for the same item.`}
-          confirmLabel={collectionBusy ? "Completing..." : "Complete & close reports"}
+          title={tr("record collection and close linked reports?")}
+          description={tr("Confirm that {0} passed in-person ownership verification and received {1}. This completes the approved claim, closes its found report, resolves any confirmed matching missing report for this claimant, and closes other claims for the same item.", { "0": collectionTarget.claimant, "1": collectionTarget.item })}
+          confirmLabel={collectionBusy ? tr("Completing...") : tr("Complete & close reports")}
           busy={collectionBusy}
           onCancel={() => setCollectionTarget(null)}
           onConfirm={() => {
@@ -901,8 +836,22 @@ export default function ClaimsVerification() {
           onApprove={approve}
           onReject={reject}
           onCollect={collect}
+          onEditReason={() => setClaimForm({ mode: "edit", claim: reviewClaim })}
         />
       )}
+
+      {claimForm && (claimForm.mode === "create" ? (
+        <ClaimFormModal mode="create" onClose={() => setClaimForm(null)} onSaved={() => { void refreshClaims().catch(() => undefined); window.dispatchEvent(new CustomEvent("ebalik-claims-updated")); }} />
+      ) : (
+        <ClaimFormModal
+          mode="edit"
+          claimId={claimForm.claim.id}
+          claimReference={claimForm.claim.claimReference}
+          currentReason={claimForm.claim.claimReason}
+          onClose={() => setClaimForm(null)}
+          onSaved={() => { setReviewClaim(null); void refreshClaims().catch(() => undefined); }}
+        />
+      ))}
     </div>
   );
 }

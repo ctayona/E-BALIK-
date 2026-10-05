@@ -1,4 +1,5 @@
 import { showInfoModal, type InfoModalVariant } from "../components/info-modal/infoModalStore";
+import { tr } from "./preferences";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -24,15 +25,15 @@ async function adminMutationRequest(url: string, options: RequestInit, title: st
       success: response.ok,
       title,
       message: response.ok
-        ? (typeof payload.message === "string" ? payload.message : `${title} completed successfully.`)
-        : (typeof payload.error === "string" ? payload.error : `${title} could not be completed.`),
+        ? (typeof payload.message === "string" ? payload.message : tr("{0} completed successfully.", { "0": tr(title) }))
+        : (typeof payload.error === "string" ? payload.error : tr("{0} could not be completed.", { "0": tr(title) })),
     });
     return response;
   } catch (error) {
     reportAdminProcess({
       success: false,
       title,
-      message: error instanceof Error ? error.message : `${title} could not be completed. Check your connection and try again.`,
+      message: error instanceof Error ? error.message : tr("{0} could not be completed. Check your connection and try again.", { "0": tr(title) }),
     });
     throw error;
   }
@@ -168,6 +169,8 @@ export interface AdminFoundItemRow {
   aiPercent: number | null;
   matchedItem?: string;
   status: "Ready to Release" | "Under Review" | "Released" | "Claimed" | "Unclaimed";
+  /** Stored found_items.status (unclaimed, review, claimed, ready_to_release, returned...). */
+  rawStatus?: string;
   photo?: string;
 }
 
@@ -182,7 +185,9 @@ export interface AdminLostItemRow {
   studentId: string;
   photo?: string;
   aiMatch: number | null;
-  status: "Searching" | "Potential Match" | "Resolved" | "Expired";
+  status: "Searching" | "Potential Match" | "Found" | "Resolved" | "Expired";
+  /** Stored missing_items.status: missing | found | returned. */
+  rawStatus?: string;
 }
 
 export interface UserActivityLog {
@@ -638,4 +643,58 @@ export function clearAdminSession() {
   localStorage.removeItem("ebalik_admin_user");
   localStorage.removeItem("ebalik_token");
   localStorage.removeItem("ebalik_user");
+}
+
+// ── Admin CRUD additions: user accounts and walk-in claims ─────────────────
+export interface AdminUserInput {
+  fname: string;
+  mname?: string;
+  lname: string;
+  email: string;
+  campus_id: string;
+  user_role: "Student" | "Faculty" | "Staff" | "Others";
+}
+
+async function readJsonOrThrow(response: Response, fallback: string) {
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(typeof error.error === "string" ? error.error : fallback);
+  }
+  return response.json();
+}
+
+export async function createAdminUser(user: AdminUserInput & { password: string }): Promise<{ user: AdminUserRow; message?: string }> {
+  const response = await adminMutationRequest(`${API_URL}/api/admin/users`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(user),
+  }, "Create account");
+  return readJsonOrThrow(response, "Unable to create the account");
+}
+
+export async function updateAdminUser(accountId: string, changes: Partial<AdminUserInput>): Promise<{ user: AdminUserRow; message?: string }> {
+  const response = await adminMutationRequest(`${API_URL}/api/admin/users/${encodeURIComponent(accountId)}`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(changes),
+  }, "Update account");
+  return readJsonOrThrow(response, "Unable to update the account");
+}
+
+export async function createAdminClaim(input: { found_item_reference: string; claimant: string; claim_reason: string; verified_in_person: boolean }): Promise<{ claim: { claim_id: string; claim_reference?: string }; message?: string }> {
+  const response = await adminMutationRequest(`${API_URL}/api/admin/claims`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(input),
+  }, "Record walk-in claim");
+  return readJsonOrThrow(response, "Unable to record the claim");
+}
+
+export async function updateAdminClaimDetails(claimId: string, claimReason: string): Promise<{ claim: { claim_id: string; claim_reference?: string }; message?: string }> {
+  const response = await adminMutationRequest(`${API_URL}/api/admin/claims/${encodeURIComponent(claimId)}`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ claim_reason: claimReason }),
+  }, "Update claim");
+  return readJsonOrThrow(response, "Unable to update the claim");
 }

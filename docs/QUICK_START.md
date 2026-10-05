@@ -55,7 +55,7 @@ Run each migration once in Supabase SQL Editor before deploying the matching bac
 ### Step 2: Frontend Environment
 ```bash
 # In project root
-cp .env.local.example .env.local
+cp Environment_Configs/frontend/.env.local.example Environment_Configs/frontend/.env.local
 ```
 
 No changes needed - defaults are correct for development.
@@ -177,10 +177,10 @@ src/app/
 Supabase:
   URL: https://onwlvwqauptstemmvyhz.supabase.co
   Key: sb_publishable_Hsg85D0CSUQvfT3Z_J3crg_4WsyBmmr
-  Service Key: [configured in backend/.env]
+  Service Key: [configured in `Environment_Configs/backend/.env`]
 
 SendGrid:
-  API Key: [configured in backend/.env]
+  API Key: [configured in `Environment_Configs/backend/.env`]
   From Email: ebaliksupport@gmail.com
 
 JWT:
@@ -298,7 +298,7 @@ Solution:
 ### OTP not received
 ```
 - Check email spam folder
-- Verify SENDGRID_API_KEY in backend/.env
+- Verify SENDGRID_API_KEY in `Environment_Configs/backend/.env`
 - Check email format in registration
 ```
 

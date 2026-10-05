@@ -4,9 +4,12 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 BACKEND_ROOT = os.path.dirname(__file__)
-load_dotenv(os.path.join(BACKEND_ROOT, '.env'))
-load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
-load_dotenv(os.path.join(PROJECT_ROOT, 'Users', 'Frontend', '.env.local'))
+# All environment files live in <repo>/Environment_Configs (backend secrets and frontend values kept apart)
+ENV_CONFIG_DIR = os.path.join(PROJECT_ROOT, 'Environment_Configs')
+BACKEND_ENV_FILE = os.path.join(ENV_CONFIG_DIR, 'backend', '.env')
+FRONTEND_ENV_FILE = os.path.join(ENV_CONFIG_DIR, 'frontend', '.env.local')
+load_dotenv(BACKEND_ENV_FILE)
+load_dotenv(FRONTEND_ENV_FILE)
 
 class Config:
     """Base configuration"""
@@ -41,11 +44,13 @@ class Config:
         "http://localhost:3000",
         "http://localhost:4173",
         "http://localhost:8080",
+        "http://localhost:8443",  # Admin dev server (npm run dev:admin)
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:4173",
         "http://127.0.0.1:8080",
+        "http://127.0.0.1:8443",
     ]
 
 class DevelopmentConfig(Config):

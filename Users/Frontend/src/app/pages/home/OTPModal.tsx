@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { X, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { X, Loader2, CheckCircle2, AlertCircle, ArrowLeft } from "lucide-react";
 
 interface OTPModalProps {
   isOpen: boolean;
@@ -92,8 +92,8 @@ export default function OTPModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/15 backdrop-blur-[2px] px-4">
-      <div className="bg-white rounded-[20px] border border-line max-w-md w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:px-4" role="presentation">
+      <div role="dialog" aria-modal="true" className="w-full max-h-[92dvh] overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)] sm:max-w-md rounded-t-[28px] sm:rounded-[26px] border border-white/70 bg-white shadow-overlay">
         {/* Header */}
         <div className="flex items-start justify-between gap-4 border-b border-line p-6">
           <div>
@@ -188,7 +188,7 @@ export default function OTPModal({
                     Verifying...
                   </>
                 ) : (
-                  "Verify Code"
+                  "Verify code"
                 )}
               </button>
             </form>
@@ -207,9 +207,9 @@ export default function OTPModal({
                 <button
                   type="button"
                   onClick={onBack}
-                  className="text-[13px] font-semibold text-navy-800 transition-colors hover:text-[#d1a153]"
+                  className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-navy-800 transition-colors hover:text-[#d1a153]"
                 >
-                  ← {backLabel}
+                  <ArrowLeft size={14} aria-hidden="true" /> {backLabel}
                 </button>
               )}
             </div>

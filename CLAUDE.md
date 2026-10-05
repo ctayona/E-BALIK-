@@ -19,7 +19,7 @@ To save tokens on every prompt, the full project context is not dumped here. Whe
 - **Frontend:** React 18, TypeScript, Vite, Tailwind CSS v4, Radix UI.
 - **Backend:** Python, Flask.
 - **Database/Storage:** Supabase PostgreSQL and Supabase Storage.
-- **Styling:** Adhere strictly to the UMak Navy (#1f3160) and Gold (#d1a153) theme. Use Tailwind and `Users/Frontend/src/styles/theme.css`. Avoid flat, generic designs.
+- **Styling:** "Gallery Glass" design system: UMak Navy (#1f3160) and Gold (#d1a153) as the base with iris, mint, and frost accents. Use the tokens in `Users/Frontend/src/styles/theme.css` and the media components in `Users/Frontend/src/app/shared/media/` (see "Theme" in `PROJECT_CONTEXT.md`). Avoid flat, generic designs.
 
 ## 4. Architectural Rules
 - **Repository Structure:** `Users/` and `Admin/` each contain `Frontend/` and `Backend/`, with one folder per page on both sides (see "Repository Layout" in `PROJECT_CONTEXT.md`). Shared Flask core and services live in `Server/`. Put new code in the folder of the page that uses it.
@@ -28,7 +28,17 @@ To save tokens on every prompt, the full project context is not dumped here. Whe
 - **Images:** Missing and Found items use Supabase storage buckets (`missing-item-images`, `found-item-images`). Preserve multipart `File` objects in form data uploads.
 - **Security:** Do not expose sensitive user data (reporter email, campus ID) in public listings (e.g., Browse Items).
 
-## 5. Dev Commands
+## 5. Daily Audit Log (Mandatory)
+- Maintain `Audits/YYYY-MM-DD_Audit.md` (one file per day, local date). For **every** interaction, append an entry with:
+  - **Prompt Audit:** the user's request.
+  - **Edit Audit:** exact files changed, with lines/sections and what changed.
+  - **Database Audit:** structural or logical database changes (schema, migrations, RLS, data writes), or "None".
+- Append only; never rewrite earlier entries.
+
+## 6. Environment Files
+- All env files live in `Environment_Configs/` and are loaded by explicit path: `Environment_Configs/backend/.env` (Flask via `Server/config.py`) and `Environment_Configs/frontend/.env.local` (both Vite apps via `envDir`). Never recreate `.env` files inside `Server/` or the frontends.
+
+## 7. Dev Commands
 - Start everything (Frontend, Backend, Admin): `npm run dev`
 - Frontend only: `npm run dev:frontend`
 - Backend only: `npm run dev:backend`

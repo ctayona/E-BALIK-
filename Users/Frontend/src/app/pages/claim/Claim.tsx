@@ -6,6 +6,7 @@ import type { Page } from "@/app/types";
 import { CX, SPRING } from "@/app/utils/clay";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
+import Modal, { CountdownConsent } from "@/app/shared/modal/Modal";
 
 type ClaimRecord = {
   claim_id: string; claim_reference?: string; fpost_id?: string; claim_reason?: string;
@@ -105,7 +106,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
       title: "Claim submitted for review",
       message: "An administrator will review your ownership proof and ID. You'll be notified when there is a decision.",
       reference: result.claim?.claim_reference || result.claim?.claim_id || undefined,
-      details: ["Track the review status in Claim History.", "Bring the same ID when collecting the item in person."],
+      details: ["Track the review status in Claim history.", "Bring the same ID when collecting the item in person."],
     });
     setReason(""); setProof(null); setProofPreview(""); setIdentityDocument(null);
     await loadClaims();
@@ -126,7 +127,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
     if (status === "approved" || status === "approved_for_pickup") return { icon: <CheckCircle2 size={14} />, badge: CX.badgeGreen, label: "Approved for office verification" };
     if (status === "collected") return { icon: <CheckCircle2 size={14} />, badge: CX.badgeGreen, label: "Collected" };
     if (status === "rejected") return { icon: <XCircle size={14} />, badge: CX.badgeRed, label: "Rejected" };
-    return { icon: <Clock3 size={14} />, badge: "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-bold uppercase tracking-[0.16em] text-amber-800 bg-amber-50 border border-amber-300/60 ", label: status === "pending" ? "Pending review" : status };
+    return { icon: <Clock3 size={14} />, badge: "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-bold text-amber-800 bg-amber-50 border border-amber-300/60", label: status === "pending" ? "Pending review" : status };
   }
 
   const visibleClaims = useMemo(
@@ -145,9 +146,9 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
           transition={{ duration: 0.4 }}
           className="mb-8"
         >
-          <span className={CX.sectionLabel}>Ownership Verification</span>
+          <span className={CX.sectionLabel}>Ownership verification</span>
           <h1 className="mt-1 text-[30px] font-semibold text-navy-800 tracking-tight" style={{ fontFamily: "var(--font-heading)" }}>
-            {activeTab === "submit" ? "Claim a Found Item" : "Claim History"}
+            {activeTab === "submit" ? "Claim a found item" : "Claim history"}
           </h1>
           <p className="mt-1 text-[14px] text-ink-muted">
             {activeTab === "submit"
@@ -172,7 +173,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
 
         {/* Tab switcher */}
         <div className={`${CX.cardSm} flex gap-1 p-1.5 mb-6`}>
-          {([["submit", "Submit Claim"], ["history", `Claim History (${claims.length})`]] as const).map(([t, label]) => (
+          {([["submit", "Submit claim"], ["history", `Claim history (${claims.length})`]] as const).map(([t, label]) => (
             <button
               key={t}
               type="button"
@@ -200,7 +201,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
 
                 {/* Reference */}
                 <div className="flex flex-col gap-2">
-                  <label className="text-[12px] font-bold uppercase tracking-[0.16em] text-navy-800">Found item reference</label>
+                  <label className="text-[12px] font-bold text-navy-800">Found item reference</label>
                   <input
                     value={reference}
                     onChange={(e) => setReference(e.target.value)}
@@ -212,7 +213,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
 
                 {/* Reason */}
                 <div className="flex flex-col gap-2">
-                  <label className="text-[12px] font-bold uppercase tracking-[0.16em] text-navy-800">Why do you believe this is your item?</label>
+                  <label className="text-[12px] font-bold text-navy-800">Why do you believe this is your item?</label>
                   <textarea
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
@@ -225,7 +226,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
 
                 {/* Proof upload */}
                 <div className="flex flex-col gap-2">
-                  <label className="text-[12px] font-bold uppercase tracking-[0.16em] text-navy-800">Ownership photo proof</label>
+                  <label className="text-[12px] font-bold text-navy-800">Ownership photo proof</label>
                   <div
                     onClick={() => document.getElementById("claim-proof")?.click()}
                     className="cursor-pointer min-h-[160px] flex items-center justify-center rounded-[20px] border border-dashed border-gold-400/70 bg-[#fffbeb] hover:bg-[#fffdf0] hover:border-gold-400 transition-colors"
@@ -247,7 +248,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-[12px] font-bold uppercase tracking-[0.16em] text-navy-800">Valid ID document</label>
+                  <label className="text-[12px] font-bold text-navy-800">Valid ID document</label>
                   <select value={identityDocumentType} onChange={(event) => setIdentityDocumentType(event.target.value)} className={`${CX.input} h-[48px] w-full`}>
                     <option value="campus_id">UMAK student / campus ID</option>
                     <option value="government_id">Government-issued ID</option>
@@ -270,7 +271,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
                   className={`${CX.btnNavy} flex items-center justify-center gap-2 h-[52px] w-full text-[15px]`}
                 >
                   <Upload size={16} />
-                  {isLoading ? "Submitting…" : "Submit Claim"}
+                  {isLoading ? "Submitting…" : "Submit claim"}
                 </motion.button>
               </form>
             </motion.section>
@@ -378,17 +379,30 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
           )}
         </AnimatePresence>
 
-        {confirmationOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-navy-950/55 px-4 backdrop-blur-[4px]">
-            <section role="dialog" aria-modal="true" aria-labelledby="claim-confirm-title" className={`${CX.modal} w-full max-w-lg gap-5`}>
-              <div className="flex items-center gap-3"><div className="flex size-11 items-center justify-center rounded-xl bg-amber-50 text-amber-700"><ShieldCheck size={22} /></div><div><p className={CX.sectionLabel}>Final review</p><h2 id="claim-confirm-title" className="text-[20px] font-semibold text-navy-800">Confirm your claim</h2></div></div>
-              <p className="text-[13px] leading-6 text-ink-soft">Your claim and identity document will be reviewed by authorized administrators. If approved, you must visit the UMAK Lost and Found Office with your original ID. Online approval does not release the item.</p>
-              <div className={`${CX.alertInfo} flex items-center gap-2`}><Clock3 size={15} /> Review the details. Submission unlocks in <strong>{countdown} seconds</strong>.</div>
-              <label className={`flex items-start gap-3 text-[13px] ${countdown > 0 ? "text-slate-500" : "text-navy-800"}`}><input type="checkbox" disabled={countdown > 0} checked={truthConfirmed} onChange={(event) => setTruthConfirmed(event.target.checked)} className="mt-0.5 size-4 accent-navy-800" />I confirm that the information and documents are truthful, and understand that final item release requires in-person verification.</label>
-              <div className="flex justify-end gap-3"><button type="button" onClick={() => setConfirmationOpen(false)} className={`${CX.btnGhost} px-4 py-2 text-[13px]`}>Cancel</button><button type="button" disabled={countdown > 0 || !truthConfirmed || isLoading} onClick={() => void confirmSubmission()} className={`${CX.btnNavy} px-5 py-2 text-[13px] disabled:opacity-50`}>{isLoading ? "Submitting…" : "Confirm claim"}</button></div>
-            </section>
-          </div>
-        )}
+        <Modal
+          open={confirmationOpen}
+          onClose={() => setConfirmationOpen(false)}
+          dismissible={!isLoading}
+          size="sm"
+          tone="gold"
+          icon={<ShieldCheck size={21} />}
+          eyebrow="Final review"
+          title="Confirm your claim"
+          description="Authorized administrators will review your claim and ID. If approved, bring your original ID to the UMak Lost and Found Office. Online approval doesn't release the item."
+          footer={
+            <>
+              <button type="button" disabled={isLoading} onClick={() => setConfirmationOpen(false)} className={CX.btnGhost}>Cancel</button>
+              <button type="button" disabled={countdown > 0 || !truthConfirmed || isLoading} onClick={() => void confirmSubmission()} className={CX.btnGold}>{isLoading ? "Submitting…" : "Confirm claim"}</button>
+            </>
+          }
+        >
+          <CountdownConsent
+            countdown={countdown}
+            checked={truthConfirmed}
+            onCheckedChange={setTruthConfirmed}
+            label="I confirm that the information and documents are truthful, and understand that final item release requires in-person verification."
+          />
+        </Modal>
 
       </div>
     </main>

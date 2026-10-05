@@ -1,7 +1,12 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, ClipboardList, Clock3, PackageCheck, Sparkles } from "lucide-react";
-import { fetchAdminDashboard, type AdminDashboardSummary } from "../../utils/api";
+import { AlertTriangle, ChevronRight, Clock3, Sparkles } from "lucide-react";
+import { fetchAdminDashboard, getStoredAdmin, type AdminDashboardSummary } from "../../utils/api";
+import { RolePill } from "../../components/ui/primitives";
+import { isSuperAdmin } from "../../utils/permissions";
+import { useTheme, tr } from "../../utils/preferences";
+
+type DeskPage = "claims" | "ai-matching" | "lost-items" | "found-items" | "users" | "activity-logs";
 import { AdminMetricSkeleton, SkeletonBlock, AdminTableSkeleton } from "../../components/LoadingSkeleton";
 
 interface DonutProps { value: number; color: string; size?: number; }
@@ -11,7 +16,7 @@ function Donut({ value, color, size = 110 }: DonutProps) {
   const filled = (value / 100) * circ;
   return (
     <svg width={size} height={size} viewBox="0 0 100 100">
-      <circle cx="50" cy="50" r={r} fill="none" stroke="#f0f2f7" strokeWidth="9" />
+      <circle cx="50" cy="50" r={r} fill="none" style={{ stroke: "var(--color-line-strong)" }} strokeWidth="9" />
       <circle cx="50" cy="50" r={r} fill="none" stroke={color} strokeWidth="9"
         strokeDasharray={`${filled} ${circ - filled}`}
         strokeDashoffset={circ / 4}
@@ -23,7 +28,12 @@ function Donut({ value, color, size = 110 }: DonutProps) {
   );
 }
 
-export default function Dashboard() {
+export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage) => void }) {
+  const [theme] = useTheme();
+  const dark = theme === "dark";
+  const chart = dark
+    ? { grid: "rgba(255,255,255,0.06)", tick: "#8f9cb8", cursor: "rgba(209,161,83,0.08)", lost: "#8ea4e6", tooltip: { background: "#0f172f", border: "1px solid rgba(255,255,255,0.1)", color: "#eef1f8" } }
+    : { grid: "#eef1f6", tick: "#5b6b82", cursor: "rgba(31,49,96,0.05)", lost: "#1f3160", tooltip: { background: "#ffffff", border: "1px solid #e3e8f0", color: "#0f172a" } };
   const [summary, setSummary] = useState<AdminDashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [activityFilter, setActivityFilter] = useState<string>("All");
@@ -61,7 +71,7 @@ export default function Dashboard() {
   };
 
   const formatActivityTimestamp = (value?: string) => {
-    if (!value) return "Unknown time";
+    if (!value) return tr("Unknown time");
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return value;
     return parsed.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -80,7 +90,7 @@ export default function Dashboard() {
       return [...new Set(extractedCodes)].join(" ↔ ");
     }
 
-    if (!target || target === "-" || target === "N/A") return "Item record";
+    if (!target || target === "-" || target === "N/A") return tr("Item record");
 
     const rawTarget = target.replace(/\s*—\s*.*$/, "").replace(/\s*↔\s*.*$/, "").trim();
     if (rawTarget && rawTarget !== "Item record") {
@@ -93,7 +103,7 @@ export default function Dashboard() {
       .replace(/\s*↔\s*/g, " ↔ ")
       .replace(/\s{2,}/g, " ")
       .trim();
-    return cleaned || "Item record";
+    return cleaned || tr("Item record");
   };
 
   const formatActivityDetail = (log: NonNullable<AdminDashboardSummary["recent_activity"]>[number]) => {
@@ -146,127 +156,171 @@ export default function Dashboard() {
     );
   }
 
-  const stats = [
-    { label: "Total Lost Reports", value: summary?.total_lost_reports ?? 0, delta: "+live", icon: <ClipboardList size={18} strokeWidth={2.2} aria-hidden="true" />, color: "#1f3160", bg: "#f2f5fb" },
-    { label: "Found Items", value: summary?.found_items ?? 0, delta: "+live", icon: <PackageCheck size={18} strokeWidth={2.2} aria-hidden="true" />, color: "#0f8077", bg: "#ecfaf8" },
-    { label: "Potential AI Matches", value: summary?.potential_ai_matches ?? 0, delta: "+live", icon: <Sparkles size={18} strokeWidth={2.2} aria-hidden="true" />, color: "#8f6526", bg: "#fdf8ee" },
-    { label: "Pending Claims", value: summary?.pending_claims ?? 0, delta: "live", icon: <Clock3 size={18} strokeWidth={2.2} aria-hidden="true" />, color: "#b45309", bg: "#fffbeb" },
-    { label: "Successfully Returned", value: summary?.successfully_returned ?? 0, delta: "+live", icon: <CheckCircle2 size={18} strokeWidth={2.2} aria-hidden="true" />, color: "#047857", bg: "#ecfdf5" },
-    { label: "Unresolved Items", value: summary?.unresolved_items ?? 0, delta: "live", icon: <AlertTriangle size={18} strokeWidth={2.2} aria-hidden="true" />, color: "#be123c", bg: "#fff1f2" },
+  const admin = getStoredAdmin();
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? tr("Good morning") : hour < 18 ? tr("Good afternoon") : tr("Good evening");
+  const today = new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+
+  const queue: { label: string; hint: string; value: number; page: DeskPage; edge: string; icon: JSX.Element }[] = [
+    { label: tr("Claims waiting for review"), hint: tr("Check proof and ID, then approve or reject"), value: summary?.pending_claims ?? 0, page: "claims", edge: "before:bg-gold-500", icon: <Clock3 size={18} aria-hidden="true" /> },
+    { label: tr("AI matches to confirm"), hint: tr("Possible owner and item pairs found automatically"), value: summary?.potential_ai_matches ?? 0, page: "ai-matching", edge: "before:bg-iris-500", icon: <Sparkles size={18} aria-hidden="true" /> },
+    { label: tr("Unresolved items"), hint: tr("Reports still open without a match or claim"), value: summary?.unresolved_items ?? 0, page: "lost-items", edge: "before:bg-rose-400", icon: <AlertTriangle size={18} aria-hidden="true" /> },
+  ];
+  const openItems = queue.reduce((total, item) => total + item.value, 0);
+
+  const inventory = [
+    { label: tr("Lost reports"), value: summary?.total_lost_reports ?? 0, page: "lost-items" as DeskPage },
+    { label: tr("Found items in custody"), value: summary?.found_items ?? 0, page: "found-items" as DeskPage },
+    { label: tr("Returned to owners"), value: summary?.successfully_returned ?? 0, page: "claims" as DeskPage },
+    { label: tr("Registered users"), value: summary?.total_users ?? 0, page: "users" as DeskPage },
   ];
 
-  return (
-    <div className="p-4 sm:p-6 space-y-5">
-      {/* Stats grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3">
-        {stats.map((s) => (
-          <div key={s.label} className="admin-metric group">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex size-10 items-center justify-center rounded-xl" style={{ background: s.bg, color: s.color }}>
-                {s.icon}
-              </div>
-              <span className="text-[12px] font-bold uppercase tracking-wider opacity-80" style={{ color: s.color }}>{s.delta}</span>
-            </div>
-            <div className="font-[family-name:var(--font-heading)] text-[26px] font-semibold leading-none tabular-nums text-ink">{s.value}</div>
-            <div className="text-[12px] text-slate-500 mt-1.5 font-medium">{s.label}</div>
-          </div>
-        ))}
-      </div>
+  const activityTone: Record<string, string> = {
+    success: "border-l-tide-500", ai: "border-l-iris-500", item: "border-l-navy-400", warning: "border-l-amber-500", error: "border-l-rose-500",
+  };
 
-      {/* Charts row */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        {/* Bar chart */}
-        <div className="xl:col-span-2 rounded-2xl border border-line bg-white p-5 shadow-card">
-          <div className="flex items-center justify-between mb-4">
+  return (
+    <div className="space-y-6 p-4 sm:p-6">
+      {/* The desk: today's work queue is the first thing an officer sees */}
+      <section className="relative overflow-hidden rounded-[28px] bg-[linear-gradient(135deg,#22366a_0%,#162448_55%,#0e1830_100%)] text-white shadow-raised dark:shadow-[0_0_0_1px_rgba(209,161,83,0.18),0_30px_80px_-30px_rgba(209,161,83,0.35)]" aria-labelledby="desk-heading">
+        <div className="pointer-events-none absolute -right-24 -top-24 size-80 rounded-full bg-gold-500/15 blur-3xl" aria-hidden="true" />
+        <div className="pointer-events-none absolute -bottom-32 left-1/3 size-80 rounded-full bg-iris-500/15 blur-3xl" aria-hidden="true" />
+        <div className="relative grid gap-6 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:items-center">
+          <div>
+            <p className="text-[14px] text-navy-200">{today}</p>
+            <h1 id="desk-heading" className="mt-1 font-[family-name:var(--font-heading)] text-[30px] font-semibold leading-[1.1] tracking-[-0.02em] sm:text-[38px]">
+              {greeting}, {admin?.fname || tr("officer")}.
+            </h1>
+            <p className="mt-3 max-w-[44ch] text-[15px] leading-7 text-navy-100">
+              {openItems === 0
+                ? tr("The desk is clear. Nothing is waiting on you right now.")
+                : tr("{0} {1} your attention across claims, matches and open reports.", { "0": openItems, "1": openItems === 1 ? tr("thing needs") : tr("things need") })}
+            </p>
+            <div className="mt-4"><RolePill superAdmin={isSuperAdmin()} /></div>
+          </div>
+
+          <div className="rounded-[22px] border border-white/12 bg-white/[0.06] p-2 backdrop-blur-md">
+            <p className="px-3 pb-1 pt-2 text-[13px] font-semibold text-gold-200">{tr("Needs your action")}</p>
+            <ul className="space-y-1.5">
+              {queue.map((item) => (
+                <li key={item.page}>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate?.(item.page)}
+                    className={`group relative flex w-full items-center gap-4 overflow-hidden rounded-2xl bg-white/[0.04] px-4 py-3.5 text-left transition-colors hover:bg-white/[0.1] before:absolute before:inset-y-2 before:left-0 before:w-1 before:rounded-r-full ${item.edge}`}
+                  >
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-gold-200">{item.icon}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[15px] font-semibold">{item.label}</span>
+                      <span className="block truncate text-[13px] text-navy-200">{item.hint}</span>
+                    </span>
+                    <span className={`font-[family-name:var(--font-heading)] text-[28px] font-semibold tabular-nums ${item.value > 0 ? "text-white" : "text-navy-300"}`}>{item.value}</span>
+                    <ChevronRight size={18} className="shrink-0 text-navy-300 transition-transform group-hover:translate-x-0.5 group-hover:text-white" aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* Inventory at a glance: one quiet panel rather than a wall of identical cards */}
+      <section className="admin-card overflow-hidden" aria-label={tr("Inventory")}>
+        <dl className="grid grid-cols-2 divide-line lg:grid-cols-4 [&>*]:border-line max-lg:[&>*:nth-child(-n+2)]:border-b lg:divide-x max-lg:[&>*:nth-child(odd)]:border-r">
+          {inventory.map((stat) => (
+            <button key={stat.label} type="button" onClick={() => onNavigate?.(stat.page)} className="group px-5 py-4 text-left transition-colors hover:bg-frost-50 sm:px-6 sm:py-5">
+              <dt className="text-[13px] font-medium text-ink-muted group-hover:text-navy-700">{stat.label}</dt>
+              <dd className="mt-1 font-[family-name:var(--font-heading)] text-[28px] font-semibold leading-none tabular-nums text-ink">{stat.value.toLocaleString()}</dd>
+            </button>
+          ))}
+        </dl>
+      </section>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+        <section className="admin-card p-5 sm:p-6 xl:col-span-2" aria-labelledby="trend-heading">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <div className="font-bold text-slate-900 text-[15px]">Lost vs Found Items</div>
-              <div className="text-[12px] text-slate-400 mt-0.5">Monthly comparison — trailing 12 months</div>
+              <h2 id="trend-heading" className="font-[family-name:var(--font-heading)] text-[18px] font-semibold text-ink">{tr("Lost and found, month by month")}</h2>
+              <p className="text-[13px] text-ink-muted">{tr("Reports filed over the last 12 months")}</p>
             </div>
-            <div className="flex items-center gap-4 text-[12px] font-medium">
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: "#1f3160" }}></span> Lost</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: "#0f8077" }}></span> Found</span>
+            <div className="flex items-center gap-4 text-[13px] font-medium text-ink-soft">
+              <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-navy-800 dark:bg-[#8ea4e6]" aria-hidden="true" />{tr("Lost")}</span>
+              <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-gold-500" aria-hidden="true" />{tr("Found")}</span>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={chartData} barCategoryGap="35%" barGap={4}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} />
-              <Tooltip contentStyle={{ border: "1px solid #e8ecf3", borderRadius: 12, boxShadow: "0 4px 24px rgba(0,0,0,0.06)", fontSize: 13 }} />
-              <Bar dataKey="lost" fill="#1f3160" radius={[5, 5, 0, 0]} />
-              <Bar dataKey="found" fill="#0f8077" radius={[5, 5, 0, 0]} />
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={chartData} barCategoryGap="32%" barGap={4}>
+              <CartesianGrid stroke={chart.grid} vertical={false} />
+              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: chart.tick }} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: chart.tick }} allowDecimals={false} />
+              <Tooltip cursor={{ fill: chart.cursor }} labelStyle={{ color: chart.tooltip.color }} contentStyle={{ ...chart.tooltip, borderRadius: 14, boxShadow: "0 12px 32px -12px rgba(17,27,66,0.25)", fontSize: 13 }} />
+              <Bar dataKey="lost" name="Lost" fill={chart.lost} radius={[6, 6, 0, 0]} />
+              <Bar dataKey="found" name="Found" fill="#d1a153" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </section>
 
-        {/* System performance */}
-        <div className="rounded-2xl border border-line bg-white p-5 shadow-card">
-          <div className="font-bold text-slate-900 text-[15px] mb-0.5">System Performance</div>
-          <div className="text-[12px] text-slate-400 mb-4">Current period metrics</div>
-          <div className="flex justify-around mb-5">
+        <section className="admin-card p-5 sm:p-6" aria-labelledby="performance-heading">
+          <h2 id="performance-heading" className="font-[family-name:var(--font-heading)] text-[18px] font-semibold text-ink">{tr("How the desk is doing")}</h2>
+          <p className="mb-5 text-[13px] text-ink-muted">{tr("This period")}</p>
+          <div className="mb-5 flex justify-around">
             <div className="text-center">
-              <Donut value={recoveryRate} color="#0f8077" size={100} />
-              <div className="text-[12px] text-slate-600 mt-1.5 font-semibold">Recovery Rate</div>
+              <Donut value={recoveryRate} color="#23977c" size={104} />
+              <div className="mt-1.5 text-[13px] font-semibold text-ink-soft">{tr("Items returned")}</div>
             </div>
             <div className="text-center">
-              <Donut value={aiDecisionAcceptance} color="#7c3aed" size={100} />
-              <div className="text-[12px] text-slate-600 mt-1.5 font-semibold">AI Acceptance</div>
+              <Donut value={Math.round(aiDecisionAcceptance)} color="#5470d6" size={104} />
+              <div className="mt-1.5 text-[13px] font-semibold text-ink-soft">{tr("AI matches accepted")}</div>
             </div>
           </div>
-          <div className="space-y-2.5 text-[13px] border-t border-line pt-4">
-            <div className="flex justify-between"><span className="text-slate-500">Avg. Resolution Time</span><span className="font-semibold text-slate-800">{summary?.average_resolution_days == null ? "N/A" : `${summary.average_resolution_days} days`}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">This Month</span><span className="font-semibold text-slate-800">{summary?.current_month_processed ?? 0}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">AI Confirmed</span><span className="font-semibold text-slate-800">{summary?.ai_confirmed ?? 0} / {summary?.ai_decided ?? 0}</span></div>
-          </div>
-        </div>
+          <dl className="space-y-2.5 border-t border-line pt-4 text-[14px]">
+            <div className="flex justify-between"><dt className="text-ink-muted">{tr("Average time to resolve")}</dt><dd className="font-semibold tabular-nums text-ink">{summary?.average_resolution_days == null ? tr("Not enough data") : tr("{0} days", { "0": summary.average_resolution_days })}</dd></div>
+            <div className="flex justify-between"><dt className="text-ink-muted">{tr("Processed this month")}</dt><dd className="font-semibold tabular-nums text-ink">{summary?.current_month_processed ?? 0}</dd></div>
+            <div className="flex justify-between"><dt className="text-ink-muted">{tr("AI decisions confirmed")}</dt><dd className="font-semibold tabular-nums text-ink">{summary?.ai_confirmed ?? 0} of {summary?.ai_decided ?? 0}</dd></div>
+          </dl>
+        </section>
       </div>
 
-      {/* Recent Activity */}
-      <div className="rounded-2xl border border-line bg-white p-5 shadow-card">
-        <div className="flex items-center justify-between mb-4">
+      <section className="admin-card p-5 sm:p-6" aria-labelledby="activity-heading">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="font-bold text-slate-900 text-[15px]">Recent Activity</div>
-            <div className="text-[12px] text-slate-400 mt-0.5">Latest system events</div>
+            <h2 id="activity-heading" className="font-[family-name:var(--font-heading)] text-[18px] font-semibold text-ink">{tr("Recent activity")}</h2>
+            <p className="text-[13px] text-ink-muted">{tr("The latest changes made across the system")}</p>
           </div>
+          <button type="button" onClick={() => onNavigate?.("activity-logs")} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[14px] font-semibold text-iris-700 hover:bg-iris-50">
+            {tr("All activity")} <ChevronRight size={15} aria-hidden="true" />
+          </button>
         </div>
-        {activityCategories.length > 1 && (
-          <div className="mb-4 flex gap-1.5 flex-wrap">
-            {activityCategories.map(cat => (
-              <button
-                key={cat}
-                onClick={() => setActivityFilter(cat)}
-                className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${
-                  activityFilter === cat
-                    ? "bg-navy-800 text-white "
-                    : "bg-slate-50 text-slate-500 hover:bg-[#ebeef4] hover:text-slate-700"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="space-y-2">
-          {recentActivity.length === 0 ? (
-            <div className="text-sm text-slate-400 text-center py-8 bg-slate-50 rounded-xl">No activities yet</div>
-          ) : (
-            recentActivity.map((a) => {
-              const colors: Record<string, string> = { success: "#10b981", ai: "#7c3aed", item: "#3b82f6", warning: "#f59e0b", error: "#ef4444" };
-              const bg: Record<string, string> = { success: "#f0fdf4", ai: "#faf5ff", item: "#f0f6ff", warning: "#fffbeb", error: "#fef2f2" };
-              return (
-                <div key={a.id} className="flex items-center gap-3 p-3 rounded-xl transition-colors" style={{ background: bg[a.type] }}>
-                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: colors[a.type] }}></div>
-                  <div className="flex-1 min-w-0">
-                    <span className="font-semibold text-[13px] text-slate-800">{a.action}</span>
-                    <span className="text-[13px] text-slate-500"> — {a.detail}</span>
-                  </div>
-                  <div className="text-[12px] text-slate-400 flex-shrink-0 font-medium">{a.time}</div>
+        <div role="tablist" aria-label={tr("Filter activity")} className="mb-4 inline-flex flex-wrap gap-1 rounded-xl border border-line bg-frost-50 p-1">
+          {activityCategories.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              role="tab"
+              aria-selected={activityFilter === cat}
+              onClick={() => setActivityFilter(cat)}
+              className={`rounded-lg px-3 py-1.5 text-[13px] font-semibold transition-colors ${activityFilter === cat ? "bg-white text-navy-800 shadow-card" : "text-ink-muted hover:text-navy-800"}`}
+            >
+              {tr(cat)}
+            </button>
+          ))}
+        </div>
+        {recentActivity.length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-line-strong px-6 py-10 text-center text-[14px] text-ink-muted">{tr("No activity in this category yet. Actions taken by admins and users will appear here.")}</p>
+        ) : (
+          <ul className="space-y-2">
+            {recentActivity.map((a) => (
+              <li key={a.id} className={`flex flex-col gap-1 rounded-xl border border-line border-l-4 bg-white px-4 py-3 sm:flex-row sm:items-center sm:gap-4 ${activityTone[a.type] ?? "border-l-navy-300"}`}>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-semibold text-ink">{a.action}</p>
+                  <p className="truncate text-[13px] text-ink-muted">{a.detail}</p>
                 </div>
-              );
-            })
-          )}
-        </div>
-      </div>
+                <time className="shrink-0 text-[13px] tabular-nums text-ink-muted">{a.time}</time>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

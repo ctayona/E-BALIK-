@@ -98,7 +98,7 @@
 
 2. [ ] **Create .env.local**
    ```bash
-   cp .env.local.example .env.local
+   cp Environment_Configs/frontend/.env.local.example Environment_Configs/frontend/.env.local
    ```
 
 3. [ ] **Test Backend**

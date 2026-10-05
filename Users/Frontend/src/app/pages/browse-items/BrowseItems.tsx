@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, ImageOff, LayoutGrid, List, MapPin, Search, SearchX, ShieldCheck, X } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { ArrowRight, ChevronLeft, ChevronRight, Search, SearchX, X } from "lucide-react";
 import type { NavigationOptions, Page } from "@/app/types";
 import { useAuth } from "@/app/utils/useAuth";
-import { CX, SPRING } from "@/app/utils/clay";
+import { CX } from "@/app/utils/clay";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
+import type { GalleryItem } from "@/app/shared/media/ItemImage";
+import ItemCollection from "@/app/shared/media/ItemCollection";
+import ViewToggle from "@/app/shared/view/ViewToggle";
+import { useViewMode } from "@/app/shared/view/useViewMode";
+import ItemViewer from "@/app/shared/media/ItemViewer";
+import HeroSlideshow from "@/app/shared/media/HeroSlideshow";
 
 type Item = {
   mpost_id?: string; fpost_id?: string; item_name: string; category?: string;
@@ -12,36 +17,36 @@ type Item = {
   last_seen_date?: string; image_url?: string; status?: string; description?: string;
 };
 type Tab = "missing" | "custody";
-const PAGE_SIZE = 9;
+const PAGE_SIZE = 12;
 
 const itemId = (item: Item) => item.mpost_id || item.fpost_id || "";
 const itemPlace = (item: Item) => item.last_location || item.location || "Location not recorded";
 const itemDate = (item: Item) => item.last_seen_date || item.found_date || "";
 
-function ItemImage({ item, className }: { item: Item; className: string }) {
-  const [failed, setFailed] = useState(false);
-  if (!item.image_url || failed)
-    return <div className={`${className} flex items-center justify-center bg-slate-100 text-slate-400`}><ImageOff size={22} aria-hidden="true" /></div>;
-  return <img src={item.image_url} alt={item.item_name} loading="lazy" className={className} onError={() => setFailed(true)} />;
-}
-
-function KindBadge({ tab }: { tab: Tab }) {
-  return tab === "missing"
-    ? <span className={CX.badgeTide}><Search size={13} aria-hidden="true" />Missing</span>
-    : <span className={CX.badgeGold}><ShieldCheck size={13} aria-hidden="true" />In custody</span>;
+function toGallery(item: Item, tab: Tab): GalleryItem {
+  return {
+    id: itemId(item),
+    title: item.item_name,
+    kind: tab === "missing" ? "missing" : "found",
+    image: item.image_url || undefined,
+    category: item.category,
+    location: itemPlace(item),
+    date: itemDate(item) || undefined,
+    description: item.description,
+  };
 }
 
 export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, options?: NavigationOptions) => void }) {
   const { getPublicMissingItems, searchFoundItems } = useAuth();
   const [tab,      setTab]      = useState<Tab>("missing");
-  const [mode,     setMode]     = useState<"tile" | "list">("tile");
+  const [mode] = useViewMode();
   const [items,    setItems]    = useState<Item[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [query,    setQuery]    = useState("");
   const [category, setCategory] = useState("");
   const [sort,     setSort]     = useState<"newest" | "oldest">("newest");
   const [page,     setPage]     = useState(0);
-  const [selected, setSelected] = useState<Item | null>(null);
+  const [viewIndex, setViewIndex] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -57,13 +62,6 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
 
   useEffect(() => setPage(0), [tab, mode, query, category, sort]);
   useEffect(() => setCategory(""), [tab]);
-
-  useEffect(() => {
-    if (!selected) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setSelected(null); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selected]);
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -89,6 +87,10 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
   const rangeStart = filtered.length === 0 ? 0 : page * pageSize + 1;
   const rangeEnd   = Math.min(filtered.length, (page + 1) * pageSize);
   const hasFilters = Boolean(query || category);
+  const galleryItems = useMemo(() => filtered.map((item) => toGallery(item, tab)), [filtered, tab]);
+  const currentGallery = useMemo(() => current.map((item) => toGallery(item, tab)), [current, tab]);
+  const openGallery = (item: GalleryItem) => setViewIndex(galleryItems.findIndex((entry) => entry.id === item.id));
+  const featured = useMemo(() => galleryItems.filter((item) => item.image).slice(0, 5), [galleryItems]);
 
   function clearFilters() {
     setQuery("");
@@ -127,8 +129,17 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
           </div>
         </header>
 
+        {tab === "custody" && !hasFilters && !loading && featured.length > 0 && (
+          <HeroSlideshow
+            items={featured}
+            label="Featured items in custody"
+            onOpen={(item) => setViewIndex(galleryItems.findIndex((entry) => entry.id === item.id))}
+            className="mb-5 min-h-[340px]"
+          />
+        )}
+
         {/* Toolbar */}
-        <section aria-label="Filters" className={`${CX.card} sticky top-[72px] z-10 mb-5 p-3 sm:p-4`}>
+        <section aria-label="Filters" className="glass sticky top-[calc(76px+env(safe-area-inset-top))] z-20 mb-5 rounded-[22px] p-3 sm:p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <div className="relative flex-1">
               <label htmlFor="browse-search" className="sr-only">Search listings</label>
@@ -148,21 +159,7 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
                 <option value="newest">Newest first</option>
                 <option value="oldest">Oldest first</option>
               </select>
-              <div className="flex rounded-[var(--radius-control)] border border-line-strong bg-white p-1" role="group" aria-label="View mode">
-                {([["tile", LayoutGrid, "Grid view"], ["list", List, "List view"]] as const).map(([value, Icon, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={mode === value}
-                    aria-label={label}
-                    title={label}
-                    onClick={() => setMode(value)}
-                    className={`flex size-[34px] items-center justify-center rounded-[7px] transition-colors ${mode === value ? "bg-navy-800 text-white" : "text-ink-muted hover:bg-navy-50"}`}
-                  >
-                    <Icon size={17} aria-hidden="true" />
-                  </button>
-                ))}
-              </div>
+              <ViewToggle />
             </div>
           </div>
           {categories.length > 0 && (
@@ -192,49 +189,14 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
             <p className="mt-1 max-w-[46ch] text-[14px] text-ink-muted">{hasFilters ? "Try a broader word, a different category, or clear the filters." : "Check back soon; listings update as reports come in."}</p>
             {hasFilters && <button type="button" onClick={clearFilters} className={`${CX.btnGhost} mt-4`}>Clear filters</button>}
           </div>
-        ) : mode === "tile" ? (
-          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {current.map((item) => (
-              <li key={itemId(item)}>
-                <button type="button" onClick={() => setSelected(item)} className={`${CX.cardHover} group block w-full overflow-hidden text-left`}>
-                  <div className="relative">
-                    <ItemImage item={item} className="aspect-[16/10] w-full object-cover" />
-                    <span className="absolute left-3 top-3"><KindBadge tab={tab} /></span>
-                  </div>
-                  <div className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <h2 className="min-w-0 text-[16px] font-semibold leading-snug text-ink group-hover:text-navy-700">{item.item_name}</h2>
-                      <span className="shrink-0 pt-0.5 font-mono text-[12px] text-ink-muted">{itemId(item)}</span>
-                    </div>
-                    <p className="mt-1 text-[13px] text-ink-muted">{item.category || "Uncategorized"}</p>
-                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-3 text-[13px] text-ink-soft">
-                      <span className="flex min-w-0 items-center gap-1.5"><MapPin size={14} className="shrink-0 text-gold-600" aria-hidden="true" /><span className="truncate">{itemPlace(item)}</span></span>
-                      <span className="flex items-center gap-1.5 tabular-nums"><CalendarDays size={14} className="shrink-0 text-gold-600" aria-hidden="true" />{itemDate(item) || "No date"}</span>
-                    </div>
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
         ) : (
-          <div className={`${CX.card} overflow-hidden`}>
-            <ul className="divide-y divide-line">
-              {current.map((item) => (
-                <li key={itemId(item)}>
-                  <button type="button" onClick={() => setSelected(item)} className="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-slate-50">
-                    <ItemImage item={item} className="size-14 shrink-0 rounded-lg object-cover" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] font-semibold text-ink">{item.item_name}</span>
-                      <span className="mt-0.5 block truncate text-[13px] text-ink-muted">{item.category || "Uncategorized"} · {itemPlace(item)}</span>
-                    </span>
-                    <span className="hidden w-28 text-[13px] text-ink-soft tabular-nums sm:block">{itemDate(item)}</span>
-                    <span className="hidden w-20 font-mono text-[12px] text-ink-muted md:block">{itemId(item)}</span>
-                    <ChevronRight size={18} className="shrink-0 text-slate-400" aria-hidden="true" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <ItemCollection
+            label={tab === "missing" ? "Missing reports" : "Items in custody"}
+            items={currentGallery}
+            mode={mode}
+            onOpen={(item) => openGallery(item)}
+            badge={(item) => mode === "tile" ? <span className="glass-dark rounded-full px-2 py-1 font-mono text-[11px]">{item.id}</span> : null}
+          />
         )}
 
         {/* Pagination */}
@@ -262,71 +224,24 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
           </nav>
         )}
 
-        {/* Item detail modal */}
-        <AnimatePresence>
-          {selected && (
-            <motion.div
-              key="detail-overlay"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              className="fixed inset-0 z-50 flex items-end justify-center bg-navy-950/55 backdrop-blur-[4px] sm:items-center sm:p-4"
-              onClick={() => setSelected(null)}
-            >
-              <motion.div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="browse-detail-title"
-                initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }}
-                transition={SPRING}
-                onClick={(e) => e.stopPropagation()}
-                className="flex max-h-[92vh] w-full max-w-[560px] flex-col overflow-hidden rounded-t-2xl border border-line bg-white shadow-overlay sm:rounded-2xl"
-              >
-                <div className="relative">
-                  <ItemImage item={selected} className="h-[230px] w-full bg-slate-50 object-contain" />
-                  <button type="button" aria-label="Close item details" onClick={() => setSelected(null)} className="absolute right-3 top-3 flex size-10 items-center justify-center rounded-full bg-white/95 text-ink shadow-card hover:bg-white">
-                    <X size={18} aria-hidden="true" />
-                  </button>
-                </div>
-                <div className="overflow-y-auto p-6">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <KindBadge tab={tab} />
-                    <span className="font-mono text-[12px] text-ink-muted">{itemId(selected)}</span>
-                  </div>
-                  <h2 id="browse-detail-title" className="mt-2 font-[family-name:var(--font-heading)] text-[22px] font-semibold leading-snug text-ink">{selected.item_name}</h2>
-                  <p className="mt-2 whitespace-pre-line text-[15px] leading-6 text-ink-soft">{selected.description || "No public description provided."}</p>
-                  <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-line pt-5">
-                    {[
-                      { label: "Category", value: selected.category || "Uncategorized" },
-                      { label: tab === "missing" ? "Last seen at" : "Found at", value: itemPlace(selected) },
-                      { label: tab === "missing" ? "Date lost" : "Date found", value: itemDate(selected) || "Not recorded" },
-                    ].map(({ label, value }) => (
-                      <div key={label}>
-                        <dt className="text-[12px] font-medium text-ink-muted">{label}</dt>
-                        <dd className="mt-0.5 text-[15px] font-semibold text-ink">{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  {tab === "missing" && (
-                    <p className={`${CX.alertInfo} mt-5`}>Found this item? Report it as found so the owner gets matched automatically.</p>
-                  )}
-                </div>
-                {onNavigate && (
-                  <div className="flex flex-col-reverse gap-2 border-t border-line bg-slate-50/70 p-4 sm:flex-row sm:justify-end">
-                    {tab === "custody" ? (
-                      <button type="button" onClick={() => { onNavigate("claim", { foundItemId: itemId(selected) }); setSelected(null); }} className={CX.btnGold}>
-                        This is mine, start a claim <ArrowRight size={16} aria-hidden="true" />
-                      </button>
-                    ) : (
-                      <button type="button" onClick={() => { onNavigate("found-item", { mode: "form" }); setSelected(null); }} className={CX.btnNavy}>
-                        I found this item <ArrowRight size={16} aria-hidden="true" />
-                      </button>
-                    )}
-                  </div>
-                )}
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {viewIndex !== null && viewIndex >= 0 && (
+          <ItemViewer
+            items={galleryItems}
+            index={viewIndex}
+            onIndexChange={setViewIndex}
+            onClose={() => setViewIndex(null)}
+            note={() => tab === "missing" ? <p className={CX.alertInfo}>Found this item? Report it as found so the owner gets matched automatically.</p> : null}
+            actions={onNavigate ? (item) => tab === "custody" ? (
+              <button type="button" onClick={() => { setViewIndex(null); onNavigate("claim", { foundItemId: item.id }); }} className={`${CX.btnGold} w-full`}>
+                This is mine, start a claim <ArrowRight size={16} aria-hidden="true" />
+              </button>
+            ) : (
+              <button type="button" onClick={() => { setViewIndex(null); onNavigate("found-item", { mode: "form" }); }} className={`${CX.btnNavy} w-full`}>
+                I found this item <ArrowRight size={16} aria-hidden="true" />
+              </button>
+            ) : undefined}
+          />
+        )}
 
       </div>
     </main>

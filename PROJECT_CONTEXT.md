@@ -56,11 +56,16 @@ Admin/
                                users, reports_analytics, activity_logs, admin_profile
   Backend/shared/              admin_access.py (_require_admin, _log_admin_action)
 Server/                        Flask entry point and services shared by both sections
-  run.py, config.py, .env, venv/, requirements.txt
+  run.py, config.py, venv/, requirements.txt
   app/__init__.py              App factory (adds the repo root to sys.path for Users/Admin imports)
   app/blueprints.py            Mounts every page blueprint (Users at /api, Admin at /api/admin)
   app/utils/                   Supabase DB, JWT/password, email, crypto, matching, claim status, admin MFA
   database_schema.sql, manual_migrations/, tests/, scripts/
+Environment_Configs/           All env files (git-ignored), loaded by explicit path
+  backend/.env                 Flask/Supabase/SendGrid/JWT secrets  (Server/config.py, Server/scripts, setup_database.py)
+  frontend/.env.local          VITE_* values for both Vite apps      (envDir in Users/ and Admin/ vite.config.ts)
+  frontend/.env.local.example  Template
+Audits/                        Daily audit logs (YYYY-MM-DD_Audit.md): prompt, edit, and database audits per interaction
 Design/                        Design skill packs for AI tools (not loaded by the app)
 docs/                          Guides, checklists, notes, archived exports
 ```
@@ -254,6 +259,39 @@ DELETE /api/missing-items/<mpost_id>
 
 Missing images use the `missing-item-images` bucket.
 
+### Admin (`/api/admin`, Admin/Backend page blueprints)
+
+Roles come from `user_profiles.access_level` (`user | admin | super_admin`). Standard admins can create, read and update; **only `super_admin` can delete**. Every admin blueprint gets the `before_request` guard `enforce_super_admin_for_deletes` (`Admin/Backend/shared/admin_access.py`, attached in `Server/app/blueprints.py`), so any `DELETE` route under `/api/admin` returns 403 for a standard admin, including routes added later. Individual delete routes and DB RPCs also check the role. On the frontend, `Admin/Frontend/src/utils/permissions.ts` (`canDelete`, `isSuperAdmin`) controls whether delete actions are shown.
+
+```text
+POST  /api/admin/users                 create a standard user account (password >= 16, hashed)
+PATCH /api/admin/users/<account_id>    edit profile fields (not access_level/password/is_active; only super_admin may edit a super_admin)
+POST  /api/admin/claims                record a walk-in claim (found item FP ref + claimant email/campus ID)
+PATCH /api/admin/claims/<claim_id>     edit the claim reason on a pending/approved claim
+```
+
+Admin UI building blocks: `Admin/Frontend/src/components/ui/AdminModal.tsx` (dialog that becomes a bottom sheet on mobile) and `components/ui/primitives.tsx` (`BTN`, `PageHeader`, `RolePill`, `Field`, inputs). The dashboard opens with a navy "desk" band and a "Needs your action" worklist that links to pages through `onNavigate`.
+
+Lost-report status (`PUT /api/admin/lost-items/<ref>` with `status`) accepts only `missing | found | returned` (`SupabaseDB.ADMIN_MISSING_ITEM_STATUSES`). Found items let admins set only the holding states `unclaimed | review`; claimed, ready-to-release and returned come from the claim workflow. Both admin list endpoints also return `rawStatus`.
+
+**Admin console theme, language and management layout**
+- Theme and language are per-device preferences in `Admin/Frontend/src/utils/preferences.ts` (`useTheme`, `useLanguage`, `useT`). `initPreferences()` runs in `main.tsx` and sets `html[data-theme]` and `lang`. The localStorage keys are `ebalik_admin_theme` and `ebalik_admin_language`.
+- Copy lives in `src/i18n/strings.ts`: English is primary, Tagalog falls back to English per key. Navigation, header, page titles and the four management pages are translated. Record values (statuses, categories) stay as stored.
+- Dark mode lives in `src/index.css`. `:root[data-theme="dark"]` remaps the design tokens (ink, line, frost, slate, tints) and the common hard-coded utilities, so every page follows the theme. `dark:` utilities use the custom variant bound to `data-theme`. Don't pair `bg-white` with `dark:bg-*`, because the unlayered remap wins; use `bg-[var(--surface)]` instead.
+- Every management page (Lost items, Found items, Claims, Users) uses `src/components/ui/management.tsx`: `SegmentedFilter` (status tabs with counts), `Toolbar`, `SearchField`, `FilterSelect`, `DataTable` (horizontal scroll with the last column pinned via `.mgmt-actions`, so row actions are always reachable), `IconAction`, `StatusPill`, `usePagination` plus `TableFooter`, `DetailGrid`, and `ExportButton`. Exports go through `src/utils/csv.ts` (BOM plus formula-injection guard).
+- Item categories are shared with the user app's report forms in `src/utils/itemOptions.ts`.
+- **Localization (admin):**
+  - Typed keys live in `i18n/strings.ts`. Every other displayed English phrase goes through `tr("English phrase", { 0: value })` from `utils/preferences.ts`.
+  - The Tagalog dictionary is `i18n/phrases.ts`, keyed by the exact English text; anything missing falls back to English.
+  - Shared components translate string props at render (`AdminModal`, `ConfirmActionDialog`, `InfoModalHost`, `StatusPill`, `SegmentedFilter`, `FilterSelect`, `DataTable` headers, `DetailGrid`, `Field`, input placeholders), so pass them plain English.
+  - New UI text must be wrapped in `tr()` and have an entry added to `phrases.ts`.
+- **Dialog layering (admin):** `AdminModal` is z-70 and portaled. `ConfirmActionDialog` is z-90 and portaled, so a confirmation always sits above the form that opened it. The image zoom is z-80 and the global result modal z-1000. Escape closes only the top dialog (`isTopDialog`).
+
+**User app theme**
+- `Users/Frontend/src/app/utils/theme.ts` (`initTheme` in `main.tsx`, `useTheme`) sets `html[data-theme]` and the PWA `theme-color`. The localStorage key is `ebalik_user_theme`, and the default follows the OS setting. The toggle lives in `UserHeader` (desktop and drawer).
+- Dark mode is the `:root[data-theme="dark"]` layer at the end of `styles/theme.css`. It mirrors the admin: navy-black canvas, glass cards, gold primary actions, and remapped brand and utility colours. The shadcn tokens are navy-tinted. `.app-chrome` styles the header and tab bar, and `.ui-modal-panel` makes the shared modal opaque.
+- All-caps label styling has been removed from both apps; labels and headings use sentence case.
+
 ## Image Upload Rules
 
 The missing image upload bug was fixed in `Users/Frontend/src/app/utils/api.ts`.
@@ -325,31 +363,64 @@ Found report status starts as `unclaimed`. Found custody is tracked separately u
 
 `docs/DATABASE_SCHEMA.txt` is older documentation and may not reflect all current fields. Treat `Server/database_schema.sql` as authoritative.
 
-## Theme ("Campus Utility")
+## Theme ("Gallery Glass")
 
-Swiss-modern and utilitarian: fast to scan, clear hierarchy, flat surfaces with a light elevation scale. Navy anchors structure, gold marks the primary action and brand moments, and tide (teal) is the complementary accent for matches and info.
+Premium, image-led and still fast to scan. Navy anchors structure and gold marks the primary action. Iris (periwinkle) handles links and focus, and tide (mint) signals matches and good news. Frosted glass is reserved for overlays, sticky bars and photo captions, so it doesn't sit on every card.
 
 Tokens are Tailwind v4 `@theme` variables, defined in `Users/Frontend/src/styles/theme.css` and mirrored in `Admin/Frontend/src/index.css`. Use the utilities, not raw hex:
 
 ```text
 navy-50 … navy-950    brand navy = navy-800 (#1f3160)
-gold-50 … gold-900    brand gold = gold-500 (#d1a153); use gold-700 for gold TEXT on white (contrast)
-tide-50 … tide-700    complementary teal for matches / info
-page, line, line-strong, ink, ink-soft, ink-muted   neutrals
-shadow-card, shadow-raised, shadow-overlay          elevation scale
+gold-50 … gold-900    brand gold = gold-500 (#d1a153); use gold-700 for gold TEXT on white
+iris-50 … iris-700    links, focus ring (iris-500 #6e8ef0)
+tide-50 … tide-700    mint, for matches / success context (tide-500 #3fbf9f)
+frost-50 … frost-200  glass and soft panels
+page, line, line-strong, ink, ink-soft, ink-muted          neutrals
+shadow-card, shadow-raised, shadow-overlay, shadow-glow-gold, shadow-glow-iris
 ```
 
-- Fonts: Lexend (headings, `--font-heading`) and Source Sans 3 (body), in both apps.
-- User-app component classes live in `Users/Frontend/src/app/utils/clay.ts` (`CX.btnNavy`, `CX.btnGold`, `CX.input`, `CX.card`, `CX.badge*`, `CX.eyebrow`, `CX.pageTitle`…).
-- Controls are at least 44px tall. Text is at least 12px. Focus uses a global gold `:focus-visible` ring.
-- Hover changes color, border, or shadow only, never layout (no translate "lift"). Icons come from Lucide, never emoji.
-- Labels are linked to inputs (`htmlFor`/`useId`). Required fields show a red asterisk.
+- Utilities: `.app-canvas` (soft gradient page background), `.glass`, `.glass-dark`, `.text-gradient-gold`, `.scrim-bottom`, `.no-scrollbar`, `.kenburns`, `.slide-progress`. All motion utilities respect `prefers-reduced-motion`.
+- Fonts: Outfit (headings, `--font-heading`) and Inter (body), in both apps.
+- User-app component classes live in `Users/Frontend/src/app/utils/clay.ts` (`CX.btnGold`, `CX.btnNavy`, `CX.card`, `CX.cardHover`, `CX.input`, `CX.badge*`, `CX.eyebrow`, `CX.pageTitle`…).
+- Controls are at least 44px tall and text is at least 12px. Focus uses a global iris `:focus-visible` ring. Card hover lifts use `transform` only. Icons come from Lucide, never emoji.
+
+### Media components (`Users/Frontend/src/app/shared/media/`)
+
+- `ItemImage` + `GalleryItem` type: photo with a branded no-photo fallback (UMak seal watermark + category glyph). `GalleryItem` holds public-safe fields only.
+- `HeroSlideshow`: accessible auto-advancing slideshow. It pauses on hover, focus, hidden tab, or the pause button, never autoplays with reduced motion, supports arrow keys, and has dots with a progress fill.
+- `ItemCollection`: the single item display used across pages. It renders `GalleryItem[]` as photo tiles (2 to 4 columns) or compact list rows, with `badge` and `extra` slots for status, IDs, match scores and meters.
+- `ItemViewer`: full-screen viewer with zoom/pan, previous/next across the current list, a thumbnail filmstrip, a details panel, and caller-supplied actions. It traps focus, locks scrolling, and closes on Esc.
+- Used by Dashboard (hero, Recent found items, and Recent missing reports with a Campus/Mine switch), Browse Items, My Reports, Matches, the Found/Missing Item report history, and Landing.
+
+### Tile / list view (`Users/Frontend/src/app/shared/view/`)
+
+- `useViewMode()` + `ViewToggle`: one app-wide "tile" / "list" preference, persisted in `localStorage` (`ebalik_view_mode`) and synced across pages and tabs. Every item collection reads it, so switching on one page switches everywhere.
+
+### Modals (`Users/Frontend/src/app/shared/modal/Modal.tsx`)
+
+- Every user-app dialog uses `Modal`: a centered card on desktop and a bottom sheet with a grab handle and safe-area padding on phones. It provides a toned icon tile, eyebrow, title, description, an optional photo `hero`, a scrollable body, and a sticky `footer`.
+- It handles the portal, focus trap, Escape (topmost modal only, via a modal stack), focus restore, and reference-counted scroll lock. Pass `dismissible={false}` while a request is in flight.
+- `CountdownConsent`: the 5-second countdown + acknowledgement block for edits, deletes, report submissions and claims.
+- Admin: `Admin/Frontend/src/components/ConfirmActionDialog.tsx` follows the same style. Page-level admin overlays get the frosted backdrop and premium panel through `index.css`.
+
+### Mobile / PWA
+
+- `Users/Frontend/src/app/shared/MobileTabBar.tsx`: bottom navigation below `lg` (Home, Browse, a gold Report button, Matches, Reports). Content reserves `76px + safe-area` at the bottom.
+- `Users/Frontend/public/manifest.webmanifest` + `public/icons/*` (generated from the UMak seal, including a maskable icon). `index.html` sets `viewport-fit=cover`, the theme color and Apple web-app meta tags.
+- `Users/Frontend/public/sw.js`: app-shell service worker, registered in `main.tsx` in production only. Navigations are network-first with a cached-shell offline fallback; `/assets` and `/icons` are cache-first; Google Fonts are stale-while-revalidate. It never caches the API or `/admin`. Bump `VERSION` in `sw.js` when caching rules change.
+- Inputs are 16px on phones (prevents iOS focus zoom). The header and sticky toolbars are offset by `env(safe-area-inset-top)`.
+
+### Performance
+
+- `Users/Frontend/src/app/utils/api.ts`: GET requests are de-duplicated and cached for 15 s; any mutation and logout clear the cache. `/api/auth` and `/api/notifications` are never cached.
+- `vite.config.ts` splits `vendor-react` and `vendor-motion` chunks. Tailwind skips the unused `src/app/shared/ui/**`.
+- Heavy images are served as WebP siblings (`*.webp` next to the original PNGs in `src/imports`).
 
 Avoid:
 
-- Replacing the navy/gold theme or adding off-palette accents (indigo, purple, bright #FBBF24 yellow).
-- Gradient or "clay" buttons, double offset shadows, thick 2–3px borders.
-- Auto-rotating carousels without pause controls.
+- Replacing the navy/gold base, or glass on every surface (keep it for overlays and captions).
+- Carousels without pause/arrow controls, or carousels as the only way to reach items. Always provide a grid or "View all".
+- Stock or sample photos standing in for real items. Use the `ItemImage` fallback.
 - Duplicate report forms and tabs.
 - Exposing private report data publicly.
 - Mock placeholder reports in user-facing workflows.

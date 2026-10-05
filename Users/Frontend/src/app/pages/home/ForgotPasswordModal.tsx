@@ -67,7 +67,7 @@ export default function ForgotPasswordModal({
   return (
     <>
       {/* Clay modal card */}
-      <div className={`${CX.modal} w-[460px] max-w-[95vw]`}>
+      <div className={`relative flex flex-col items-start gap-5 w-full px-6 pb-[max(2rem,env(safe-area-inset-bottom))] pt-9 sm:w-[460px] sm:p-8 rounded-t-[28px] sm:rounded-[26px] border border-white/70 bg-white shadow-overlay`}>
 
         {/* Close */}
         <button
@@ -84,7 +84,7 @@ export default function ForgotPasswordModal({
             <KeyRound size={24} />
           </div>
           <div>
-            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-gold-700">Recovery</p>
+            <p className="text-[12px] font-semibold text-gold-700">Recovery</p>
             <h2 className="text-[22px] font-semibold text-navy-800" style={{ fontFamily: "var(--font-heading)" }}>
               Forgot Password
             </h2>
@@ -101,7 +101,7 @@ export default function ForgotPasswordModal({
         {step === "request" && (
           <form onSubmit={handleRequestReset} className="flex flex-col gap-4 w-full">
             <div className="flex flex-col gap-2">
-              <label className="text-[12px] font-bold uppercase tracking-[0.16em] text-navy-800">UM Email Address</label>
+              <label className="text-[12px] font-bold text-navy-800">UM Email Address</label>
               <div className="relative">
                 <Mail size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 <input
@@ -119,7 +119,7 @@ export default function ForgotPasswordModal({
               disabled={isLoading}
               className={`${CX.btnNavy} h-[52px] text-[15px] w-full`}
             >
-              {isLoading ? "Sending code…" : "Send Verification Code"}
+              {isLoading ? "Sending code…" : "Send verification code"}
             </button>
           </form>
         )}
@@ -128,7 +128,7 @@ export default function ForgotPasswordModal({
         {step === "reset" && (
           <form onSubmit={handleResetSubmit} className="flex flex-col gap-4 w-full">
             <div className="flex flex-col gap-2">
-              <label className="text-[12px] font-bold uppercase tracking-[0.16em] text-navy-800">New Password</label>
+              <label className="text-[12px] font-bold text-navy-800">New password</label>
               <input
                 type="password"
                 value={newPassword}
@@ -139,7 +139,7 @@ export default function ForgotPasswordModal({
               />
             </div>
             <div className="flex flex-col gap-2">
-              <label className="text-[12px] font-bold uppercase tracking-[0.16em] text-navy-800">Confirm New Password</label>
+              <label className="text-[12px] font-bold text-navy-800">Confirm new password</label>
               <input
                 type="password"
                 value={confirmPassword}
@@ -164,7 +164,7 @@ export default function ForgotPasswordModal({
               disabled={isLoading}
               className={`${CX.btnNavy} h-[52px] text-[15px] w-full`}
             >
-              {isLoading ? "Resetting password…" : "Reset Password"}
+              {isLoading ? "Resetting password…" : "Reset password"}
             </button>
           </form>
         )}
@@ -192,7 +192,7 @@ export default function ForgotPasswordModal({
           onBack={() => { setOtpModalOpen(false); setStep("request"); setStatusMessage("You can request a new verification code anytime."); }}
           onSubmit={handleOtpSubmit}
           email={email}
-          title="Reset Your Password"
+          title="Reset your password"
           description="Enter the 6-digit code sent to your email to continue resetting your password."
           isLoading={isLoading}
           error={error || errorMessage}

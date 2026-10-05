@@ -7,7 +7,9 @@ import {
   type AdminDashboardSummary,
 } from "../../utils/api";
 import { AdminMetricSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
+import { T } from "../../components/ui/management";
 
+import { tr } from "../../utils/preferences";
 const categoryColors = ["#1f3160", "#d1a153", "#0f8077", "#6a84b8", "#b45309", "#94a3b8"];
 const claimColors = ["#d97706", "#2563eb", "#dc2626", "#059669", "#64748b"];
 
@@ -37,7 +39,7 @@ export default function ReportsAnalytics() {
         setLocationData(data.locations.slice(0, 6));
       })
       .catch(() => {
-        if (active) setLoadError("Analytics data could not be loaded. Check your connection and try again.");
+        if (active) setLoadError(tr("Analytics data could not be loaded. Check your connection and try again."));
         setSummary(null);
         setChartData([]);
         setCategoryData([]);
@@ -86,15 +88,15 @@ export default function ReportsAnalytics() {
   };
 
   const kpis = summary ? [
-    { label: "Recovery Rate", value: `${summary.recovery_rate ?? 0}%`, delta: `${summary.successfully_returned} returned of ${summary.found_items} found`, icon: <TrendingUp size={18} aria-hidden="true" />, color: "#0f8077", bg: "#ecfaf8" },
-    { label: "Average Resolution", value: summary.average_resolution_days == null ? "N/A" : `${summary.average_resolution_days} d`, delta: `${summary.collected_claims ?? 0} collected claims measured`, icon: <Clock3 size={18} aria-hidden="true" />, color: "#1f3160", bg: "#f2f5fb" },
-    { label: "AI Decision Acceptance", value: `${aiAcceptanceRate.toFixed(1)}%`, delta: `${summary.ai_confirmed ?? 0} confirmed of ${summary.ai_decided ?? 0} decisions`, icon: <Sparkles size={18} aria-hidden="true" />, color: "#8f6526", bg: "#fdf8ee" },
-    { label: "Claim Approval Rate", value: `${summary.claim_approval_rate ?? 0}%`, delta: `${summary.pending_claims} awaiting review`, icon: <CheckCircle2 size={18} aria-hidden="true" />, color: "#047857", bg: "#ecfdf5" },
+    { label: tr("Recovery Rate"), value: `${summary.recovery_rate ?? 0}%`, delta: tr("{0} returned of {1} found", { "0": summary.successfully_returned, "1": summary.found_items }), icon: <TrendingUp size={18} aria-hidden="true" />, color: "#0f8077", bg: "#ecfaf8" },
+    { label: tr("Average Resolution"), value: summary.average_resolution_days == null ? "N/A" : `${summary.average_resolution_days} d`, delta: tr("{0} collected claims measured", { "0": summary.collected_claims ?? 0 }), icon: <Clock3 size={18} aria-hidden="true" />, color: "#1f3160", bg: "#f2f5fb" },
+    { label: tr("AI Decision Acceptance"), value: `${aiAcceptanceRate.toFixed(1)}%`, delta: tr("{0} confirmed of {1} decisions", { "0": summary.ai_confirmed ?? 0, "1": summary.ai_decided ?? 0 }), icon: <Sparkles size={18} aria-hidden="true" />, color: "#8f6526", bg: "#fdf8ee" },
+    { label: tr("Claim Approval Rate"), value: `${summary.claim_approval_rate ?? 0}%`, delta: tr("{0} awaiting review", { "0": summary.pending_claims }), icon: <CheckCircle2 size={18} aria-hidden="true" />, color: "#047857", bg: "#ecfdf5" },
   ] : [
-    { label: "Recovery Rate", value: "N/A", delta: "Waiting for data", icon: <TrendingUp size={18} aria-hidden="true" />, color: "#0f8077", bg: "#ecfaf8" },
-    { label: "Average Resolution", value: "N/A", delta: "Waiting for data", icon: <Clock3 size={18} aria-hidden="true" />, color: "#1f3160", bg: "#f2f5fb" },
-    { label: "AI Decision Acceptance", value: "N/A", delta: "Waiting for data", icon: <Sparkles size={18} aria-hidden="true" />, color: "#8f6526", bg: "#fdf8ee" },
-    { label: "Claim Approval Rate", value: "N/A", delta: "Waiting for data", icon: <CheckCircle2 size={18} aria-hidden="true" />, color: "#047857", bg: "#ecfdf5" },
+    { label: tr("Recovery Rate"), value: "N/A", delta: tr("Waiting for data"), icon: <TrendingUp size={18} aria-hidden="true" />, color: "#0f8077", bg: "#ecfaf8" },
+    { label: tr("Average Resolution"), value: "N/A", delta: tr("Waiting for data"), icon: <Clock3 size={18} aria-hidden="true" />, color: "#1f3160", bg: "#f2f5fb" },
+    { label: tr("AI Decision Acceptance"), value: "N/A", delta: tr("Waiting for data"), icon: <Sparkles size={18} aria-hidden="true" />, color: "#8f6526", bg: "#fdf8ee" },
+    { label: tr("Claim Approval Rate"), value: "N/A", delta: tr("Waiting for data"), icon: <CheckCircle2 size={18} aria-hidden="true" />, color: "#047857", bg: "#ecfdf5" },
   ];
 
   const maxLocationValue = Math.max(1, ...locationData.flatMap(loc => [loc.lost, loc.found]));
@@ -103,18 +105,18 @@ export default function ReportsAnalytics() {
     <div className="print-report print-compact p-6 space-y-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-        <h1 className="text-2xl font-bold text-slate-900">Reports & Analytics</h1>
-        <p className="text-sm text-slate-500">Live system performance and item recovery measurements</p>
+        <h1 className="font-[family-name:var(--font-heading)] text-[26px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[30px]"><T k="page.reports" /></h1>
+        <p className="mt-1 max-w-[68ch] text-[14px] leading-6 text-ink-muted">{tr("Live system performance and item recovery measurements")}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-lg border border-line bg-white p-1" aria-label="Trend reporting period">
-            {([3, 6, 12] as const).map((months) => <button key={months} onClick={() => setPeriodMonths(months)} aria-pressed={periodMonths === months} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${periodMonths === months ? "bg-navy-800 text-white" : "text-slate-600 hover:bg-navy-50"}`}>{months} mo</button>)}
+          <div className="inline-flex rounded-lg border border-line bg-white p-1" aria-label={tr("Trend reporting period")}>
+            {([3, 6, 12] as const).map((months) => <button key={months} onClick={() => setPeriodMonths(months)} aria-pressed={periodMonths === months} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${periodMonths === months ? "bg-navy-800 text-white" : "text-slate-600 hover:bg-navy-50"}`}>{tr("{0} mo", { "0": months })}</button>)}
           </div>
-          <button onClick={() => setRefreshKey((current) => current + 1)} disabled={loading} className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-navy-50 disabled:opacity-50">{loading ? "Refreshing..." : "Refresh"}</button>
+          <button onClick={() => setRefreshKey((current) => current + 1)} disabled={loading} className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-navy-50 disabled:opacity-50">{loading ? tr("Refreshing...") : tr("Refresh")}</button>
         </div>
       </div>
 
-      {loadError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><span>{loadError}</span><button onClick={() => setRefreshKey((current) => current + 1)} className="font-semibold underline">Retry</button></div>}
+      {loadError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><span>{loadError}</span><button onClick={() => setRefreshKey((current) => current + 1)} className="font-semibold underline">{tr("Retry")}</button></div>}
 
       {loading ? (
         <div className="space-y-5" aria-busy="true"><AdminMetricSkeleton count={4} /><div className="grid grid-cols-1 gap-4 xl:grid-cols-3"><SkeletonBlock className="h-[300px] rounded-xl bg-white" /><SkeletonBlock className="h-[300px] rounded-xl bg-white" /></div></div>
@@ -135,10 +137,10 @@ export default function ReportsAnalytics() {
 
           <div className="grid grid-cols-3 gap-4">
             <div className="col-span-2 bg-white rounded-2xl border border-line shadow-card p-5">
-              <div className="font-bold text-slate-900 mb-0.5">Lost & Found Trends</div>
-              <div className="text-xs text-slate-400 mb-4">Monthly comparison for the trailing {periodMonths} months</div>
+              <div className="font-bold text-slate-900 mb-0.5">{tr("Lost and found trends")}</div>
+              <div className="text-xs text-slate-400 mb-4">{tr("Monthly comparison for the last {0} months", { "0": periodMonths })}</div>
               <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={visibleChartData.length ? visibleChartData : [{ month: "No data", lost: 0, found: 0 }]}>
+                <LineChart data={visibleChartData.length ? visibleChartData : [{ month: tr("No data"), lost: 0, found: 0 }]}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                   <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
@@ -148,14 +150,14 @@ export default function ReportsAnalytics() {
                 </LineChart>
               </ResponsiveContainer>
               <div className="flex items-center gap-5 mt-3 text-xs">
-                <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 inline-block rounded" style={{ background: "#0f8077" }}></span>Found</span>
-                <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 inline-block rounded" style={{ background: "#1f3160" }}></span>Lost</span>
+                <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 inline-block rounded" style={{ background: "#0f8077" }}></span>{tr("Found")}</span>
+                <span className="flex items-center gap-1.5"><span className="w-3 h-0.5 inline-block rounded" style={{ background: "#1f3160" }}></span>{tr("Lost")}</span>
               </div>
             </div>
 
             <div className="bg-white rounded-2xl border border-line shadow-card p-5">
-              <div className="font-bold text-slate-900 mb-0.5">Items by Category</div>
-              <div className="text-xs text-slate-400 mb-2">Distribution of lost/found reports</div>
+              <div className="font-bold text-slate-900 mb-0.5">{tr("Items by Category")}</div>
+              <div className="text-xs text-slate-400 mb-2">{tr("Distribution of lost/found reports")}</div>
               {categoryData.length > 0 ? (
                 <>
                   <ResponsiveContainer width="100%" height={180}>
@@ -179,15 +181,15 @@ export default function ReportsAnalytics() {
                   </div>
                 </>
               ) : (
-                <div className="text-sm text-slate-400 pt-10 text-center">No category data available yet</div>
+                <div className="text-sm text-slate-400 pt-10 text-center">{tr("No category data available yet")}</div>
               )}
             </div>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
             <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
-              <div className="font-bold text-slate-900">Claims by Status</div>
-              <div className="mb-2 text-xs text-slate-400">Current distribution across {Object.values(claimCounts).reduce((total, count) => total + count, 0)} claims</div>
+              <div className="font-bold text-slate-900">{tr("Claims by Status")}</div>
+              <div className="mb-2 text-xs text-slate-400">{tr("Current distribution across {0} claims", { "0": Object.values(claimCounts).reduce((total, count) => total + count, 0) })}</div>
               {claimStatusData.length ? <>
                 <ResponsiveContainer width="100%" height={190}>
                   <PieChart>
@@ -200,11 +202,11 @@ export default function ReportsAnalytics() {
                 <div className="space-y-1.5">
                   {claimStatusData.map((entry) => <div key={entry.name} className="flex items-center justify-between text-xs"><span className="flex items-center gap-2 text-slate-600"><span className="size-2.5 rounded-full" style={{ background: entry.color }} />{entry.name}</span><span className="font-semibold text-slate-800">{entry.value}</span></div>)}
                 </div>
-              </> : <div className="py-16 text-center text-sm text-slate-400">No claim records available</div>}
+              </> : <div className="py-16 text-center text-sm text-slate-400">{tr("No claim records available")}</div>}
             </div>
             <div className="rounded-xl border border-line bg-white p-5 shadow-sm">
-              <div className="font-bold text-slate-900">Operational Summary</div>
-              <div className="mb-4 text-xs text-slate-400">Counts and rates from current database records</div>
+              <div className="font-bold text-slate-900">{tr("Operational Summary")}</div>
+              <div className="mb-4 text-xs text-slate-400">{tr("Counts and rates from current database records")}</div>
               <div className="grid gap-3 sm:grid-cols-2">
                 {[
                   ["Total users", String(summary?.total_users ?? 0)],
@@ -215,14 +217,14 @@ export default function ReportsAnalytics() {
                   ["Unresolved found items", String(summary?.unresolved_items ?? 0)],
                   ["Reviewed claims", String(summary?.reviewed_claims ?? 0)],
                   ["Reports dated this month", String(summary?.current_month_processed ?? 0)],
-                ].map(([label, value]) => <div key={label} className="flex items-center justify-between gap-3 border-b border-line py-2 text-sm"><span className="text-slate-600">{label}</span><span className="font-bold tabular-nums text-slate-900">{value}</span></div>)}
+                ].map(([label, value]) => <div key={label} className="flex items-center justify-between gap-3 border-b border-line py-2 text-sm"><span className="text-slate-600">{tr(label)}</span><span className="font-bold tabular-nums text-slate-900">{value}</span></div>)}
               </div>
             </div>
           </div>
 
           <div className="bg-white rounded-2xl border border-line shadow-card p-5">
-            <div className="font-bold text-slate-900 mb-1">Items by Location</div>
-            <div className="text-xs text-slate-400 mb-4">Campus hotspots for lost & found incidents</div>
+            <div className="font-bold text-slate-900 mb-1">{tr("Items by Location")}</div>
+            <div className="text-xs text-slate-400 mb-4">{tr("Campus hotspots for lost and found incidents")}</div>
             {locationData.length > 0 ? (
               <div className="space-y-3">
                 {locationData.map(loc => (
@@ -244,22 +246,22 @@ export default function ReportsAnalytics() {
                 ))}
                 <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
                   <div className="w-28"></div>
-                  <div className="flex-1 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: "#1f3160" }}></span>Lost</div>
-                  <div className="flex-1 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: "#0f8077" }}></span>Found</div>
+                  <div className="flex-1 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: "#1f3160" }}></span>{tr("Lost")}</div>
+                  <div className="flex-1 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full inline-block" style={{ background: "#0f8077" }}></span>{tr("Found")}</div>
                 </div>
               </div>
             ) : (
-              <div className="text-sm text-slate-400 text-center py-8">No location records available yet</div>
+              <div className="text-sm text-slate-400 text-center py-8">{tr("No location records available yet")}</div>
             )}
           </div>
 
           <div className="print-hide flex flex-wrap justify-center gap-3">
             <button onClick={exportCsv} className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-navy-50 sm:w-auto">
-              Export CSV
+              {tr("Export CSV")}
             </button>
             <button onClick={exportReport} className="flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 sm:w-auto" style={{ background: "#0d2044" }}>
               <svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              Export Reports &amp; Analytics (PDF)
+              {tr("Export reports and analytics (PDF)")}
             </button>
           </div>
         </>

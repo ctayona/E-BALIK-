@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { AlertTriangle, Check, CheckCircle2, Copy, Info, X, XCircle } from "lucide-react";
 import { dismissInfoModal, resolveAutoClose, useInfoModalQueue, type InfoModalVariant } from "./infoModalStore";
 
+import { tr } from "../../utils/preferences";
 const VARIANTS: Record<InfoModalVariant, { label: string; icon: typeof Info; accent: string; soft: string; ring: string; role: "dialog" | "alertdialog" }> = {
   success: { label: "Completed", icon: CheckCircle2, accent: "#0f8a5f", soft: "#e8f7f0", ring: "#bfe8d6", role: "dialog" },
   error: { label: "Action failed", icon: XCircle, accent: "#c2334d", soft: "#fdecef", ring: "#f6c7d0", role: "alertdialog" },
@@ -130,7 +131,7 @@ export default function InfoModalHost() {
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false);
         }}
-        className="info-modal-enter relative w-full max-w-[440px] overflow-hidden rounded-[20px] border border-[#e3e8f1] bg-white shadow-[0_2px_6px_rgba(15,23,42,0.06),0_24px_64px_rgba(11,21,48,0.28)]"
+        className="info-modal-enter relative w-full max-w-[440px] overflow-hidden admin-modal-panel rounded-[22px] border border-line bg-white shadow-overlay"
       >
         <div className="flex items-start gap-4 px-6 pb-5 pt-6">
           <div
@@ -141,42 +142,42 @@ export default function InfoModalHost() {
           </div>
           <div className="min-w-0 flex-1 pt-0.5">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: variant.accent }}>
-                {variant.label}
+              <span className="text-[12.5px] font-semibold" style={{ color: variant.accent }}>
+                {tr(variant.label)}
               </span>
               {queue.length > 1 && (
-                <span className="rounded-full bg-[#f1f4f9] px-2 py-0.5 text-[10px] font-semibold text-[#64748b]">1 of {queue.length}</span>
+                <span className="rounded-full bg-frost-100 px-2 py-0.5 text-[11px] font-semibold text-ink-muted">1 of {queue.length}</span>
               )}
             </div>
-            <h2 id={titleId} className="mt-1 text-[19px] font-bold leading-snug text-[#0f172a]" style={{ fontFamily: "var(--font-heading, inherit)" }}>
-              {entry.title}
+            <h2 id={titleId} className="mt-1 text-[19px] font-bold leading-snug text-ink" style={{ fontFamily: "var(--font-heading, inherit)" }}>
+              {tr(entry.title)}
             </h2>
-            <p id={messageId} className="mt-2 whitespace-pre-line break-words text-[14px] leading-6 text-[#475569]">
-              {entry.message}
+            <p id={messageId} className="mt-2 whitespace-pre-line break-words text-[14px] leading-6 text-ink-soft">
+              {tr(entry.message)}
             </p>
             {entry.details && entry.details.length > 0 && (
-              <ul className="mt-3 space-y-1.5 rounded-xl bg-[#f8fafc] px-4 py-3 text-[13px] leading-5 text-[#475569]">
+              <ul className="mt-3 space-y-1.5 rounded-xl bg-frost-50 px-4 py-3 text-[13px] leading-5 text-ink-soft">
                 {entry.details.map((detail) => (
                   <li key={detail} className="flex gap-2">
                     <span className="mt-[7px] size-1.5 shrink-0 rounded-full" style={{ background: variant.accent }} aria-hidden="true" />
-                    <span>{detail}</span>
+                    <span>{tr(detail)}</span>
                   </li>
                 ))}
               </ul>
             )}
             {entry.reference && (
-              <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-[#e3e8f1] bg-[#f8fafc] py-2 pl-4 pr-2">
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-line bg-frost-50 py-2 pl-4 pr-2">
                 <div className="min-w-0">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#94a3b8]">Reference</div>
-                  <div className="truncate font-mono text-[15px] font-semibold text-[#1f3160]">{entry.reference}</div>
+                  <div className="text-[12px] font-medium text-ink-muted">{tr("Reference")}</div>
+                  <div className="truncate text-[15px] font-semibold tabular-nums text-navy-800">{entry.reference}</div>
                 </div>
                 <button
                   type="button"
                   onClick={() => void copyReference()}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-semibold text-[#1f3160] transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d1a153]"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-semibold text-navy-800 transition hover:bg-frost-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d1a153]"
                 >
                   {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-                  {copied ? "Copied" : "Copy"}
+                  {copied ? tr("Copied") : tr("Copy")}
                 </button>
               </div>
             )}
@@ -184,14 +185,14 @@ export default function InfoModalHost() {
           <button
             type="button"
             onClick={close}
-            aria-label="Close message"
-            className="-mr-2 -mt-2 rounded-lg p-2 text-[#94a3b8] transition hover:bg-[#f1f4f9] hover:text-[#334155] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d1a153]"
+            aria-label={tr("Close message")}
+            className="-mr-2 -mt-2 rounded-lg p-2 text-ink-muted transition hover:bg-frost-100 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d1a153]"
           >
             <X size={18} />
           </button>
         </div>
-        <div className="flex items-center justify-between gap-3 border-t border-[#eef1f6] bg-[#fafbfd] px-6 py-4">
-          <span className="text-[12px] text-[#94a3b8]">{autoCloseMs === null ? "Press Esc to close" : paused ? "Paused" : "Closes automatically"}</span>
+        <div className="flex items-center justify-between gap-3 border-t border-line bg-frost-50 px-6 py-4">
+          <span className="text-[12px] text-ink-muted">{tr(autoCloseMs === null ? tr("Press Esc to close") : paused ? tr("Paused") : tr("Closes automatically"))}</span>
           <button
             ref={primaryRef}
             type="button"
@@ -199,11 +200,11 @@ export default function InfoModalHost() {
             className="min-w-[112px] rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)] transition hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d1a153]"
             style={{ background: entry.variant === "info" ? "#1f3160" : variant.accent }}
           >
-            {entry.actionLabel || (entry.variant === "error" ? "Got it" : "Continue")}
+            {tr(entry.actionLabel || (entry.variant === "error" ? tr("Got it") : tr("Continue")))}
           </button>
         </div>
         {autoCloseMs !== null && (
-          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-[#eef1f6]" aria-hidden="true">
+          <div className="absolute inset-x-0 bottom-0 h-[3px] bg-line" aria-hidden="true">
             <div
               className="info-modal-progress h-full origin-left"
               style={{ background: variant.accent, animationDuration: `${autoCloseMs}ms`, animationPlayState: paused ? "paused" : "running" }}

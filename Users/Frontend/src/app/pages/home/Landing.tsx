@@ -1,18 +1,16 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import umakLogo from "@/imports/umaklogo.png";
-import headerUmSeal from "@/imports/Header/9aefa1789ba406d6291f8aa816f84df70a02953b.png";
+import umakLogo from "@/imports/umaklogo.webp";
+import headerUmSeal from "@/imports/Header/9aefa1789ba406d6291f8aa816f84df70a02953b.webp";
 import svgPaths from "@/imports/OverlaidContent/svg-axip1y38u4";
-import imgItem0 from "@/imports/OverlaidContent/b49e29d1e878a675879b971b78c0f6b7bf360de5.png";
-import imgItem1 from "@/imports/OverlaidContent/0823e4e53b38a443f5851ca353f8f6bbe20f42de.png";
-import imgItem2 from "@/imports/OverlaidContent/d17f656f410a0a4ef6102c44406b2f313dd1390d.png";
-import imgItem3 from "@/imports/OverlaidContent/ef6e46632c1113bdd39677d9964345eb79582284.png";
 import type { ModalState } from "@/app/types";
 import Login from "@/app/pages/home/Login";
 import Register from "@/app/pages/home/Register";
 import ForgotPasswordModal from "@/app/pages/home/ForgotPasswordModal";
 import { foundItemsApi } from "@/app/utils/api";
 import { SkeletonBlock } from "@/app/shared/LoadingSkeleton";
+import ItemImage, { type GalleryItem } from "@/app/shared/media/ItemImage";
+import ItemViewer from "@/app/shared/media/ItemViewer";
 
 // ─── SVG icon components (all original paths preserved) ──────────────────────
 
@@ -77,13 +75,6 @@ function IconCal() {
 
 // ─── Data & helpers ───────────────────────────────────────────────────────────
 
-const RECENT_ITEMS = [
-  { img: imgItem0, category: "Accessories",     name: "Hydro Flask",      location: "Main Building 3rd Floor", date: "Found Today"         },
-  { img: imgItem1, category: "Electronics",     name: "iPhone 13 Pro",    location: "Admin Lobby Lounge",      date: "Found Yesterday"     },
-  { img: imgItem2, category: "Personal Effects",name: "Lanyard with Keys",location: "UM Athletic Field",       date: "Found Oct 24, 2026"  },
-  { img: imgItem3, category: "Accessories",     name: "Black Umbrella",   location: "Library Study Area",      date: "Found Oct 23, 2026"  },
-];
-
 type RecentFoundItem = {
   fpost_id?: string; item_name?: string; category?: string;
   location?: string; found_date?: string; image_url?: string;
@@ -97,8 +88,8 @@ function formatFoundDate(value?: string) {
   const diff = Math.floor(
     (new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() - date.getTime()) / 86400000
   );
-  if (diff === 0) return "Found Today";
-  if (diff === 1) return "Found Yesterday";
+  if (diff === 0) return "Found today";
+  if (diff === 1) return "Found yesterday";
   return `Found ${date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
 }
 
@@ -153,19 +144,22 @@ function FeatureCard({ icon, title, desc, step, color }: {
 
 export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void }) {
   const [modal, setModal] = useState<ModalState | "forgot-password">("none");
-  const [recentItems, setRecentItems] = useState(RECENT_ITEMS);
+  const [recentItems, setRecentItems] = useState<GalleryItem[]>([]);
   const [recentItemsLoading, setRecentItemsLoading] = useState(true);
+  const [viewIndex, setViewIndex] = useState<number | null>(null);
 
   // Fetch live found items (original logic untouched)
   useEffect(() => {
     let active = true;
     void foundItemsApi.publicList().then((response) => {
       if (!active || response.error || !response.data?.items?.length) return;
-      const items = (response.data.items as RecentFoundItem[]).map((item, index) => ({
-        img:      item.image_url || RECENT_ITEMS[index % RECENT_ITEMS.length].img,
-        category: item.category  || "Personal Effects",
-        name:     item.item_name || "Found item",
-        location: item.location  || "University of Makati campus",
+      const items = (response.data.items as RecentFoundItem[]).map((item, index): GalleryItem => ({
+        id:       item.fpost_id || `recent-${index}`,
+        title:    item.item_name || "Found item",
+        kind:     "found",
+        image:    item.image_url || undefined,
+        category: item.category || undefined,
+        location: item.location || "University of Makati campus",
         date:     formatFoundDate(item.found_date),
       }));
       setRecentItems(items);
@@ -195,7 +189,7 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
             <p className="font-semibold text-white text-[14px] leading-tight tracking-wide" style={{ fontFamily: "var(--font-heading)" }}>
               UNIVERSITY OF MAKATI
             </p>
-            <p className="font-bold text-gold-300 text-[12px] leading-tight tracking-[0.1em]">
+            <p className="font-bold text-gold-300 text-[12px] leading-tight">
               E-BALIK LOST &amp; FOUND
             </p>
           </div>
@@ -341,7 +335,7 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
                 className="flex gap-3 items-center px-8 py-4 rounded-[16px] border border-white/25 backdrop-blur-md bg-white/10 text-white font-bold text-[16px] hover:bg-white/18 hover:border-white/40 transition-colors duration-200"
               >
                 <IconSearchSm />
-                <span>Check Found Inventory</span>
+                <span>Check found inventory</span>
               </motion.button>
             </motion.div>
 
@@ -353,9 +347,9 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
               className="flex flex-col sm:flex-row gap-4 mt-2"
             >
               {[
-                { value: "500+", label: "Items Recovered",  bg: "bg-gold-500", text: "#1f3160" },
-                { value: "98%",  label: "Match Accuracy",   bg: "bg-navy-700",  text: "white"   },
-                { value: "24/7", label: "System Active",    bg: "bg-gold-500",  text: "#1f3160" },
+                { value: "500+", label: "Items recovered",  bg: "bg-gold-500", text: "#1f3160" },
+                { value: "98%",  label: "Match accuracy",   bg: "bg-navy-700",  text: "white"   },
+                { value: "24/7", label: "System active",    bg: "bg-gold-500",  text: "#1f3160" },
               ].map(({ value, label, bg, text }, i) => (
                 <motion.div
                   key={label}
@@ -367,7 +361,7 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
                               `}
                 >
                   <span className="font-bold text-[26px] leading-none" style={{ color: text, fontFamily: "var(--font-heading)" }}>{value}</span>
-                  <span className="text-[12px] font-semibold tracking-wide mt-1 uppercase" style={{ color: text, opacity: 0.75 }}>{label}</span>
+                  <span className="text-[12px] font-semibold mt-1" style={{ color: text, opacity: 0.75 }}>{label}</span>
                 </motion.div>
               ))}
             </motion.div>
@@ -391,7 +385,7 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
             className="text-center"
           >
             {/* Clay pill label */}
-            <span className="mb-3 inline-block text-[12px] font-semibold uppercase tracking-[0.12em] text-gold-700">
+            <span className="mb-3 inline-block text-[12px] font-semibold text-gold-700">
               How It Works
             </span>
             <h2
@@ -406,9 +400,9 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
           </motion.div>
 
           <div className="flex flex-col md:flex-row gap-6 w-full max-w-[1100px]">
-            <FeatureCard step="01" icon={<IconLink />}    title="Automated Matching"        color="linear-gradient(135deg,#eef4ff,#dbeafe)" desc="Our system analyzes descriptions and alerts owners automatically when a matching found item is logged." />
-            <FeatureCard step="02" icon={<IconSearchLg />} title="Inventory Search"          color="linear-gradient(135deg,#fffbeb,#fef3c7)" desc="Browse real-time categorized logs of found keys, electronics, valuables, and accessories around campus." />
-            <FeatureCard step="03" icon={<IconShield />}  title="Secure Pickup Verification" color="linear-gradient(135deg,#ecfdf5,#d1fae5)" desc="Claimed items require verified student or employee ID and signature authentication upon pickup." />
+            <FeatureCard step="01" icon={<IconLink />}    title="Automated matching"        color="linear-gradient(135deg,#eef4ff,#dbeafe)" desc="Our system analyzes descriptions and alerts owners automatically when a matching found item is logged." />
+            <FeatureCard step="02" icon={<IconSearchLg />} title="Inventory search"          color="linear-gradient(135deg,#fffbeb,#fef3c7)" desc="Browse real-time categorized logs of found keys, electronics, valuables, and accessories around campus." />
+            <FeatureCard step="03" icon={<IconShield />}  title="Secure pickup verification" color="linear-gradient(135deg,#ecfdf5,#d1fae5)" desc="Claimed items require verified student or employee ID and signature authentication upon pickup." />
           </div>
         </section>
 
@@ -421,7 +415,7 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
             viewport={{ once: true }}
             className="text-center"
           >
-            <span className="mb-3 inline-block text-[12px] font-semibold uppercase tracking-[0.12em] text-gold-700">
+            <span className="mb-3 inline-block text-[12px] font-semibold text-gold-700">
               Real-Time Logs
             </span>
             <h2
@@ -435,62 +429,51 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
             </p>
           </motion.div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 w-full max-w-[1100px]">
-            {recentItemsLoading ? Array.from({ length: 4 }, (_, index) => (
-              <div key={`recent-skeleton-${index}`} aria-label="Loading recent found items" aria-busy="true" className={`${clay.card} overflow-hidden p-2`}>
-                <SkeletonBlock className="h-[160px] rounded-[20px]" />
-                <div className="space-y-3 p-4 pt-3">
-                  <SkeletonBlock className="h-4 w-3/4" />
-                  <SkeletonBlock className="h-3 w-full" />
-                  <SkeletonBlock className="h-3 w-1/2" />
+          {recentItemsLoading ? (
+            <div className="grid w-full max-w-[1140px] grid-cols-2 gap-5 md:grid-cols-4">
+              {Array.from({ length: 4 }, (_, index) => (
+                <div key={`recent-skeleton-${index}`} aria-label="Loading recent found items" aria-busy="true" className="overflow-hidden rounded-[22px] bg-white shadow-card">
+                  <SkeletonBlock className="aspect-[4/5] w-full rounded-none" />
                 </div>
-              </div>
-            )) : recentItems.map((item, index) => (
-              <motion.div
-                key={item.name}
-                initial={{ opacity: 0, y: 28, scale: 0.94 }}
-                whileInView={{ opacity: 1, y: 0, scale: 1 }}
-                whileHover={{ y: -8, scale: 1.03 }}
-                whileTap={{ scale: 0.98 }}
-                transition={{ ...spring, opacity: { duration: 0.35 }, delay: index * 0.09 }}
-                viewport={{ once: true }}
-                onClick={() => setModal("login")}
-                className={`${clay.card} overflow-hidden cursor-pointer group`}
-              >
-                {/* Image area */}
-                <div className="h-[160px] relative flex items-center justify-center bg-[#eef2f8] overflow-hidden rounded-[20px] m-2 mb-0">
-                  <img
-                    alt={item.name}
-                    className="size-full object-contain p-3 transition-transform duration-500 group-hover:scale-110"
-                    src={item.img}
-                  />
-                  {/* Clay yellow category badge */}
-                  <motion.span
-                    whileHover={{ scale: 1.08 }}
-                    className="absolute top-3 left-3 text-navy-800 text-[12px] font-bold uppercase px-2.5 py-1.5 tracking-wider rounded-[10px] border border-gold-300 bg-gold-500"
+              ))}
+            </div>
+          ) : recentItems.length === 0 ? (
+            <p className="max-w-[460px] rounded-[22px] border border-dashed border-line-strong bg-frost-50 px-6 py-10 text-center text-[15px] text-ink-muted">
+              Nothing is in custody right now. New found items appear here as soon as they're turned over to campus security.
+            </p>
+          ) : (
+            <ul className="flex w-full max-w-[1140px] flex-wrap justify-center gap-5">
+              {recentItems.map((item, index) => (
+                <motion.li
+                  key={item.id}
+                  className="w-[calc(50%-10px)] md:w-[calc(25%-15px)]"
+                  initial={{ opacity: 0, y: 24 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.45, delay: index * 0.07, ease: [0.2, 0.8, 0.2, 1] }}
+                  viewport={{ once: true }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setViewIndex(index)}
+                    className="group relative block aspect-[4/5] w-full overflow-hidden rounded-[22px] bg-navy-950 text-left shadow-card transition-[box-shadow,transform] duration-300 ease-out hover:-translate-y-1.5 hover:shadow-raised"
                   >
-                    {item.category}
-                  </motion.span>
-                </div>
-                {/* Card body */}
-                <div className="flex flex-col gap-2.5 p-4 pt-3">
-                  <p className="font-bold text-ink text-[14px] truncate" style={{ fontFamily: "var(--font-heading)" }}>
-                    {item.name}
-                  </p>
-                  <div className="flex flex-col gap-1.5">
-                    <div className="flex gap-1.5 items-center">
-                      <IconMapPin />
-                      <span className="text-ink-muted text-[12px] truncate">{item.location}</span>
+                    <ItemImage item={item} size="lg" className="absolute inset-0 h-full w-full" imgClassName="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.08]" />
+                    <div className="scrim-bottom absolute inset-0" aria-hidden="true" />
+                    {item.category && (
+                      <span className="glass-dark absolute left-3 top-3 max-w-[calc(100%-24px)] truncate rounded-full px-3 py-1 text-[12px] font-semibold">{item.category}</span>
+                    )}
+                    <div className="absolute inset-x-0 bottom-0 p-4 text-white">
+                      <p className="truncate font-[family-name:var(--font-heading)] text-[17px] font-semibold">{item.title}</p>
+                      <div className="mt-1.5 flex flex-col gap-1 text-[12px] text-navy-100">
+                        <span className="flex items-center gap-1.5 truncate"><IconMapPin />{item.location}</span>
+                        <span className="flex items-center gap-1.5"><IconCal />{item.date}</span>
+                      </div>
                     </div>
-                    <div className="flex gap-1.5 items-center">
-                      <IconCal />
-                      <span className="text-slate-500 text-[12px]">{item.date}</span>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
+                  </button>
+                </motion.li>
+              ))}
+            </ul>
+          )}
 
           {/* View All clay CTA */}
           <motion.button
@@ -506,6 +489,25 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
             View All Found Items →
           </motion.button>
         </section>
+
+        {viewIndex !== null && (
+          <ItemViewer
+            items={recentItems}
+            index={viewIndex}
+            onIndexChange={setViewIndex}
+            onClose={() => setViewIndex(null)}
+            note={() => <p className="rounded-xl border border-iris-200 bg-iris-50 px-4 py-3 text-[14px] leading-5 text-iris-700">Sign in with your UMak account to claim this item or report one you lost.</p>}
+            actions={() => (
+              <button
+                type="button"
+                onClick={() => { setViewIndex(null); setModal("login"); }}
+                className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-gold-600/40 bg-[linear-gradient(180deg,#e6be76_0%,#d1a153_100%)] px-5 text-[14px] font-semibold text-navy-950 shadow-[0_1px_0_rgba(255,255,255,0.45)_inset] transition hover:shadow-[0_1px_0_rgba(255,255,255,0.45)_inset,var(--shadow-glow-gold)]"
+              >
+                Log in to claim this item
+              </button>
+            )}
+          />
+        )}
 
         {/* ══════════════════════════════════════════════ FOOTER */}
         <footer className="bg-navy-900 flex flex-col w-full">
@@ -526,7 +528,7 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
               </div>
             </div>
             <div className="flex gap-6 flex-wrap">
-              {["Privacy Policy", "Terms of Service", "Contact Support"].map((l) => (
+              {["Privacy policy", "Terms of Service", "Contact support"].map((l) => (
                 <button key={l} className="text-white/55 text-[13px] hover:text-gold-300 transition-colors duration-200 font-medium">
                   {l}
                 </button>
@@ -550,25 +552,26 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.25 }}
-            className="fixed inset-0 z-50 flex items-center justify-center px-4"
+            className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto overscroll-contain sm:items-center sm:px-4"
+            role="presentation"
           >
             {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-navy-950/55 backdrop-blur-[6px]"
+              className="fixed inset-0 bg-navy-950/60 backdrop-blur-md"
               onClick={() => setModal("none")}
             />
 
             {/* Modal content with spring entrance */}
             <motion.div
               key={modal}
-              initial={{ opacity: 0, scale: 0.88, y: 30 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: 20 }}
-              transition={spring}
-              className="relative z-10 w-full max-w-[95vw] flex items-center justify-center py-8"
+              initial={{ opacity: 0, y: 48 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 32 }}
+              transition={{ type: "spring", stiffness: 420, damping: 36 }}
+              className="relative z-10 flex w-full items-end justify-center sm:w-auto sm:items-center sm:py-8"
             >
               {modal === "login" ? (
                 <Login

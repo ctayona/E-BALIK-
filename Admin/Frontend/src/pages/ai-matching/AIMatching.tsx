@@ -3,7 +3,9 @@ import { fetchAdminAIMatches, confirmAdminAIMatch, rejectAdminAIMatch, type Admi
 import { AdminCardGridSkeleton } from "../../components/LoadingSkeleton";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import { showInfoModal } from "../../components/info-modal/infoModalStore";
+import { T } from "../../components/ui/management";
 
+import { tr } from "../../utils/preferences";
 type MatchStatus = "All Matches" | "High Confidence" | "Needs Review" | "Confirmed" | "Rejected";
 
 const TABS: MatchStatus[] = ["All Matches", "High Confidence", "Needs Review", "Confirmed", "Rejected"];
@@ -22,7 +24,7 @@ function MatchBar({ label, value }: { label: string; value: number }) {
 }
 
 function formatMatchTimestamp(value?: string) {
-  if (!value) return "No timestamp";
+  if (!value) return tr("No timestamp");
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -117,8 +119,8 @@ export default function AIMatching() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-900">AI Matching Engine</h1>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <h1 className="font-[family-name:var(--font-heading)] text-[26px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[30px]"><T k="page.aiMatching" /></h1>
         
       </div>
 
@@ -130,7 +132,7 @@ export default function AIMatching() {
             className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
             style={activeTab === tab ? { background: "#1f3160", color: "white" } : { color: "#6b7280" }}
           >
-            {tab} <span className="ml-1 opacity-70">{counts[tab]}</span>
+            {tr(tab)} <span className="ml-1 opacity-70">{counts[tab]}</span>
           </button>
         ))}
       </div>
@@ -152,7 +154,7 @@ export default function AIMatching() {
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {filtered.length === 0 ? (
-            <div className="col-span-2 text-center py-16 text-slate-400">No matches in this category</div>
+            <div className="col-span-2 text-center py-16 text-slate-400">{tr("No matches in this category")}</div>
           ) : filtered.map(match => {
             const ss = statusStyle(match.status);
             const isPending = match.status === "Needs Review" || match.status === "High Confidence";
@@ -174,66 +176,66 @@ export default function AIMatching() {
 
                 <div className="grid grid-cols-5 gap-2 items-center mb-5">
                   <div className="col-span-2">
-                    <div className="text-xs font-bold mb-2" style={{ color: "#ef4444" }}>LOST ITEM</div>
+                    <div className="text-xs font-bold mb-2" style={{ color: "#ef4444" }}>{tr("Lost item")}</div>
                     <div className="mb-2">
                       <ItemVisual image={match.lostImage} label={match.lostItem} onClick={() => match.lostImage && setZoomedImage({ src: match.lostImage, label: match.lostItem })} />
                     </div>
                     <div className="font-semibold text-slate-900 text-sm">{match.lostItem}</div>
                     <div className="text-xs text-slate-400">{match.lostDesc}</div>
                     <div className="text-xs text-slate-400">{match.lostLocation}</div>
-                    <div className="text-xs text-slate-400">Reported {match.lostDate}</div>
+                    <div className="text-xs text-slate-400">{tr("Reported {0}", { "0": match.lostDate })}</div>
                     <div className="text-xs font-mono mt-1" style={{ color: "#0f8077" }}>{match.lostId}</div>
                   </div>
 
                   <div className="flex flex-col items-center justify-center gap-1">
-                    <span className="text-slate-300 text-xs font-semibold">VS</span>
+                    <span className="text-slate-300 text-xs font-semibold">{tr("VS")}</span>
                     <div className="w-14 h-14 rounded-xl flex flex-col items-center justify-center border-2" style={{ borderColor: match.matchPercent >= 85 ? "#10b981" : "#f59e0b", background: "#f0fdf4" }}>
                       <span className="text-lg font-black" style={{ color: match.matchPercent >= 85 ? "#10b981" : "#f59e0b" }}>{match.matchPercent}%</span>
-                      <span className="text-xs text-slate-400">MATCH</span>
+                      <span className="text-xs text-slate-400">{tr("Match")}</span>
                     </div>
                   </div>
 
                   <div className="col-span-2">
-                    <div className="text-xs font-bold mb-2" style={{ color: "#0f8077" }}>FOUND ITEM</div>
+                    <div className="text-xs font-bold mb-2" style={{ color: "#0f8077" }}>{tr("Found item")}</div>
                     <div className="mb-2">
                       <ItemVisual image={match.foundImage} label={match.foundItem} onClick={() => match.foundImage && setZoomedImage({ src: match.foundImage, label: match.foundItem })} />
                     </div>
                     <div className="font-semibold text-slate-900 text-sm">{match.foundItem}</div>
                     <div className="text-xs text-slate-400">{match.foundDesc}</div>
                     <div className="text-xs text-slate-400">{match.foundLocation}</div>
-                    <div className="text-xs text-slate-400">Found {match.foundDate}</div>
+                    <div className="text-xs text-slate-400">{tr("Found {0}", { "0": match.foundDate })}</div>
                     <div className="text-xs font-mono mt-1" style={{ color: "#0f8077" }}>{match.foundId}</div>
                   </div>
                 </div>
 
                 <div className="border-t border-line pt-4 space-y-2">
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">Match Analysis</div>
-                  <MatchBar label="Visual Similarity" value={match.visualSim} />
-                  <MatchBar label="Description Match" value={match.descSim} />
-                  <MatchBar label="Location Match" value={match.locationSim} />
-                  <MatchBar label="Time Proximity" value={match.timeSim} />
+                  <div className="text-xs font-bold text-slate-400 mb-2">{tr("Match Analysis")}</div>
+                  <MatchBar label={tr("Visual Similarity")} value={match.visualSim} />
+                  <MatchBar label={tr("Description Match")} value={match.descSim} />
+                  <MatchBar label={tr("Location Match")} value={match.locationSim} />
+                  <MatchBar label={tr("Time Proximity")} value={match.timeSim} />
                 </div>
 
                 {isPending && (
                   <div className="flex gap-3 mt-4 pt-4 border-t border-line">
                     <button onClick={() => setPendingAction({ id: match.id, action: "reject" })} className="flex-1 py-2 rounded-lg text-sm font-semibold border border-line text-slate-600 hover:bg-navy-50 transition-colors">
-                      Reject Match
+                      {tr("Reject Match")}
                     </button>
                     <button onClick={() => setPendingAction({ id: match.id, action: "confirm" })} className="flex-1 py-2 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90" style={{ background: "#0f8077" }}>
-                      Confirm Match
+                      {tr("Confirm Match")}
                     </button>
                   </div>
                 )}
                 {match.status === "Confirmed" && (
                   <div className="mt-4 pt-4 border-t border-line flex items-center justify-center gap-2 text-sm text-emerald-600 font-semibold">
                     <svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                    Match Confirmed
+                    {tr("Match Confirmed")}
                   </div>
                 )}
                 {match.status === "Rejected" && (
                   <div className="mt-4 pt-4 border-t border-line flex items-center justify-center gap-2 text-sm text-red-500 font-semibold">
                     <svg width="16" height="16" fill="none" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-                    Match Rejected
+                    {tr("Match Rejected")}
                   </div>
                 )}
               </div>
@@ -242,9 +244,9 @@ export default function AIMatching() {
         </div>
       )}
       {pendingAction && <ConfirmActionDialog
-        title={pendingAction.action === "confirm" ? "confirm this AI match" : "reject this AI match"}
-        description="This decision updates the shared match record and may notify users."
-        confirmLabel={pendingAction.action === "confirm" ? "Confirm match" : "Reject match"}
+        title={pendingAction.action === "confirm" ? tr("confirm this AI match") : tr("reject this AI match")}
+        description={tr("This decision updates the shared match record and may notify users.")}
+        confirmLabel={pendingAction.action === "confirm" ? tr("Confirm match") : tr("Reject match")}
         danger={pendingAction.action === "reject"}
         busy={actionBusy}
         onCancel={() => setPendingAction(null)}

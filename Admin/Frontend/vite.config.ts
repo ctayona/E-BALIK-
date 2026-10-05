@@ -11,6 +11,8 @@ export default defineConfig(({ mode }) => {
   const emitSourcemaps = mode === 'development'
 
   return {
+    // Shares the frontend env values in <repo>/Environment_Configs/frontend (VITE_API_URL)
+    envDir: path.resolve(__dirname, '../../Environment_Configs/frontend'),
     base: process.env.FIGMA_PUBLIC_URL ? `${process.env.FIGMA_PUBLIC_URL}/` : '/admin/',
     build: {
       sourcemap: emitSourcemaps ? 'inline' : false,

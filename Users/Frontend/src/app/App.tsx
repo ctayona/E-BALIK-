@@ -14,6 +14,7 @@ const ReportItem = lazy(() => import("@/app/pages/report-item/ReportItem"));
 const Notifications = lazy(() => import("@/app/pages/notifications/Notifications"));
 const AuctionHall = lazy(() => import("@/app/pages/auction-hall/AuctionHall"));
 import UserHeader from "@/app/shared/UserHeader";
+import MobileTabBar from "@/app/shared/MobileTabBar";
 import InfoModalHost from "@/app/shared/info-modal/InfoModalHost";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { useAuth } from "@/app/utils/useAuth";
@@ -102,14 +103,14 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-page">
+    <div className="app-canvas min-h-screen flex flex-col">
       <UserHeader
         currentPage={page}
         onNavigate={handleNavigate}
         user={currentUser}
         onLogout={handleLogout}
       />
-      <div id="main-content" tabIndex={-1} className="flex flex-1 flex-col outline-none">
+      <div id="main-content" tabIndex={-1} className="flex flex-1 flex-col pb-[calc(76px+env(safe-area-inset-bottom))] outline-none lg:pb-0">
       <Suspense fallback={<AppPageSkeleton />}>
         {page === "dashboard"    && <Dashboard user={currentUser} onNavigate={handleNavigate} />}
         {page === "report-item"  && <ReportItem onNavigate={handleNavigate} />}
@@ -124,15 +125,16 @@ export default function App() {
         {page === "profile"      && <Profile user={currentUser} onNavigate={handleNavigate} />}
       </Suspense>
       </div>
+      <MobileTabBar currentPage={page} onNavigate={handleNavigate} />
       <InfoModalHost />
     </div>
   );
 }
 
 function AppPageSkeleton() {
-  return <main className="min-h-[70vh] bg-gradient-to-br from-[#eef2f8] to-[#f8fafc] p-6 md:p-10"><div className="mx-auto max-w-[1120px] space-y-5"><PanelSkeleton className="h-28" /><ReportGridSkeleton count={4} /></div></main>;
+  return <main className="min-h-[70vh] p-6 md:p-10"><div className="mx-auto max-w-[1120px] space-y-5"><PanelSkeleton className="h-28" /><ReportGridSkeleton count={4} /></div></main>;
 }
 
 function LandingSkeleton() {
-  return <main className="min-h-screen bg-[#f8fafc] p-6"><div className="mx-auto max-w-[1100px] space-y-6"><PanelSkeleton className="h-[420px] bg-[#1f3160]" /><ReportGridSkeleton count={4} /></div></main>;
+  return <main className="app-canvas min-h-screen p-6"><div className="mx-auto max-w-[1100px] space-y-6"><PanelSkeleton className="h-[420px] bg-[#1f3160]" /><ReportGridSkeleton count={4} /></div></main>;
 }

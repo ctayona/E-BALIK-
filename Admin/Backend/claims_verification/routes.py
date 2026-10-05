@@ -114,3 +114,103 @@ def update_claim_status(claim_id):
     except Exception as error:
         current_app.logger.exception('Admin claim status error for claim_id=%s payload=%s: %s', claim_id, request.get_json(silent=True), error)
         return jsonify({'error': 'Unable to update claim status', 'details': str(error)}), 500
+
+
+CLOSED_FOUND_ITEM_STATUSES = {'claimed', 'returned', 'closed', 'collected', 'disposed'}
+MAX_CLAIM_REASON_LENGTH = 2000
+
+
+@claims_verification_bp.route('/claims', methods=['POST'])
+def create_claim_record():
+    """Record a walk-in claim on behalf of a registered claimant (admins and super admins)."""
+    try:
+        admin = _require_admin()
+        payload = request.get_json(silent=True) or {}
+        reference = str(payload.get('found_item_reference') or '').strip()
+        claimant_identifier = str(payload.get('claimant') or '').strip()
+        claim_reason = str(payload.get('claim_reason') or '').strip()
+        verified_in_person = payload.get('verified_in_person') is True
+
+        if not reference or not claimant_identifier or not claim_reason:
+            return jsonify({'error': 'Found item reference, claimant email or campus ID, and claim reason are required'}), 400
+        if len(claim_reason) > MAX_CLAIM_REASON_LENGTH:
+            return jsonify({'error': f'Claim reason must be {MAX_CLAIM_REASON_LENGTH} characters or fewer'}), 400
+
+        db = get_db(
+            url=current_app.config['SUPABASE_URL'],
+            service_key=current_app.config['SUPABASE_SERVICE_KEY']
+        )
+        found_item = db.get_found_item_by_fpost_id(reference)
+        if not found_item:
+            return jsonify({'error': f'No found item matches reference {reference}'}), 404
+        if str(found_item.get('status') or '').lower() in CLOSED_FOUND_ITEM_STATUSES:
+            return jsonify({'error': 'This found item is already closed and can no longer be claimed'}), 409
+
+        claimant = db.get_user_by_email(claimant_identifier.lower()) if '@' in claimant_identifier else db.get_user_by_campus_id(claimant_identifier)
+        if not claimant:
+            return jsonify({'error': 'No registered account matches that email or campus ID'}), 404
+        if claimant.get('is_active') is False:
+            return jsonify({'error': 'That account is suspended and cannot submit claims'}), 409
+
+        existing = db.find_open_claim(found_item['item_id'], claimant['account_id'])
+        if existing:
+            return jsonify({'error': f"This claimant already has an open claim for this item ({existing.get('claim_reference') or existing.get('claim_id')})"}), 409
+
+        claim = db.create_claim({
+            'found_item_id': found_item['item_id'],
+            'claimant_account_id': claimant['account_id'],
+            'claim_reason': claim_reason,
+            'identity_document_type': 'verified_in_person' if verified_in_person else None,
+            'status': 'pending',
+        })
+        _log_admin_action(db, admin, 'Record Walk-in Claim', 'Claims & Verification', claim.get('claim_reference') or reference, claim.get('claim_id') or reference)
+        try:
+            db.create_user_notification(
+                claimant['account_id'],
+                'A claim was recorded for you',
+                f"The Lost and Found Office recorded your claim for {found_item.get('item_name') or 'a found item'} ({reference}). It is now pending review.",
+                found_item_id=found_item.get('item_id'),
+                notification_type='claim_update',
+                link_label='View my claims',
+                link_page='claim',
+            )
+        except Exception as notify_error:
+            current_app.logger.warning('Walk-in claim %s recorded but claimant notification failed: %s', claim.get('claim_id'), notify_error)
+        return jsonify({'claim': claim, 'message': f"Claim {claim.get('claim_reference') or ''} recorded for {claimant.get('email')}".strip()}), 201
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except PermissionError as error:
+        return jsonify({'error': str(error)}), 403
+    except Exception as error:
+        current_app.logger.exception('Admin walk-in claim error: %s', error)
+        return jsonify({'error': 'Unable to record the claim'}), 500
+
+
+@claims_verification_bp.route('/claims/<claim_id>', methods=['PATCH'])
+def update_claim_details(claim_id):
+    """Edit the reason of an open claim (admins and super admins). Status changes use /status."""
+    try:
+        admin = _require_admin()
+        payload = request.get_json(silent=True) or {}
+        claim_reason = str(payload.get('claim_reason') or '').strip()
+        if not claim_reason:
+            return jsonify({'error': 'Claim reason is required'}), 400
+        if len(claim_reason) > MAX_CLAIM_REASON_LENGTH:
+            return jsonify({'error': f'Claim reason must be {MAX_CLAIM_REASON_LENGTH} characters or fewer'}), 400
+
+        db = get_db(
+            url=current_app.config['SUPABASE_URL'],
+            service_key=current_app.config['SUPABASE_SERVICE_KEY']
+        )
+        updated = db.update_claim_details(claim_id, claim_reason)
+        if not updated:
+            return jsonify({'error': 'Only open (pending or approved) claims can be edited'}), 409
+        _log_admin_action(db, admin, 'Edit Claim Details', 'Claims & Verification', updated.get('claim_reference') or claim_id, claim_id)
+        return jsonify({'claim': updated, 'message': 'Claim details updated'}), 200
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except PermissionError as error:
+        return jsonify({'error': str(error)}), 403
+    except Exception as error:
+        current_app.logger.exception('Admin claim edit error for %s: %s', claim_id, error)
+        return jsonify({'error': 'Unable to update the claim'}), 500

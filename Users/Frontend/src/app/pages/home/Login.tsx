@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, X } from "lucide-react";
-import umakLogo from "@/imports/umaklogo.png";
+import umakLogo from "@/imports/umaklogo.webp";
 import { useAuth } from "@/app/utils/useAuth";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 
@@ -146,12 +146,12 @@ export default function Login({
   return (
     /* ── Clay login card ── */
     <div
-      className="relative flex flex-col gap-6 items-start p-10 w-[440px] max-w-[95vw] rounded-2xl border border-line bg-white/98 backdrop-blur-sm"
+      className="relative flex w-full flex-col items-start gap-6 overflow-hidden px-6 pb-[max(2rem,env(safe-area-inset-bottom))] pt-9 sm:w-[440px] sm:p-10 rounded-t-[28px] sm:rounded-[26px] border border-white/70 bg-white shadow-overlay before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-32 before:bg-[radial-gradient(60%_100%_at_15%_0%,rgba(110,142,240,0.16),transparent),radial-gradient(50%_100%_at_100%_0%,rgba(209,161,83,0.16),transparent)]"
     >
       {mfaChallengeToken && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-navy-950/55 px-4 backdrop-blur-[4px]" role="presentation">
-          <form onSubmit={handleMfaSubmit} role="dialog" aria-modal="true" aria-labelledby="admin-mfa-title" className="w-full max-w-md rounded-2xl border border-line bg-white/98 backdrop-blur-sm p-7">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-gold-700">Administrator verification</p>
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:px-4" role="presentation">
+          <form onSubmit={handleMfaSubmit} role="dialog" aria-modal="true" aria-labelledby="admin-mfa-title" className="w-full p-7 pb-[max(1.75rem,env(safe-area-inset-bottom))] sm:max-w-md rounded-t-[28px] sm:rounded-[26px] border border-white/70 bg-white shadow-overlay">
+            <p className="text-[12px] font-semibold text-gold-700">Administrator verification</p>
             <h2 id="admin-mfa-title" className="mt-2 text-[22px] font-semibold text-navy-800" style={{ fontFamily: "var(--font-heading)" }}>Enter your authenticator code</h2>
             <p className="mt-2 text-[13px] leading-5 text-ink-muted">Use the current six-digit code from Google Authenticator, or enter one unused recovery code.</p>
             <input autoFocus value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} autoComplete="one-time-code" inputMode="numeric" placeholder="000000" required className={`${clay.input} mt-5 h-[50px] w-full text-center text-[20px] font-bold tracking-[0.2em]`} />
@@ -197,7 +197,7 @@ export default function Login({
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 w-full">
         {/* Email */}
         <div className="flex flex-col gap-2">
-          <label className="font-bold text-navy-800 text-[13px] tracking-wide uppercase">UM Email Address</label>
+          <label className="font-bold text-navy-800 text-[13px]">UMak email address</label>
           <input
             type="email"
             value={email}
@@ -210,7 +210,7 @@ export default function Login({
 
         {/* Password */}
         <div className="flex flex-col gap-2">
-          <label className="font-bold text-navy-800 text-[13px] tracking-wide uppercase">Password</label>
+          <label className="font-bold text-navy-800 text-[13px]">Password</label>
           <div className="relative">
             <input
               type={showPw ? "text" : "password"}
@@ -259,14 +259,14 @@ export default function Login({
           disabled={isLoading}
           className={`${clay.btn} h-[52px] text-[15px] w-full  `}
         >
-          {isLoading ? "Logging in…" : "Log In"}
+          {isLoading ? "Logging in…" : "Log in"}
         </button>
       </form>
 
       {/* Divider */}
       <div className="flex w-full items-center gap-3">
         <div className="h-px flex-1 bg-gradient-to-r from-transparent to-[#e2e8f0]" />
-        <span className="text-[12px] font-bold uppercase tracking-[0.16em] text-slate-500">or</span>
+        <span className="text-[12px] font-bold text-slate-500">or</span>
         <div className="h-px flex-1 bg-gradient-to-l from-transparent to-[#e2e8f0]" />
       </div>
 
@@ -290,9 +290,9 @@ export default function Login({
 
       {/* Google register prompt — nested clay dialog */}
       {googleRegisterPrompt?.open && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-navy-950/55 px-4 backdrop-blur-[4px]">
-          <div className="w-full max-w-md rounded-2xl border border-line bg-white p-8">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-gold-700">Account Needed</p>
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:px-4" role="presentation">
+          <div role="dialog" aria-modal="true" className="w-full p-8 pb-[max(2rem,env(safe-area-inset-bottom))] sm:max-w-md rounded-t-[28px] sm:rounded-[26px] border border-white/70 bg-white shadow-overlay">
+            <p className="text-[12px] font-semibold text-gold-700">Account needed</p>
             <h3 className="mt-2 text-[22px] font-semibold text-navy-800" style={{ fontFamily: "var(--font-heading)" }}>
               Sign in first
             </h3>

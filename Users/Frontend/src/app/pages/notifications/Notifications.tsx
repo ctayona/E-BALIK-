@@ -123,7 +123,7 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
         >
           <div className="flex items-center gap-2 mb-2">
             <Bell size={16} className="text-[#d1a153]" />
-            <span className={CX.sectionLabel}>Account Updates</span>
+            <span className={CX.sectionLabel}>Account updates</span>
           </div>
           <div className="flex items-end justify-between gap-4">
             <div>

@@ -6,6 +6,8 @@ import { getUnreadNotificationCount } from "./utils/notificationsStore";
 import { AdminUser, clearAdminSession, getStoredAdmin } from "./utils/api";
 import InfoModalHost from "./components/info-modal/InfoModalHost";
 import { showInfoModal } from "./components/info-modal/infoModalStore";
+import { useT, tr } from "./utils/preferences";
+import type { StringKey } from "./i18n/strings";
 
 const Dashboard = lazy(() => import("./pages/dashboard/Dashboard"));
 const LostItems = lazy(() => import("./pages/lost-items/LostItems"));
@@ -21,18 +23,18 @@ const AdminProfile = lazy(() => import("./pages/admin-profile/AdminProfile"));
 
 type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "admin-profile";
 
-const PAGE_META: Record<Page, { title: string; breadcrumb: string[] }> = {
-  "dashboard": { title: "Dashboard", breadcrumb: ["Home", "Dashboard"] },
-  "lost-items": { title: "Lost Items", breadcrumb: ["Home", "Lost Items"] },
-  "found-items": { title: "Found Items", breadcrumb: ["Home", "Found Items"] },
-  "ai-matching": { title: "AI Matching", breadcrumb: ["Home", "AI Matching"] },
-  "claims": { title: "Claims & Verification", breadcrumb: ["Home", "Claims & Verification"] },
-  "chain-of-custody": { title: "Chain of Custody", breadcrumb: ["Home", "Chain of Custody"] },
-  "users": { title: "Users", breadcrumb: ["Home", "Users"] },
-  "reports": { title: "Reports & Analytics", breadcrumb: ["Home", "Reports & Analytics"] },
-  "notifications": { title: "Notifications", breadcrumb: ["Home", "Notifications"] },
-  "activity-logs": { title: "Activity Logs", breadcrumb: ["Home", "Activity Logs"] },
-  "admin-profile": { title: "My Profile", breadcrumb: ["Home", "My Profile"] },
+const PAGE_META: Record<Page, StringKey> = {
+  "dashboard": "nav.dashboard",
+  "lost-items": "nav.lostItems",
+  "found-items": "nav.foundItems",
+  "ai-matching": "nav.aiMatching",
+  "claims": "nav.claims",
+  "chain-of-custody": "nav.custody",
+  "users": "nav.users",
+  "reports": "nav.reports",
+  "notifications": "nav.notifications",
+  "activity-logs": "nav.activityLogs",
+  "admin-profile": "nav.profile",
 };
 
 const ADMIN_PAGE_STORAGE_KEY = "ebalik_admin_last_page";
@@ -44,6 +46,7 @@ export default function App() {
     return stored && PAGE_META[stored as Page] ? stored as Page : "dashboard";
   });
   const [notifCount, setNotifCount] = useState<number>(() => getUnreadNotificationCount());
+  const t = useT();
 
   const handleLogout = () => {
     clearAdminSession();
@@ -78,8 +81,8 @@ export default function App() {
           <div className="w-12 h-12 rounded-xl bg-[#fef2f2] flex items-center justify-center mx-auto mb-4">
             <svg width="24" height="24" fill="none" viewBox="0 0 24 24" className="text-red-500"><path d="M12 9v4m0 4h.01M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
           </div>
-          <p className="text-base font-bold text-slate-900">Session Expired</p>
-          <p className="mt-2 text-sm text-slate-500">Redirecting you back to login…</p>
+          <p className="text-base font-bold text-slate-900">{tr("Session Expired")}</p>
+          <p className="mt-2 text-sm text-slate-500">{tr("Redirecting you back to login…")}</p>
         </div>
       </div>
     );
@@ -90,11 +93,11 @@ export default function App() {
     localStorage.setItem(ADMIN_PAGE_STORAGE_KEY, p);
   };
 
-  const meta = PAGE_META[page];
+  const pageTitle = t(PAGE_META[page]);
 
   const renderPage = () => {
     switch (page) {
-      case "dashboard": return <Dashboard />;
+      case "dashboard": return <Dashboard onNavigate={(target) => navigate(target)} />;
       case "lost-items": return <LostItems />;
       case "found-items": return <FoundItems />;
       case "ai-matching": return <AIMatching />;
@@ -105,12 +108,12 @@ export default function App() {
       case "notifications": return <Notifications />;
       case "activity-logs": return <ActivityLogs />;
       case "admin-profile": return <AdminProfile />;
-      default: return <Dashboard />;
+      default: return <Dashboard onNavigate={(target) => navigate(target)} />;
     }
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-100">
+    <div className="flex h-screen overflow-hidden">
       <Sidebar
         currentPage={page}
         onNavigate={navigate}
@@ -120,8 +123,8 @@ export default function App() {
       />
       <div className="min-w-0 flex-1 flex flex-col overflow-hidden">
         <Header
-          breadcrumb={meta.breadcrumb}
-          title={meta.title}
+          breadcrumb={[t("nav.home"), pageTitle]}
+          title={pageTitle}
           notifCount={notifCount}
           onNotifClick={() => navigate("notifications")}
           onProfileClick={() => navigate("admin-profile")}

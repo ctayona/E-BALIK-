@@ -21,9 +21,47 @@ interface ApiResponse<T = unknown> {
 }
 
 /**
+ * Short-lived read cache: identical concurrent GETs share one request, and repeat reads within
+ * GET_CACHE_TTL_MS reuse the result (e.g. Dashboard → Browse → Dashboard). Any mutation clears it so
+ * users always see their own changes. Auth and notification reads are never cached.
+ */
+const GET_CACHE_TTL_MS = 15_000;
+const UNCACHED_PREFIXES = ['/api/auth', '/api/notifications'];
+const getCache = new Map<string, { at: number; promise: Promise<ApiResponse<unknown>> }>();
+
+export function invalidateApiCache() {
+  getCache.clear();
+}
+
+async function apiCall<T = unknown>(
+  endpoint: string,
+  options: RequestOptions = {}
+): Promise<ApiResponse<T>> {
+  const method = options.method ?? 'GET';
+  if (method !== 'GET') {
+    try {
+      return await rawApiCall<T>(endpoint, options);
+    } finally {
+      getCache.clear();
+    }
+  }
+  if (UNCACHED_PREFIXES.some((prefix) => endpoint.startsWith(prefix))) return rawApiCall<T>(endpoint, options);
+
+  const token = options.requiresAuth ? localStorage.getItem('ebalik_token') ?? '' : '';
+  const key = `${token}|${endpoint}`;
+  const cached = getCache.get(key);
+  if (cached && Date.now() - cached.at < GET_CACHE_TTL_MS) return cached.promise as Promise<ApiResponse<T>>;
+
+  const promise = rawApiCall<T>(endpoint, options);
+  getCache.set(key, { at: Date.now(), promise: promise as Promise<ApiResponse<unknown>> });
+  void promise.then((result) => { if (result.error) getCache.delete(key); });
+  return promise;
+}
+
+/**
  * Make HTTP request to API
  */
-async function apiCall<T = unknown>(
+async function rawApiCall<T = unknown>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<ApiResponse<T>> {
@@ -368,6 +406,7 @@ export const authUtils = {
    */
   clearToken(): void {
     localStorage.removeItem('ebalik_token');
+    invalidateApiCache();
   },
 
   /**

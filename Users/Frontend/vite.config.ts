@@ -19,7 +19,8 @@ function figmaAssetResolver() {
 export default defineConfig({
   // This config lives in frontend/user; keep the app root, env files and build output here
   root: __dirname,
-  envDir: __dirname,
+  // Env values are loaded from <repo>/Environment_Configs/frontend (.env.local)
+  envDir: path.resolve(__dirname, '../../Environment_Configs/frontend'),
   plugins: [
     figmaAssetResolver(),
     // The React and Tailwind plugins are both required for Make, even if
@@ -31,6 +32,20 @@ export default defineConfig({
     alias: {
       // Alias @ to the src directory
       '@': path.resolve(__dirname, './src'),
+    },
+  },
+
+  build: {
+    rollupOptions: {
+      output: {
+        // Long-lived vendor chunks: app updates don't invalidate React/motion in the browser/SW cache
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (/[\/]node_modules[\/](react|react-dom|scheduler)[\/]/.test(id)) return 'vendor-react'
+          if (/[\/]node_modules[\/](motion|framer-motion|motion-dom|motion-utils)[\/]/.test(id)) return 'vendor-motion'
+          return undefined
+        },
+      },
     },
   },
 

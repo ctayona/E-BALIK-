@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bell, ChevronDown, ClipboardCheck, Files, Gavel, GitCompareArrows, LayoutDashboard, LibraryBig, LogOut, Menu, PackagePlus, UserRound, X } from "lucide-react";
+import { Bell, ChevronDown, ClipboardCheck, Files, Gavel, GitCompareArrows, LayoutDashboard, LibraryBig, LogOut, Menu, Moon, PackagePlus, Sun, UserRound, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import headerUmSeal from "@/imports/Header/9aefa1789ba406d6291f8aa816f84df70a02953b.png";
+import headerUmSeal from "@/imports/Header/9aefa1789ba406d6291f8aa816f84df70a02953b.webp";
 import type { Page } from "@/app/types";
 import type { User } from "@/app/utils/useAuth";
 import { notificationsAPI } from "@/app/utils/api";
+import { useTheme } from "@/app/utils/theme";
 
 const NAV_LINKS: { label: string; page: Page; icon: ReactNode }[] = [
   { label: "Dashboard",    page: "dashboard",    icon: <LayoutDashboard size={16} aria-hidden="true" /> },
@@ -37,6 +38,8 @@ export default function UserHeader({
   const [accountOpen, setAccountOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const accountRef = useRef<HTMLDivElement>(null);
+  const [theme, toggleTheme] = useTheme();
+  const themeLabel = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
 
   useEffect(() => {
     let active = true;
@@ -103,7 +106,7 @@ export default function UserHeader({
         Skip to main content
       </a>
 
-      <header className="sticky top-0 z-30 w-full shrink-0 border-b border-navy-950/40 bg-navy-800 text-white">
+      <header className="app-chrome sticky top-0 z-30 w-full shrink-0 border-b border-white/10 pt-[env(safe-area-inset-top)] bg-navy-900/80 text-white shadow-[0_10px_30px_-18px_rgba(5,10,30,0.8)] backdrop-blur-xl backdrop-saturate-150">
         <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center gap-4 px-4 sm:px-6">
           {/* Brand */}
           <button type="button" onClick={() => navigate("dashboard")} className="flex shrink-0 items-center gap-2.5 rounded-lg py-1 pr-2" aria-label="E-Balik home">
@@ -126,12 +129,15 @@ export default function UserHeader({
                   type="button"
                   onClick={() => navigate(link.page)}
                   aria-current={active ? "page" : undefined}
+                  aria-label={link.label}
+                  title={link.label}
                   className={`relative flex items-center gap-1.5 whitespace-nowrap px-3 text-[14px] font-medium transition-colors duration-150 ${
                     active ? "text-white" : "text-navy-200 hover:text-white"
                   }`}
                 >
                   <span className={active ? "text-gold-400" : "text-navy-300"}>{link.icon}</span>
-                  {link.label}
+                  {/* Icons only between lg and xl so the bar never overflows into the actions. */}
+                  <span className="hidden xl:inline">{link.label}</span>
                   <span className={`absolute inset-x-2 bottom-0 h-[3px] rounded-t-full transition-colors ${active ? "bg-gold-500" : "bg-transparent"}`} aria-hidden="true" />
                 </button>
               );
@@ -144,10 +150,20 @@ export default function UserHeader({
               onClick={() => navigate("report-item")}
               aria-current={isReporting ? "page" : undefined}
               className={`hidden items-center gap-2 rounded-[10px] px-4 py-2.5 text-[14px] font-semibold transition-colors duration-150 sm:inline-flex ${
-                isReporting ? "bg-gold-400 text-navy-950 ring-2 ring-gold-200/60" : "bg-gold-500 text-navy-950 hover:bg-gold-400"
+                isReporting ? "bg-[linear-gradient(180deg,#e6be76_0%,#d1a153_100%)] text-navy-950 ring-2 ring-gold-200/60" : "bg-[linear-gradient(180deg,#e6be76_0%,#d1a153_100%)] text-navy-950 shadow-[0_1px_0_rgba(255,255,255,0.45)_inset] hover:shadow-[0_1px_0_rgba(255,255,255,0.45)_inset,var(--shadow-glow-gold)]"
               }`}
             >
               <PackagePlus size={16} aria-hidden="true" /> Report item
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={themeLabel}
+              title={themeLabel}
+              className="flex size-11 items-center justify-center rounded-[10px] text-navy-100 transition-colors hover:bg-white/10 hover:text-gold-300"
+            >
+              {theme === "dark" ? <Sun size={19} aria-hidden="true" /> : <Moon size={19} aria-hidden="true" />}
             </button>
 
             <button
@@ -241,7 +257,7 @@ export default function UserHeader({
               animate={{ x: 0 }}
               exit={{ x: -320 }}
               transition={{ type: "spring", stiffness: 420, damping: 38 }}
-              className="relative z-50 flex h-full w-[300px] max-w-[85vw] flex-col bg-navy-900 text-white shadow-overlay"
+              className="relative z-50 flex h-full w-[300px] max-w-[85vw] flex-col bg-navy-900 text-white shadow-overlay dark:bg-[linear-gradient(180deg,#0e162e,#070c19)]"
             >
               <div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
                 <div className="flex items-center gap-2.5">
@@ -294,6 +310,9 @@ export default function UserHeader({
                     <span className="block truncate text-[14px] font-medium">{profileLabel}</span>
                     <span className="block font-mono text-[12px] text-gold-300">{campusIdLabel}</span>
                   </span>
+                </button>
+                <button type="button" onClick={toggleTheme} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-navy-100 hover:bg-white/[0.06]">
+                  {theme === "dark" ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />} {theme === "dark" ? "Light mode" : "Dark mode"}
                 </button>
                 <button type="button" onClick={onLogout} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-rose-300 hover:bg-rose-500/10">
                   <LogOut size={16} aria-hidden="true" /> Log out

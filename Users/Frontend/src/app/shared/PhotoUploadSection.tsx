@@ -13,7 +13,7 @@ export default function PhotoUploadSection({ label }: { label: string }) {
     <div className="flex flex-col gap-3">
       <p className="font-semibold text-ink text-[14px]">{label}</p>
       <div
-        className="border-2 border-dashed border-gold-400 bg-[#fef8ec] rounded-[8px] flex flex-col items-center justify-center gap-2 py-8 cursor-pointer hover:bg-[#fdf3d9] transition-colors"
+        className="border-2 border-dashed border-gold-400 bg-[#fef8ec] rounded-[8px] flex flex-col items-center justify-center gap-2 py-8 cursor-pointer hover:bg-[#fdf3d9] dark:hover:bg-gold-500/20 transition-colors"
         onClick={() => fileRef.current?.click()}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}

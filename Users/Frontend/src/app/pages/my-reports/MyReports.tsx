@@ -1,42 +1,56 @@
-import { useEffect, useState } from "react";
-import { GitCompareArrows, ImageOff, MapPin, Pencil, Trash2, X } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { CalendarDays, FileStack, GitCompareArrows, Layers, MapPin, Pencil, ShieldCheck, Tag, Trash2, Search, AlertTriangle } from "lucide-react";
 import type { NavigationOptions, Page } from "@/app/types";
 import { useAuth } from "@/app/utils/useAuth";
-import { CX, SPRING } from "@/app/utils/clay";
+import { CX } from "@/app/utils/clay";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
+import ItemCollection from "@/app/shared/media/ItemCollection";
+import ItemImage, { type GalleryItem } from "@/app/shared/media/ItemImage";
+import ViewToggle from "@/app/shared/view/ViewToggle";
+import { useViewMode } from "@/app/shared/view/useViewMode";
+import Modal, { CountdownConsent } from "@/app/shared/modal/Modal";
 
 type Report = {
   id: string; name: string; category?: string; description?: string;
   location: string; date: string; image?: string; status: string;
   kind: "Missing" | "Found"; distinctive_marks?: string; turnover_location?: string;
 };
+type Filter = "all" | "missing" | "found";
 
-function ReportThumb({ report }: { report: Report }) {
-  const [failed, setFailed] = useState(false);
-  if (!report.image || failed)
-    return <div className="flex size-[72px] shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500 border border-white/60"><ImageOff size={20} /></div>;
-  return <img src={report.image} alt={report.name} className="size-[72px] shrink-0 rounded-xl object-cover border border-white/60" onError={() => setFailed(true)} />;
+const toGallery = (report: Report): GalleryItem => ({
+  id: report.id, title: report.name, kind: report.kind === "Found" ? "found" : "missing", image: report.image || undefined,
+  category: report.category, location: report.location, date: report.date, description: report.description,
+  heldAt: report.turnover_location, status: report.status,
+});
+
+function StatusPill({ status }: { status: string }) {
+  const value = (status || "").toLowerCase();
+  const tone = ["claimed", "returned", "resolved", "collected", "closed"].includes(value)
+    ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+    : ["unclaimed", "active", "missing"].includes(value)
+      ? "bg-white/95 text-navy-800 ring-line"
+      : "bg-amber-50 text-amber-800 ring-amber-200";
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ring-1 ${tone}`}>{status || "unknown"}</span>;
 }
 
 export default function MyReports({ onNavigate }: { onNavigate: (page: Page, options?: NavigationOptions) => void }) {
   const { getFoundItems, getMissingItems, updateFoundItem, updateMissingItem, deleteFoundItem, deleteMissingItem } = useAuth();
+  const [mode] = useViewMode();
+  const formId = useId();
 
-  // All state preserved exactly
-  const [reports,           setReports]           = useState<Report[]>([]);
-  const [loading,            setLoading]            = useState(true);
-  const [active,            setActive]            = useState<"all" | "missing" | "found">("all");
-  const [selected,          setSelected]          = useState<Report | null>(null);
-  const [draft,             setDraft]             = useState<Report | null>(null);
-  const [editing,           setEditing]           = useState(false);
-  const [confirmDelete,     setConfirmDelete]     = useState(false);
-  const [confirmEdit,       setConfirmEdit]       = useState(false);
-  const [confirmCountdown,  setConfirmCountdown]  = useState(5);
-  const [confirmChecked,    setConfirmChecked]    = useState(false);
-  const [saving,            setSaving]            = useState(false);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [active, setActive] = useState<Filter>("all");
+  const [selected, setSelected] = useState<Report | null>(null);
+  const [draft, setDraft] = useState<Report | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmEdit, setConfirmEdit] = useState(false);
+  const [confirmCountdown, setConfirmCountdown] = useState(5);
+  const [confirmChecked, setConfirmChecked] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  // All logic preserved exactly
   useEffect(() => {
     if ((!confirmDelete && !confirmEdit) || confirmCountdown <= 0) return;
     const timer = window.setTimeout(() => setConfirmCountdown((v) => v - 1), 1000);
@@ -53,27 +67,34 @@ export default function MyReports({ onNavigate }: { onNavigate: (page: Page, opt
     setLoading(true);
     try {
       const [missing, found] = await Promise.all([getMissingItems(), getFoundItems()]);
-      const m = (missing.items || []).map((item: any) => ({
+      const m = (missing.items || []).map((item: any): Report => ({
         id: item.mpost_id, name: item.item_name, category: item.category, description: item.description,
         distinctive_marks: item.distinctive_marks, location: item.last_location, date: item.last_seen_date,
-        image: item.image_url, status: item.status || "missing", kind: "Missing" as const,
+        image: item.image_url, status: item.status || "missing", kind: "Missing",
       }));
-      const f = (found.items || []).map((item: any) => ({
+      const f = (found.items || []).map((item: any): Report => ({
         id: item.fpost_id, name: item.item_name, category: item.category, description: item.description,
         location: item.location, date: item.found_date, image: item.image_url,
-        status: item.status || "unclaimed", turnover_location: item.turnover_location, kind: "Found" as const,
+        status: item.status || "unclaimed", turnover_location: item.turnover_location, kind: "Found",
       }));
-      setReports([...m, ...f]);
+      setReports([...m, ...f].sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()));
     } finally {
       setLoading(false);
     }
   }
   useEffect(() => { void loadReports(); }, [getFoundItems, getMissingItems]);
 
-  async function saveReport() {
+  function openReport(report: Report) {
+    setSelected(report);
+    setDraft({ ...report });
+    setEditing(false);
+  }
+
+  function saveReport() {
     if (!draft) return;
     setConfirmCountdown(5); setConfirmChecked(false); setConfirmEdit(true);
   }
+
   async function confirmSaveReport() {
     if (!draft || !confirmChecked || confirmCountdown > 0) return;
     setSaving(true);
@@ -90,6 +111,7 @@ export default function MyReports({ onNavigate }: { onNavigate: (page: Page, opt
     showInfoModal({ variant: "success", title: "Report updated", message: `Your changes to "${draft.name}" are saved and matching has been refreshed.`, reference: draft.id });
     setEditing(false); setSelected(null); setConfirmEdit(false); await loadReports();
   }
+
   async function removeReport() {
     if (!selected || !confirmChecked || confirmCountdown > 0) return;
     setSaving(true);
@@ -103,283 +125,216 @@ export default function MyReports({ onNavigate }: { onNavigate: (page: Page, opt
     showInfoModal({ variant: "success", title: "Report deleted", message: `"${selected.name}" was removed from your reports and will no longer appear in matching.`, reference: selected.id });
     setConfirmDelete(false); setSelected(null); await loadReports();
   }
+
   function openDeleteConfirmation() { setConfirmCountdown(5); setConfirmChecked(false); setConfirmDelete(true); }
 
-  const visibleReports = reports.filter((r) => active === "all" || r.kind.toLowerCase() === active);
+  const counts = useMemo(() => ({
+    all: reports.length,
+    missing: reports.filter((r) => r.kind === "Missing").length,
+    found: reports.filter((r) => r.kind === "Found").length,
+  }), [reports]);
+  const visibleReports = useMemo(() => reports.filter((r) => active === "all" || r.kind.toLowerCase() === active), [reports, active]);
+  const visibleGallery = useMemo(() => visibleReports.map(toGallery), [visibleReports]);
+  const confirming = (confirmDelete || confirmEdit) && Boolean(selected);
 
   return (
     <main className={CX.page}>
       <div className={CX.inner}>
-
-        {/* Page header */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between"
-        >
+        {/* Header */}
+        <header className="mb-6 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div>
-            <span className={CX.sectionLabel}>Personal Workspace</span>
-            <h1 className="mt-1 text-[30px] font-semibold text-navy-800 tracking-tight" style={{ fontFamily: "var(--font-heading)" }}>
-              My Reports
-            </h1>
-            <p className="mt-1 text-[14px] text-ink-muted">Manage every report submitted by your account.</p>
+            <p className={CX.eyebrow}>Personal workspace</p>
+            <h1 className={`${CX.pageTitle} mt-1`}>My reports</h1>
+            <p className={CX.pageLead}>Everything you've reported, in one place. Open a report to review, edit or remove it.</p>
           </div>
-          <motion.button
-            type="button"
-            onClick={() => onNavigate("matches")}
-            whileHover={{ y: -2, scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            transition={SPRING}
-            className={`${CX.btnNavy} flex items-center gap-2 px-5 py-3 text-[13px]`}
-          >
-            <GitCompareArrows size={15} /> View Matches
-          </motion.button>
-        </motion.div>
+          <button type="button" onClick={() => onNavigate("matches")} className={`${CX.btnNavy} self-start md:self-auto`}>
+            <GitCompareArrows size={16} aria-hidden="true" /> View matches
+          </button>
+        </header>
 
-
-        {/* Filter tabs */}
-        <div className={`${CX.cardSm} flex gap-1 p-1.5 mb-6`}>
-          {(["all", "missing", "found"] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActive(tab)}
-              className={`flex-1 rounded-[12px] py-2.5 text-[13px] font-bold transition-colors duration-200 capitalize ${
-                active === tab
-                  ? "bg-navy-800 hover:bg-navy-700 text-white border"
-                  : "text-ink-soft hover:bg-slate-100"
-              }`}
-            >
-              {tab === "all" ? "All Reports" : tab === "missing" ? "Missing Items" : "Found Items"}
-            </button>
+        <dl className="mb-6 grid grid-cols-3 gap-3">
+          {[
+            { label: "All reports", value: counts.all, icon: FileStack, tone: "bg-iris-50 text-iris-600" },
+            { label: "Missing", value: counts.missing, icon: Search, tone: "bg-tide-50 text-tide-700" },
+            { label: "Found", value: counts.found, icon: ShieldCheck, tone: "bg-gold-50 text-gold-700" },
+          ].map(({ label, value, icon: Icon, tone }) => (
+            <div key={label} className={`${CX.card} flex items-center gap-3 p-3 sm:p-4`}>
+              <span className={`hidden size-11 shrink-0 items-center justify-center rounded-2xl sm:flex ${tone}`}><Icon size={19} aria-hidden="true" /></span>
+              <div className="min-w-0">
+                <dt className="truncate text-[12px] font-medium text-ink-muted sm:text-[13px]">{label}</dt>
+                <dd className="font-[family-name:var(--font-heading)] text-[22px] font-semibold leading-tight tabular-nums text-ink sm:text-[26px]">{loading ? "–" : value}</dd>
+              </div>
+            </div>
           ))}
+        </dl>
+
+        {/* Filters + view */}
+        <div className="glass sticky top-[calc(76px+env(safe-area-inset-top))] z-20 mb-5 flex items-center justify-between gap-2 rounded-[20px] p-2">
+          <div role="tablist" aria-label="Report type" className="no-scrollbar flex min-w-0 gap-1 overflow-x-auto">
+            {(["all", "missing", "found"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={active === tab}
+                onClick={() => setActive(tab)}
+                className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl px-3.5 text-[14px] font-semibold transition-colors sm:px-4 ${
+                  active === tab ? "bg-[linear-gradient(180deg,#2b4282_0%,#1f3160_100%)] text-white shadow-[0_8px_18px_-10px_rgba(17,27,66,0.8)]" : "text-ink-soft hover:bg-white/80"
+                }`}
+              >
+                {tab === "all" ? "All" : tab === "missing" ? "Missing" : "Found"}
+                <span className={`rounded-full px-1.5 text-[12px] tabular-nums ${active === tab ? "bg-white/20" : "bg-frost-100 text-ink-muted"}`}>{counts[tab]}</span>
+              </button>
+            ))}
+          </div>
+          <ViewToggle compact />
         </div>
 
-        {/* Report grid */}
-        {loading ? <ReportGridSkeleton count={4} /> : <div className="grid gap-4 sm:grid-cols-2">
-          {visibleReports.length === 0 ? (
-            <div className={`${CX.card} col-span-full py-16 text-center flex flex-col items-center gap-3`}>
-              <div className="size-[56px] flex items-center justify-center rounded-2xl bg-slate-100 border border-white/60 text-slate-500">
-                <ImageOff size={24} />
+        {loading ? <ReportGridSkeleton count={4} /> : (
+          <ItemCollection
+            label="My reports"
+            items={visibleGallery}
+            mode={mode}
+            onOpen={(_item, index) => openReport(visibleReports[index])}
+            badge={(item) => <StatusPill status={item.status || ""} />}
+            empty={
+              <div className="glass flex flex-col items-center gap-3 rounded-[22px] px-6 py-14 text-center">
+                <span className="flex size-14 items-center justify-center rounded-2xl bg-frost-100 text-iris-600"><FileStack size={26} aria-hidden="true" /></span>
+                <p className="text-[16px] font-semibold text-ink">No reports in this view yet</p>
+                <p className="max-w-[44ch] text-[14px] text-ink-muted">Reports you submit for found or lost items will appear here.</p>
+                <button type="button" onClick={() => onNavigate("report-item")} className={CX.btnGold}>Report an item</button>
               </div>
-              <p className="text-[16px] font-bold text-ink-muted">No reports in this view yet.</p>
-            </div>
-          ) : visibleReports.map((report) => (
-            <motion.button
-              type="button"
-              key={`${report.kind}-${report.id}`}
-              onClick={() => { setSelected(report); setDraft({ ...report }); setEditing(false); }}
-              whileHover={{ y: -4, scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              transition={SPRING}
-              className={`${CX.card} text-left overflow-hidden cursor-pointer`}
-            >
-              <div className="flex gap-3 p-4">
-                <ReportThumb report={report} />
-                <div className="min-w-0 flex-1">
-                  <span className={report.kind === "Found" ? CX.badgeGold : CX.badgeRed}>
-                    {report.kind} report
-                  </span>
-                  <h2 className="mt-2 truncate text-[15px] font-semibold text-navy-800">{report.name}</h2>
-                  <p className="mt-1 flex items-center gap-1.5 truncate text-[12px] text-ink-muted">
-                    <MapPin size={11} className="shrink-0 text-[#d1a153]" />{report.location}
-                  </p>
-                  <p className="mt-0.5 text-[12px] text-slate-500">{report.date}</p>
-                  <p className="mt-2 text-[12px] font-bold capitalize text-navy-800">{report.status}</p>
-                </div>
-              </div>
-              <div className="border-t border-[#eef2f7] px-4 py-2.5 text-[12px] font-bold text-navy-800 text-right bg-slate-50/50">
-                Open report details →
-              </div>
-            </motion.button>
-          ))}
-        </div>}
-
-        {/* ── Report detail modal ── */}
-        <AnimatePresence>
-          {selected && (
-            <motion.div
-              key="detail-overlay"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/55 px-4 backdrop-blur-[4px]"
-              onClick={() => setSelected(null)}
-            >
-              <motion.div
-                initial={{ scale: 0.88, y: 24 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 16 }}
-                transition={SPRING}
-                onClick={(e) => e.stopPropagation()}
-                className={`${CX.modal} w-full max-w-2xl max-h-[90vh] overflow-y-auto gap-5
-                            [scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.5)_transparent]`}
-              >
-                {/* Header */}
-                <div className="flex items-center justify-between gap-4 w-full">
-                  <div>
-                    <span className={selected.kind === "Found" ? CX.badgeGold : CX.badgeRed}>
-                      {selected.kind} report · {selected.id}
-                    </span>
-                    <h2 className="mt-2 text-[24px] font-semibold text-navy-800" style={{ fontFamily: "var(--font-heading)" }}>
-                      {editing ? "Edit report" : selected.name}
-                    </h2>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelected(null)}
-                    className="w-8 h-8 flex items-center justify-center rounded-full text-slate-500 hover:text-navy-800 hover:bg-slate-100 transition-colors shrink-0"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-
-                {/* Image */}
-                {selected.image && (
-                  <div className="w-full rounded-2xl overflow-hidden border border-white/60">
-                    <img src={selected.image} alt={selected.name} className="h-[220px] w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                  </div>
-                )}
-
-                <div className={CX.divider} />
-
-                {/* Edit form or view */}
-                {editing && draft ? (
-                  <div className="grid gap-4 md:grid-cols-2 w-full">
-                    {([ ["Item name","name"],["Category","category"],["Location","location"],[selected.kind === "Found" ? "Found date" : "Last seen date","date"] ] as [string,string][]).map(([label, key]) => (
-                      <label key={key} className="flex flex-col gap-2 text-[13px] font-bold text-navy-800">
-                        {label}
-                        <input
-                          type={key === "date" ? "date" : "text"}
-                          value={(draft as any)[key] || ""}
-                          onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-                          className={`${CX.input} h-[46px] w-full`}
-                        />
-                      </label>
-                    ))}
-                    <label className="flex flex-col gap-2 text-[13px] font-bold text-navy-800 md:col-span-2">
-                      Description
-                      <textarea
-                        value={draft.description || ""}
-                        onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                        className="rounded-xl border border-line-strong bg-slate-50 p-3 text-[14px] font-normal text-ink outline-none focus:border-navy-600 transition-colors"
-                        rows={4}
-                      />
-                    </label>
-                    {selected.kind === "Missing" && (
-                      <label className="flex flex-col gap-2 text-[13px] font-bold text-navy-800 md:col-span-2">
-                        Private distinctive marks
-                        <textarea
-                          value={draft.distinctive_marks || ""}
-                          onChange={(e) => setDraft({ ...draft, distinctive_marks: e.target.value })}
-                          className="rounded-xl border border-line-strong bg-slate-50 p-3 text-[14px] font-normal text-ink outline-none focus:border-navy-600 transition-colors"
-                          rows={3}
-                        />
-                      </label>
-                    )}
-                  </div>
-                ) : (
-                  <div className="grid gap-3 text-[14px] text-ink-soft md:grid-cols-2 w-full">
-                    {[
-                      { label: "Category",  value: selected.category  || "Not provided" },
-                      { label: "Status",    value: selected.status },
-                      { label: "Location",  value: selected.location },
-                      { label: "Date",      value: selected.date },
-                      ...(selected.description    ? [{ label: "Description",   value: selected.description }] : []),
-                      ...(selected.turnover_location ? [{ label: "Turned over at", value: selected.turnover_location }] : []),
-                    ].map(({ label, value }) => (
-                      <div key={label} className={`${CX.cardSm} p-3 ${label === "Description" || label === "Turned over at" ? "md:col-span-2" : ""}`}>
-                        <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-gold-700">{label}</p>
-                        <p className="mt-1 text-[14px] font-semibold text-navy-800">{value}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Action buttons */}
-                <div className="flex flex-wrap justify-between gap-3 pt-3 border-t border-line w-full">
-                  {editing ? (
-                    <>
-                      <button type="button" onClick={() => setEditing(false)} className={`${CX.btnGhost} px-5 py-2.5 text-[13px]`}>
-                        Cancel
-                      </button>
-                      <button type="button" onClick={() => void saveReport()} disabled={saving} className={`${CX.btnNavy} px-5 py-2.5 text-[13px]`}>
-                        {saving ? "Saving…" : "Save changes"}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button type="button" onClick={() => setEditing(true)} className={`${CX.btnGhost} flex items-center gap-2 px-5 py-2.5 text-[13px]`}>
-                        <Pencil size={13} /> Edit report
-                      </button>
-                      <button type="button" onClick={openDeleteConfirmation} className={`${CX.btnDanger} flex items-center gap-2 px-5 py-2.5 text-[13px]`}>
-                        <Trash2 size={13} /> Delete report
-                      </button>
-                    </>
-                  )}
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ── Confirm delete / edit modal ── */}
-        <AnimatePresence>
-          {(confirmDelete || confirmEdit) && selected && (
-            <motion.div
-              key="confirm-overlay"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[60] flex items-center justify-center bg-navy-950/55 px-4 backdrop-blur-sm"
-            >
-              <motion.div
-                initial={{ scale: 0.88, y: 24 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.92, y: 16 }}
-                transition={SPRING}
-                className={`${CX.modal} w-full max-w-md gap-4`}
-              >
-                <div className={`size-[48px] flex items-center justify-center rounded-[16px] ${confirmEdit ? "bg-blue-200 text-blue-600" : "bg-red-200 text-red-600"} border ${confirmEdit ? "border-blue-300/50" : "border-red-300/50"} `}>
-                  <Pencil size={20} />
-                </div>
-                <h2 className="text-[20px] font-semibold text-navy-800" style={{ fontFamily: "var(--font-heading)" }}>
-                  {confirmEdit ? "Confirm report changes" : "Delete this report?"}
-                </h2>
-                <p className="text-[14px] text-ink-muted">
-                  {confirmEdit
-                    ? "Please verify that the updated information is accurate before saving."
-                    : `This permanently removes ${selected.id}. This action cannot be undone.`}
-                </p>
-                <div className={CX.alertInfo}>
-                  Confirmation unlocks in <strong className="text-blue-700">{confirmCountdown} seconds</strong>.
-                </div>
-                <label className="flex items-start gap-3 text-[13px] text-ink-soft cursor-pointer">
-                  <input
-                    type="checkbox"
-                    disabled={confirmCountdown > 0}
-                    checked={confirmChecked}
-                    onChange={(e) => setConfirmChecked(e.target.checked)}
-                    className="mt-0.5 size-4 accent-navy-800 cursor-pointer"
-                  />
-                  I confirm this action applies only to my own report.
-                </label>
-                <div className="flex justify-end gap-3 w-full">
-                  <button
-                    type="button"
-                    onClick={() => { setConfirmDelete(false); setConfirmEdit(false); }}
-                    className={`${CX.btnGhost} px-5 py-2.5 text-[13px]`}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void (confirmEdit ? confirmSaveReport() : removeReport())}
-                    disabled={!confirmChecked || confirmCountdown > 0 || saving}
-                    className={`${confirmEdit ? CX.btnNavy : CX.btnDanger} px-5 py-2.5 text-[13px]`}
-                  >
-                    {saving ? "Working…" : confirmEdit ? "Save changes" : "Delete report"}
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
+            }
+          />
+        )}
       </div>
+
+      {/* Detail / edit modal */}
+      <Modal
+        open={Boolean(selected) && !confirming}
+        onClose={() => setSelected(null)}
+        size="lg"
+        tone={selected?.kind === "Found" ? "gold" : "mint"}
+        icon={editing ? <Pencil size={20} /> : selected?.kind === "Found" ? <ShieldCheck size={21} /> : <Search size={21} />}
+        eyebrow={selected ? `${selected.kind} report · ${selected.id}` : undefined}
+        title={editing ? "Edit report" : selected?.name}
+        description={editing ? "Update the details below. Matching refreshes automatically after you save." : undefined}
+        hero={!editing && selected?.image ? (
+          <div className="relative">
+            <ItemImage item={toGallery(selected)} className="h-[200px] w-full sm:h-[240px]" />
+            <span className="absolute bottom-3 left-3"><StatusPill status={selected.status} /></span>
+          </div>
+        ) : undefined}
+        footer={editing ? (
+          <>
+            <button type="button" onClick={() => setEditing(false)} className={CX.btnGhost}>Cancel</button>
+            <button type="submit" form={formId} disabled={saving} className={CX.btnNavy}>{saving ? "Saving…" : "Save changes"}</button>
+          </>
+        ) : (
+          <>
+            <button type="button" onClick={openDeleteConfirmation} className={`${CX.btnGhost} border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800 sm:mr-auto`}>
+              <Trash2 size={15} aria-hidden="true" /> Delete
+            </button>
+            {selected?.kind === "Missing" && (
+              <button type="button" onClick={() => { const id = selected.id; setSelected(null); onNavigate("matches", { reportId: id }); }} className={CX.btnGhost}>
+                <GitCompareArrows size={15} aria-hidden="true" /> Matches
+              </button>
+            )}
+            <button type="button" onClick={() => setEditing(true)} className={CX.btnNavy}>
+              <Pencil size={15} aria-hidden="true" /> Edit report
+            </button>
+          </>
+        )}
+      >
+        {selected && draft && (editing ? (
+          <form id={formId} onSubmit={(event) => { event.preventDefault(); saveReport(); }} className="grid gap-4 sm:grid-cols-2">
+            {([
+              ["Item name", "name", "text"],
+              ["Category", "category", "text"],
+              [selected.kind === "Found" ? "Where it was found" : "Last seen at", "location", "text"],
+              [selected.kind === "Found" ? "Date found" : "Date lost", "date", "date"],
+            ] as const).map(([label, key, type]) => (
+              <div key={key}>
+                <label htmlFor={`${formId}-${key}`} className={CX.label}>{label}</label>
+                <input
+                  id={`${formId}-${key}`}
+                  type={type}
+                  required={key === "name" || key === "date"}
+                  value={(draft[key] as string) || ""}
+                  onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+                  className={`${CX.input} w-full`}
+                />
+              </div>
+            ))}
+            <div className="sm:col-span-2">
+              <label htmlFor={`${formId}-description`} className={CX.label}>Description</label>
+              <textarea id={`${formId}-description`} value={draft.description || ""} onChange={(e) => setDraft({ ...draft, description: e.target.value })} rows={4} className={`${CX.input} w-full resize-y py-3 leading-6`} />
+            </div>
+            {selected.kind === "Missing" && (
+              <div className="sm:col-span-2">
+                <label htmlFor={`${formId}-marks`} className={CX.label}>Private distinctive marks</label>
+                <textarea id={`${formId}-marks`} value={draft.distinctive_marks || ""} onChange={(e) => setDraft({ ...draft, distinctive_marks: e.target.value })} rows={3} className={`${CX.input} w-full resize-y py-3 leading-6`} />
+                <p className={CX.helper}>Only you and administrators can see these. They help verify ownership.</p>
+              </div>
+            )}
+          </form>
+        ) : (
+          <div className="space-y-4">
+            {selected.description && <p className="whitespace-pre-line text-[15px] leading-7 text-ink-soft">{selected.description}</p>}
+            <dl className="grid gap-3 sm:grid-cols-2">
+              {[
+                { icon: Layers, label: "Category", value: selected.category || "Not provided" },
+                { icon: MapPin, label: selected.kind === "Found" ? "Found at" : "Last seen at", value: selected.location },
+                { icon: CalendarDays, label: selected.kind === "Found" ? "Date found" : "Date lost", value: selected.date },
+                ...(selected.turnover_location ? [{ icon: Tag, label: "Turned over at", value: selected.turnover_location }] : []),
+              ].map(({ icon: Icon, label, value }) => (
+                <div key={label} className="flex items-start gap-3 rounded-2xl border border-line bg-frost-50 p-3.5">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white text-iris-600 shadow-card"><Icon size={16} aria-hidden="true" /></span>
+                  <div className="min-w-0">
+                    <dt className="text-[12px] font-medium text-ink-muted">{label}</dt>
+                    <dd className="mt-0.5 break-words text-[15px] font-semibold text-ink">{value || "Not recorded"}</dd>
+                  </div>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </Modal>
+
+      {/* Confirmation modal */}
+      <Modal
+        open={confirming}
+        onClose={() => { setConfirmDelete(false); setConfirmEdit(false); }}
+        dismissible={!saving}
+        size="sm"
+        tone={confirmEdit ? "iris" : "danger"}
+        icon={confirmEdit ? <Pencil size={20} /> : <AlertTriangle size={21} />}
+        eyebrow={selected ? `${selected.kind} report · ${selected.id}` : undefined}
+        title={confirmEdit ? "Confirm your changes" : "Delete this report?"}
+        description={confirmEdit
+          ? "Check that the updated information is accurate before saving."
+          : `This permanently removes ${selected?.id ?? "this report"} and its photo. This can't be undone.`}
+        footer={
+          <>
+            <button type="button" disabled={saving} onClick={() => { setConfirmDelete(false); setConfirmEdit(false); }} className={CX.btnGhost}>Cancel</button>
+            <button
+              type="button"
+              onClick={() => void (confirmEdit ? confirmSaveReport() : removeReport())}
+              disabled={!confirmChecked || confirmCountdown > 0 || saving}
+              className={confirmEdit ? CX.btnNavy : CX.btnDanger}
+            >
+              {saving ? "Working…" : confirmEdit ? "Save changes" : "Delete report"}
+            </button>
+          </>
+        }
+      >
+        <CountdownConsent
+          countdown={confirmCountdown}
+          checked={confirmChecked}
+          onCheckedChange={setConfirmChecked}
+          label="I confirm this action applies only to my own report."
+        />
+      </Modal>
     </main>
   );
 }

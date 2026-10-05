@@ -1,5 +1,5 @@
 """Admin authentication and audit helpers shared by every admin page."""
-from flask import current_app, request
+from flask import current_app, jsonify, request
 from app.utils import get_db, JWTService
 
 
@@ -46,3 +46,23 @@ def _log_admin_action(db, actor, action, module, target, target_id, result='succ
         target_id=target_id,
         result=result,
     )
+
+
+def enforce_super_admin_for_deletes():
+    """Blueprint guard (before_request): every DELETE under /api/admin requires a super administrator.
+
+    Applied to all admin blueprints in app/blueprints.py so new delete routes are protected automatically,
+    in addition to each route's own check and the super_admin checks inside the database RPCs.
+    """
+    if request.method != 'DELETE':
+        return None
+    try:
+        _require_admin(required_level='super_admin')
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except PermissionError:
+        return jsonify({'error': 'Only super administrators can delete records'}), 403
+    except Exception as error:
+        current_app.logger.exception('Delete permission check failed: %s', error)
+        return jsonify({'error': 'Unable to verify administrator access'}), 500
+    return None

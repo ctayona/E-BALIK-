@@ -16,8 +16,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from <repo>/Environment_Configs/backend/.env
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'Environment_Configs', 'backend', '.env'))
 
 def setup_database():
     """Setup database tables"""

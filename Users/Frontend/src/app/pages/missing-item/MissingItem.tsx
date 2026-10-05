@@ -1,10 +1,16 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
-import { ArrowLeft, CalendarRange, ChevronDown, Clock3, Filter, ImagePlus, MapPin, PackageSearch, SearchCheck, ShieldCheck, Tag, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, CalendarRange, ChevronDown, ClipboardList, FileStack, Filter, ImagePlus, Lightbulb, MapPin, RefreshCw, Search, SearchCheck, Tag, UserRound, X } from "lucide-react";
 import { useAuth } from "@/app/utils/useAuth";
 import { CX } from "@/app/utils/clay";
-import type { Page } from "@/app/types";
-import { ReportListSkeleton } from "@/app/shared/LoadingSkeleton";
+import type { NavigationOptions, Page } from "@/app/types";
+import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
+import ItemCollection from "@/app/shared/media/ItemCollection";
+import ItemImage, { type GalleryItem } from "@/app/shared/media/ItemImage";
+import ItemViewer from "@/app/shared/media/ItemViewer";
+import ViewToggle from "@/app/shared/view/ViewToggle";
+import { useViewMode } from "@/app/shared/view/useViewMode";
+import Modal, { CountdownConsent } from "@/app/shared/modal/Modal";
 
 const CATEGORIES = ["Bags & Luggage", "Electronics", "Accessories", "Personal Effects", "Documents & Cards", "Clothing", "Keys", "Valuables", "Others"];
 const CAMPUS_LOCATIONS = ["Main Building Lobby", "Student Center", "Library", "ICT Building", "Faculty Hall", "Cafeteria", "Gym", "HPSB Building", "Other"];
@@ -41,7 +47,7 @@ type MatchSummary = {
   total_matches: number;
 };
 
-export default function MissingItem({ initialSearchTerm = "", focused = false, onBack }: { initialSearchTerm?: string; focused?: boolean; onBack?: (page: Page) => void }) {
+export default function MissingItem({ initialSearchTerm = "", focused = false, onBack }: { initialSearchTerm?: string; focused?: boolean; onBack?: (page: Page, options?: NavigationOptions) => void }) {
   const { createMissingItem, getMissingItems, getMissingMatchSummaries, searchFoundItems, isLoading, user } = useAuth();
   const [activeTab, setActiveTab] = useState<"intake" | "reports" | "search">("intake");
   const [itemName, setItemName] = useState("");
@@ -71,6 +77,9 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
   const [reportLocation, setReportLocation] = useState("");
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const [mode] = useViewMode();
+  const [openReport, setOpenReport] = useState<Report | null>(null);
+  const [resultIndex, setResultIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (!initialSearchTerm) return;
@@ -93,6 +102,16 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
       return matchesQuery && matchesCategory && matchesLocation;
     });
   }, [reports, reportSearch, reportCategory, reportLocation]);
+
+  const galleryReports = useMemo<GalleryItem[]>(() => filteredReports.map((report) => ({
+    id: report.mpost_id, title: report.item_name, kind: "missing", image: report.image_url || undefined, category: report.category,
+    location: report.last_location, date: report.last_seen_date, description: report.description, status: report.status,
+  })), [filteredReports]);
+  const galleryResults = useMemo<GalleryItem[]>(() => [...foundResults].sort((a, b) => b.match_percentage - a.match_percentage).map((item) => ({
+    id: item.fpost_id, title: item.item_name, kind: "found", image: item.image_url || undefined, category: item.category,
+    location: item.location, date: item.found_date, description: item.description, status: item.status,
+  })), [foundResults]);
+  const scoreOf = useMemo(() => new Map(foundResults.map((item) => [item.fpost_id, item.match_percentage])), [foundResults]);
 
   useEffect(() => {
     if (!confirmationOpen || countdown <= 0) return;
@@ -215,83 +234,323 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
     }
   }
 
-  if (!focused && activeTab === "reports" && reportsLoading) {
-    return <div className="flex-1 bg-slate-100 p-6 md:p-10"><div className="mx-auto max-w-[980px] space-y-5"><div className="h-8 w-64 animate-pulse rounded-lg bg-slate-200" /><ReportListSkeleton count={5} /></div></div>;
-  }
-
-  if (activeTab === "search" && resultsLoading) {
-    return <div className="flex-1 bg-slate-100 p-6 md:p-10"><div className="mx-auto max-w-[980px] space-y-5"><div className="h-8 w-64 animate-pulse rounded-lg bg-slate-200" /><ReportListSkeleton count={5} /></div></div>;
-  }
+  const reportFiltersActive = Boolean(reportSearch || reportCategory || reportLocation);
+  const summaryOf = (id: string) => matchSummaries[id] || { matched_above_55: 0, matched_below_54: 0, total_matches: 0 };
+  const tabs = [["intake", "Report form", ClipboardList], ["reports", "My missing reports", FileStack], ["search", "Search found items", Search]] as const;
 
   return (
-    <div className="flex-1 bg-slate-100 p-6 md:p-10">
-      <div className="mx-auto max-w-[980px]">
-        <div className="mb-5 flex items-center gap-3">
-          <div className="flex size-[44px] items-center justify-center rounded-full bg-navy-800 text-[#d1a153]"><SearchCheck size={20} /></div>
-          <div><p className="text-[12px] font-bold uppercase tracking-[0.18em] text-[#d1a153]">Missing items</p><h1 className="text-[27px] font-semibold text-navy-800">Find your item faster</h1></div>
-        </div>
-
-        {!focused && <div className="mb-5 flex gap-1 rounded-[12px] border border-line bg-white p-1">
-          <button type="button" onClick={() => switchTab("intake")} className={`flex-1 rounded-[9px] px-4 py-3 text-[13px] font-bold ${activeTab === "intake" ? "bg-navy-800 text-white" : "text-ink-soft hover:bg-slate-50"}`}>Lookup Missing Items</button>
-          <button type="button" onClick={() => switchTab("reports")} className={`flex-1 rounded-[9px] px-4 py-3 text-[13px] font-bold ${activeTab === "reports" ? "bg-navy-800 text-white" : "text-ink-soft hover:bg-slate-50"}`}>Missing Item Reports</button>
-          <button type="button" onClick={() => switchTab("search")} className={`flex-1 rounded-[9px] px-4 py-3 text-[13px] font-bold ${activeTab === "search" ? "bg-navy-800 text-white" : "text-ink-soft hover:bg-slate-50"}`}>Search Found Reports</button>
-        </div>}
-        {focused && <button type="button" onClick={() => onBack?.("report-item")} className="mb-5 inline-flex items-center gap-2 rounded-[9px] border border-line-strong bg-white px-4 py-2 text-[13px] font-bold text-navy-800"><ArrowLeft size={15} /> Back to report choices</button>}
-
-        {error && <div className="mb-5 rounded-[10px] border border-rose-200 bg-red-50 p-4 text-[13px] font-medium text-rose-800">{error}</div>}
-
-        {focused || activeTab === "intake" ? (
-          <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
-            <aside className="h-fit rounded-xl border border-dashed border-gold-400 bg-white p-5">
-              <div className="flex items-center gap-2"><ShieldCheck size={18} className="text-[#d1a153]" /><p className="font-bold uppercase tracking-[0.12em] text-[12px] text-[#d1a153]">Smart matching</p></div>
-              <p className="mt-3 text-[13px] leading-5 text-ink-soft">Specific details help compare your report with found-item records while keeping private ownership clues away from public listings.</p>
-              <div className="mt-5 space-y-3 border-t border-line pt-4 text-[12px] text-ink-soft"><p><span className="font-bold text-navy-800">1.</span> Add a clear item photo when available.</p><p><span className="font-bold text-navy-800">2.</span> Record the last known campus location and date.</p><p><span className="font-bold text-navy-800">3.</span> Keep unique marks specific for claim verification.</p></div>
-            </aside>
-
-            <form onSubmit={handleSubmit} className="overflow-hidden rounded-2xl border border-line bg-white">
-              <div className="border-b border-line bg-slate-50 px-6 py-5"><p className="text-[14px] text-ink-soft">Reporter: <span className="font-semibold text-navy-800">{user?.email}</span> · {user?.campus_id || "Campus ID unavailable"}</p><p className="mt-1 text-[12px] text-ink-muted">Your account identity is attached automatically to this report.</p></div>
-              <div className="grid gap-6 p-6 md:grid-cols-2">
-                <div className="md:col-span-2"><label className="mb-2 block font-semibold text-[14px] text-ink">Item image / reference photo</label><div onClick={() => fileRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); selectImage(event.dataTransfer.files[0]); }} className="flex min-h-[165px] cursor-pointer items-center justify-center rounded-[12px] border-2 border-dashed border-gold-400 bg-gold-50 p-4">{imagePreview ? <img src={imagePreview} alt="Missing item preview" className="max-h-[210px] rounded-[9px] object-contain" /> : <div className="text-center text-ink-muted"><ImagePlus className="mx-auto mb-2 text-[#d1a153]" size={30} /><p className="text-[13px] font-semibold">Upload a photo of your item</p><p className="mt-1 text-[12px]">Stored securely in the missing-item-images bucket.</p></div>}</div><input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(event) => selectImage(event.target.files?.[0])} /><button type="button" onClick={() => fileRef.current?.click()} className="mt-2 inline-flex items-center gap-2 text-[12px] font-semibold text-navy-800"><Upload size={14} /> Choose image</button></div>
-                <Field label="Item name" value={itemName} onChange={setItemName} placeholder="Black leather wallet" required />
-                <SelectField label="Category" value={category} onChange={setCategory} options={CATEGORIES} />
-                <SelectField label="Last seen location" value={lastLocation} onChange={setLastLocation} options={CAMPUS_LOCATIONS} icon={<MapPin size={15} />} />
-                <Field label="Last seen date" value={lastSeenDate} onChange={setLastSeenDate} type="date" icon={<CalendarRange size={15} />} required />
-                <div className="md:col-span-2"><TextAreaField label="Description" value={description} onChange={setDescription} placeholder="Include brand, color, size, condition, and visible features." required /></div>
-                <div className="md:col-span-2"><TextAreaField label="Private distinctive marks" value={distinctiveMarks} onChange={setDistinctiveMarks} placeholder="Optional: unique marks or contents to verify a future claim." icon={<Tag size={15} />} /></div>
-                <label className="flex items-start gap-3 rounded-[11px] border border-[#dbe3f0] bg-slate-50 p-4 text-[13px] text-ink-soft md:col-span-2"><input type="checkbox" required checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} className="mt-0.5 size-4 accent-navy-800" />I authorize E-Balik to compare this report with found-item records and notify me about possible matches.</label>
-              </div>
-              <div className="flex justify-end border-t border-line bg-slate-50 px-6 py-4"><button type="submit" disabled={isLoading} className="inline-flex items-center gap-2 rounded-[10px] bg-navy-800 px-5 py-3 text-[14px] font-semibold text-[#d1a153] disabled:opacity-60">{isLoading ? "Saving..." : "Submit Missing Report"}</button></div>
-            </form>
+    <main className={CX.page}>
+      <div className="mx-auto w-full max-w-[1100px]">
+        <header className="mb-6 flex items-start gap-4">
+          <span className="flex size-14 shrink-0 items-center justify-center rounded-[18px] bg-[linear-gradient(145deg,#3b5394,#1f3160)] text-tide-200 shadow-[0_14px_30px_-14px_rgba(17,27,66,0.9)]">
+            <SearchCheck size={24} aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className={CX.eyebrow}>Missing items</p>
+            <h1 className={`${CX.pageTitle} mt-0.5`}>{focused || activeTab === "intake" ? "Report a lost item" : activeTab === "reports" ? "My missing reports" : "Search found items"}</h1>
+            <p className={CX.pageLead}>Describe what you lost and we'll keep checking every found item for a match.</p>
           </div>
-        ) : activeTab === "reports" ? (
-          <div className="space-y-4">
-            <div className="grid gap-3 rounded-xl border border-line bg-white p-4 md:grid-cols-4"><input value={reportSearch} onChange={(event) => setReportSearch(event.target.value)} placeholder="Search ID, item, details..." className="h-[42px] rounded-[8px] border border-line px-3 text-[13px] md:col-span-2" /><select value={reportCategory} onChange={(event) => setReportCategory(event.target.value)} className="h-[42px] rounded-[8px] border border-line bg-white px-3 text-[13px]"><option value="">All types</option>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select><input value={reportLocation} onChange={(event) => setReportLocation(event.target.value)} placeholder="Filter last location..." className="h-[42px] rounded-[8px] border border-line px-3 text-[13px]" /></div>
-            <div className="max-h-[610px] space-y-4 overflow-y-auto pr-1">{filteredReports.length === 0 ? <div className="rounded-2xl border border-dashed border-line-strong bg-white p-10 text-center text-[14px] text-ink-muted">No missing reports match these filters.</div> : filteredReports.map((report) => { const summary = matchSummaries[report.mpost_id] || { matched_above_55: 0, matched_below_54: 0, total_matches: 0 }; return <article key={report.mpost_id} className="overflow-hidden rounded-[16px] border border-line bg-white shadow-sm"><div className="flex flex-col gap-4 p-5 md:flex-row">{report.image_url ? <img src={report.image_url} alt={report.item_name} className="h-[140px] w-full rounded-[10px] object-cover md:w-[180px]" /> : <div className="flex h-[140px] w-full items-center justify-center rounded-[10px] bg-slate-50 text-[12px] text-slate-500 md:w-[180px]">No image</div>}<div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-[18px] font-semibold text-navy-800">{report.item_name}</p><div className="flex items-center gap-2"><span className="rounded-full bg-amber-50 px-3 py-1 text-[12px] font-bold text-gold-700">{report.status || "missing"}</span><span className="rounded-full bg-[#eef4ff] px-3 py-1 text-[12px] font-bold text-navy-800">{report.mpost_id}</span></div></div><p className="mt-1 text-[12px] text-ink-muted">{report.category} · Last seen {report.last_seen_date} · {report.last_location}</p><p className="mt-3 text-[13px] text-ink-soft">{report.description}</p><div className="mt-4 grid gap-2 text-[12px] text-ink-soft md:grid-cols-2"><p><span className="font-bold text-navy-800">Reporter:</span> {report.reporter_email}</p><p><span className="font-bold text-navy-800">Campus ID:</span> {report.reporter_campus_id}</p>{report.distinctive_marks && <p className="md:col-span-2"><span className="font-bold text-navy-800">Private marks:</span> {report.distinctive_marks}</p>}</div><div className="mt-4 grid grid-cols-3 gap-2 rounded-[10px] bg-slate-50 p-3 text-center text-[12px]"><div><p className="text-[20px] font-semibold text-emerald-700">{summary.matched_above_55}</p><p className="font-semibold text-ink-soft">55%+ matched</p></div><div><p className="text-[20px] font-semibold text-gold-700">{summary.matched_below_54}</p><p className="font-semibold text-ink-soft">54% or lower</p></div><div><p className="text-[20px] font-semibold text-navy-800">{summary.total_matches}</p><p className="font-semibold text-ink-soft">Total matches</p></div></div></div></div></article>; })}</div>
-          </div>
+        </header>
+
+        {focused ? (
+          <button type="button" onClick={() => onBack?.("report-item")} className={`${CX.btnGhost} mb-5`}>
+            <ArrowLeft size={16} aria-hidden="true" /> Back to report choices
+          </button>
         ) : (
-          <div className="space-y-5">
-            <div className="rounded-2xl border border-line bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-2"><Filter size={18} className="text-[#d1a153]" /><h2 className="text-[18px] font-semibold text-navy-800">Find possible matches</h2></div>
-              <p className="mt-1 text-[13px] text-ink-muted">Choose one of your missing reports to calculate a match percentage against unclaimed found reports.</p>
-              <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                <select value={selectedReportId} onChange={(event) => setSelectedReportId(event.target.value)} className="h-[44px] rounded-[8px] border border-line bg-white px-3 text-[13px] text-navy-800"><option value="">Select my missing report</option>{reports.map((report) => <option key={report.mpost_id} value={report.mpost_id}>{report.mpost_id} · {report.item_name}</option>)}</select>
-                <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search item or details" className="h-[44px] rounded-[8px] border border-line px-3 text-[13px]" />
-                <select value={searchCategory} onChange={(event) => setSearchCategory(event.target.value)} className="h-[44px] rounded-[8px] border border-line bg-white px-3 text-[13px]"><option value="">All types</option>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select>
-                <input value={searchLocation} onChange={(event) => setSearchLocation(event.target.value)} placeholder="Location contains..." className="h-[44px] rounded-[8px] border border-line px-3 text-[13px]" />
-                <input type="date" value={searchDate} onChange={(event) => setSearchDate(event.target.value)} className="h-[44px] rounded-[8px] border border-line px-3 text-[13px]" />
-                <button type="button" onClick={() => void searchReports()} disabled={isLoading} className="h-[44px] rounded-[8px] bg-navy-800 text-[13px] font-bold text-white disabled:opacity-60">{isLoading ? "Searching..." : "Search Found Reports"}</button>
-              </div>
-            </div>
-            <div className="max-h-[610px] space-y-3 overflow-y-auto pr-1">{foundResults.length === 0 ? <div className="rounded-[16px] border border-dashed border-line-strong bg-white p-8 text-center text-[13px] text-ink-muted">No matching found reports yet. Adjust your filters and search again.</div> : foundResults.slice(0, 5).map((item) => <article key={item.fpost_id} className="flex flex-col gap-4 rounded-[16px] border border-line bg-white p-4 shadow-sm md:flex-row">{item.image_url && <img src={item.image_url} alt={item.item_name} className="h-[130px] w-full rounded-[10px] object-cover md:w-[170px]" />}<div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-[17px] font-semibold text-navy-800">{item.item_name}</h3><span className={`rounded-full px-3 py-1 text-[12px] font-semibold ${item.match_percentage >= 70 ? "bg-emerald-50 text-emerald-700" : item.match_percentage >= 40 ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{item.match_percentage}% match</span></div><p className="mt-1 text-[12px] text-ink-muted">{item.category} · {item.location} · {item.found_date} · {item.fpost_id}</p><p className="mt-3 text-[13px] text-ink-soft">{item.description || "No description provided."}</p></div></article>)}</div>
+          <div role="tablist" aria-label="Missing item views" className="glass no-scrollbar mb-6 flex w-full gap-1 overflow-x-auto rounded-[18px] p-1.5 sm:inline-flex sm:w-auto">
+            {tabs.map(([tab, label, Icon]) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                onClick={() => switchTab(tab)}
+                className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl px-4 text-[14px] font-semibold transition-colors ${
+                  activeTab === tab ? "bg-[linear-gradient(180deg,#2b4282_0%,#1f3160_100%)] text-white shadow-[0_8px_18px_-10px_rgba(17,27,66,0.8)]" : "text-ink-soft hover:bg-white/80"
+                }`}
+              >
+                <Icon size={16} aria-hidden="true" />{label}
+              </button>
+            ))}
           </div>
         )}
 
+        {error && <div role="alert" className={`${CX.alertError} mb-5`}>{error}</div>}
 
-        {confirmationOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4"><div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-center gap-3"><div className="rounded-full bg-amber-100 p-2 text-gold-700"><ShieldCheck size={20} /></div><div><p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-gold-700">Report confirmation</p><h2 className="mt-1 text-[22px] font-semibold text-navy-800">Confirm your missing-item report</h2></div></div><p className="mt-4 text-[14px] leading-6 text-ink-soft">Please confirm that the information is accurate. E-Balik will use this report for matching and notifications. False or misleading reports may be subject to university action.</p><div className="mt-4 rounded-[10px] bg-slate-50 p-3 text-[12px] text-ink-soft"><Clock3 className="mr-2 inline text-[#d1a153]" size={15} />Confirmation unlocks in <span className="font-bold text-navy-800">{countdown} seconds</span>.</div><label className={`mt-5 flex items-start gap-3 text-[13px] ${countdown > 0 ? "text-slate-500" : "text-navy-800"}`}><input type="checkbox" disabled={countdown > 0} checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className="mt-0.5 size-4 accent-navy-800" />I confirm that this missing-item report is truthful and belongs to me.</label><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={() => setConfirmationOpen(false)} className="rounded-[9px] border border-line-strong px-4 py-2 text-[13px] font-semibold text-navy-800">Cancel</button><button type="button" disabled={!agreed || countdown > 0 || isLoading} onClick={() => void confirmSubmit()} className="rounded-[9px] bg-navy-800 px-4 py-2 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{isLoading ? "Publishing..." : "Confirm and Publish"}</button></div></div></div>}
+        {focused || activeTab === "intake" ? (
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <section className={`${CX.card} overflow-hidden`} aria-labelledby="missing-photo-heading">
+                <div className="flex items-center gap-3 border-b border-line px-5 py-4 sm:px-6">
+                  <span className="flex size-9 items-center justify-center rounded-xl bg-iris-50 text-iris-600"><ImagePlus size={17} aria-hidden="true" /></span>
+                  <div>
+                    <h2 id="missing-photo-heading" className="text-[16px] font-semibold text-ink">Reference photo</h2>
+                    <p className="text-[13px] text-ink-muted">Optional, but a similar photo makes matching faster.</p>
+                  </div>
+                </div>
+                <div className="p-5 sm:p-6">
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => { event.preventDefault(); selectImage(event.dataTransfer.files[0]); }}
+                    className="group relative flex min-h-[190px] w-full items-center justify-center overflow-hidden rounded-[20px] border-2 border-dashed border-iris-300 bg-[radial-gradient(80%_80%_at_50%_0%,#eef2fe,#ffffff)] dark:border-iris-500/40 dark:bg-[radial-gradient(80%_80%_at_50%_0%,rgba(110,142,240,0.16),rgba(255,255,255,0.02))] p-4 transition-colors hover:border-iris-500"
+                    aria-label={imagePreview ? "Change reference photo" : "Upload reference photo"}
+                  >
+                    {imagePreview ? (
+                      <>
+                        <img src={imagePreview} alt="Missing item preview" className="max-h-[250px] rounded-2xl object-contain shadow-card" />
+                        <span className="glass-dark absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold"><RefreshCw size={13} aria-hidden="true" />Change photo</span>
+                      </>
+                    ) : (
+                      <span className="flex flex-col items-center text-center">
+                        <span className="flex size-16 items-center justify-center rounded-2xl bg-white text-iris-600 shadow-card transition-transform group-hover:scale-105"><ImagePlus size={28} aria-hidden="true" /></span>
+                        <span className="mt-3 text-[15px] font-semibold text-ink">Tap to add a photo</span>
+                        <span className="mt-1 text-[13px] text-ink-muted">or drag and drop an image here</span>
+                      </span>
+                    )}
+                  </button>
+                  <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(event) => selectImage(event.target.files?.[0])} />
+                </div>
+              </section>
+
+              <section className={`${CX.card} p-5 sm:p-6`} aria-labelledby="missing-details-heading">
+                <h2 id="missing-details-heading" className="mb-4 text-[16px] font-semibold text-ink">What did you lose?</h2>
+                <div className="grid gap-5 md:grid-cols-2">
+                  <Field label="Item name" value={itemName} onChange={setItemName} placeholder="Black leather wallet" required />
+                  <SelectField label="Category" value={category} onChange={setCategory} options={CATEGORIES} />
+                  <SelectField label="Last seen location" value={lastLocation} onChange={setLastLocation} options={CAMPUS_LOCATIONS} icon={<MapPin size={15} />} />
+                  <Field label="Last seen date" value={lastSeenDate} onChange={setLastSeenDate} type="date" icon={<CalendarRange size={15} />} required />
+                  <div className="md:col-span-2"><TextAreaField label="Description" value={description} onChange={setDescription} placeholder="Include brand, color, size, condition, and visible features." required /></div>
+                  <div className="md:col-span-2"><TextAreaField label="Private distinctive marks" value={distinctiveMarks} onChange={setDistinctiveMarks} placeholder="Optional: unique marks or contents to verify a future claim." icon={<Tag size={15} />} /></div>
+                  <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 text-[14px] leading-6 transition-colors md:col-span-2 ${authorized ? "border-tide-200 bg-tide-50 text-ink" : "border-line bg-frost-50 text-ink-soft"}`}>
+                    <input type="checkbox" required checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} className="mt-1 size-[18px] shrink-0 accent-navy-800" />
+                    I authorize E-Balik to compare this report with found-item records and notify me about possible matches.
+                  </label>
+                </div>
+              </section>
+
+              <div className="glass sticky bottom-[calc(76px+env(safe-area-inset-bottom))] z-10 flex flex-col gap-3 rounded-[20px] p-4 sm:flex-row sm:items-center sm:justify-between lg:bottom-4">
+                <p className="flex items-center gap-2 text-[13px] text-ink-muted">
+                  <UserRound size={15} className="shrink-0 text-iris-600" aria-hidden="true" />
+                  <span className="min-w-0 truncate">Reporting as <span className="font-semibold text-ink">{user?.email}</span>{user?.campus_id ? ` · ${user.campus_id}` : ""}</span>
+                </p>
+                <button type="submit" disabled={isLoading} className={`${CX.btnNavy} shrink-0 px-6`}>
+                  <BadgeCheck size={17} aria-hidden="true" />{isLoading ? "Saving…" : "Submit missing report"}
+                </button>
+              </div>
+            </form>
+
+            <aside className="h-fit space-y-4 lg:sticky lg:top-[92px]">
+              <div className="relative overflow-hidden rounded-[22px] bg-[linear-gradient(150deg,#22366a_0%,#162448_70%)] p-5 text-white shadow-raised">
+                <div className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full bg-tide-500/25 blur-2xl" aria-hidden="true" />
+                <p className="relative flex items-center gap-2 text-[12px] font-semibold text-tide-200"><Lightbulb size={15} aria-hidden="true" />Smart matching</p>
+                <p className="relative mt-3 text-[14px] leading-6 text-navy-100">Specific details help us compare your report with found items, while private clues stay out of public listings.</p>
+                <ol className="relative mt-4 space-y-3 text-[14px]">
+                  {["Add a clear photo if you have one.", "Record the last place and date you had it.", "Keep unique marks specific for claim verification."].map((tip, i) => (
+                    <li key={tip} className="flex gap-3"><span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-[12px] font-semibold text-gold-300 ring-1 ring-white/20">{i + 1}</span><span className="text-navy-50">{tip}</span></li>
+                  ))}
+                </ol>
+              </div>
+            </aside>
+          </div>
+        ) : activeTab === "reports" ? (
+          <div className="space-y-5">
+            <div className="glass sticky top-[calc(76px+env(safe-area-inset-top))] z-20 rounded-[20px] p-3">
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1.5fr)_repeat(2,minmax(0,1fr))_auto]">
+                <label className="sr-only" htmlFor="missing-report-search">Search your missing reports</label>
+                <input id="missing-report-search" type="search" value={reportSearch} onChange={(event) => setReportSearch(event.target.value)} placeholder="Search ID, item, details…" className={`${CX.input} w-full`} />
+                <label className="sr-only" htmlFor="missing-report-category">Category</label>
+                <select id="missing-report-category" value={reportCategory} onChange={(event) => setReportCategory(event.target.value)} className={`${CX.input} w-full`}><option value="">All types</option>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select>
+                <label className="sr-only" htmlFor="missing-report-location">Last location</label>
+                <input id="missing-report-location" value={reportLocation} onChange={(event) => setReportLocation(event.target.value)} placeholder="Last location…" className={`${CX.input} w-full`} />
+                <div className="flex items-center justify-end gap-2">
+                  {reportFiltersActive && (
+                    <button type="button" onClick={() => { setReportSearch(""); setReportCategory(""); setReportLocation(""); }} className="inline-flex h-11 items-center gap-1 rounded-xl px-3 text-[13px] font-semibold text-iris-700 hover:bg-iris-50">
+                      <X size={14} aria-hidden="true" />Clear
+                    </button>
+                  )}
+                  <ViewToggle compact />
+                </div>
+              </div>
+            </div>
+            {reportsLoading ? <ReportGridSkeleton count={4} /> : (
+              <ItemCollection
+                label="Your missing reports"
+                items={galleryReports}
+                mode={mode}
+                showKind={false}
+                onOpen={(_item, index) => setOpenReport(filteredReports[index])}
+                badge={(item) => <span className="inline-flex rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold capitalize text-navy-800 ring-1 ring-line">{item.status || "missing"}</span>}
+                extra={(item) => {
+                  const summary = summaryOf(item.id);
+                  return (
+                    <span className="flex flex-wrap gap-1.5 text-[11px] font-semibold">
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-800 ring-1 ring-emerald-200 tabular-nums">{summary.matched_above_55} likely</span>
+                      <span className="rounded-full bg-frost-100 px-2 py-0.5 text-ink-soft ring-1 ring-line tabular-nums">{summary.total_matches} total</span>
+                    </span>
+                  );
+                }}
+                empty={
+                  <div className="glass flex flex-col items-center gap-3 rounded-[22px] px-6 py-14 text-center">
+                    <span className="flex size-14 items-center justify-center rounded-2xl bg-frost-100 text-iris-600"><FileStack size={26} aria-hidden="true" /></span>
+                    <p className="text-[16px] font-semibold text-ink">{reportFiltersActive ? "No missing reports match these filters" : "You haven't reported a lost item yet"}</p>
+                    <button type="button" onClick={() => switchTab("intake")} className={CX.btnNavy}>Report a lost item</button>
+                  </div>
+                }
+              />
+            )}
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <section className={`${CX.card} p-5 sm:p-6`} aria-labelledby="missing-search-heading">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-iris-50 text-iris-600"><Filter size={18} aria-hidden="true" /></span>
+                  <div>
+                    <h2 id="missing-search-heading" className="text-[17px] font-semibold text-ink">Find possible matches</h2>
+                    <p className="text-[13px] text-ink-muted">Pick one of your reports to score found items against it, or just search.</p>
+                  </div>
+                </div>
+                <ViewToggle compact />
+              </div>
+              <form onSubmit={(event) => { event.preventDefault(); void searchReports(); }} className="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                <label className="sr-only" htmlFor="missing-search-report">Your missing report</label>
+                <select id="missing-search-report" value={selectedReportId} onChange={(event) => setSelectedReportId(event.target.value)} className={`${CX.input} w-full`}><option value="">Score against… (optional)</option>{reports.map((report) => <option key={report.mpost_id} value={report.mpost_id}>{report.mpost_id} · {report.item_name}</option>)}</select>
+                <label className="sr-only" htmlFor="missing-search-query">Search</label>
+                <input id="missing-search-query" type="search" enterKeyHint="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Item or details" className={`${CX.input} w-full`} />
+                <label className="sr-only" htmlFor="missing-search-category">Category</label>
+                <select id="missing-search-category" value={searchCategory} onChange={(event) => setSearchCategory(event.target.value)} className={`${CX.input} w-full`}><option value="">All types</option>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select>
+                <label className="sr-only" htmlFor="missing-search-location">Location</label>
+                <input id="missing-search-location" value={searchLocation} onChange={(event) => setSearchLocation(event.target.value)} placeholder="Location contains…" className={`${CX.input} w-full`} />
+                <label className="sr-only" htmlFor="missing-search-date">Date found</label>
+                <input id="missing-search-date" type="date" value={searchDate} onChange={(event) => setSearchDate(event.target.value)} className={`${CX.input} w-full`} />
+                <button type="submit" disabled={resultsLoading} className={`${CX.btnNavy} w-full`}><Search size={16} aria-hidden="true" />{resultsLoading ? "Searching…" : "Search found items"}</button>
+              </form>
+            </section>
+            {resultsLoading ? <ReportGridSkeleton count={4} /> : (
+              <ItemCollection
+                label="Found item results"
+                items={galleryResults}
+                mode={mode}
+                showKind={false}
+                onOpen={(_item, index) => setResultIndex(index)}
+                badge={(item) => {
+                  const pct = scoreOf.get(item.id) ?? 0;
+                  const tone = pct >= 75 ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : pct >= 55 ? "bg-gold-50 text-gold-800 ring-gold-200" : "bg-white/95 text-ink-soft ring-line";
+                  return <span className={`inline-flex rounded-full px-2.5 py-1 text-[12px] font-semibold tabular-nums ring-1 ${tone}`}>{pct}%</span>;
+                }}
+                empty={
+                  <div className="glass flex flex-col items-center gap-3 rounded-[22px] px-6 py-14 text-center">
+                    <span className="flex size-14 items-center justify-center rounded-2xl bg-frost-100 text-iris-600"><Search size={26} aria-hidden="true" /></span>
+                    <p className="text-[16px] font-semibold text-ink">No matching found items yet</p>
+                    <p className="max-w-[44ch] text-[14px] text-ink-muted">Adjust the filters and search again. New found items are added all the time.</p>
+                  </div>
+                }
+              />
+            )}
+          </div>
+        )}
       </div>
-    </div>
+
+      {resultIndex !== null && galleryResults[resultIndex] && (
+        <ItemViewer
+          items={galleryResults}
+          index={resultIndex}
+          onIndexChange={setResultIndex}
+          onClose={() => setResultIndex(null)}
+          note={(item) => (
+            <p className="rounded-2xl border border-iris-200 bg-iris-50 px-4 py-3 text-[14px] text-iris-700">
+              Match score: <span className="font-semibold tabular-nums">{scoreOf.get(item.id) ?? 0}%</span>{selectedReportId ? ` against ${selectedReportId}` : ""}.
+            </p>
+          )}
+          actions={onBack ? (item) => (
+            <button type="button" onClick={() => { setResultIndex(null); onBack("claim", { foundItemId: item.id, missingReportId: selectedReportId || undefined }); }} className={`${CX.btnGold} w-full`}>
+              This is mine, start a claim <ArrowRight size={16} aria-hidden="true" />
+            </button>
+          ) : undefined}
+        />
+      )}
+
+      {/* Report details */}
+      <Modal
+        open={Boolean(openReport)}
+        onClose={() => setOpenReport(null)}
+        size="lg"
+        tone="mint"
+        icon={<SearchCheck size={21} />}
+        eyebrow={openReport ? `Missing report · ${openReport.mpost_id}` : undefined}
+        title={openReport?.item_name}
+        hero={openReport?.image_url ? <ItemImage item={{ image: openReport.image_url, title: openReport.item_name, category: openReport.category }} className="h-[200px] w-full sm:h-[240px]" /> : undefined}
+        footer={
+          <>
+            {onBack && openReport && (
+              <button type="button" onClick={() => { const id = openReport.mpost_id; setOpenReport(null); onBack("matches", { reportId: id }); }} className={CX.btnGhost}>See matches</button>
+            )}
+            <button type="button" onClick={() => setOpenReport(null)} className={CX.btnNavy}>Done</button>
+          </>
+        }
+      >
+        {openReport && (
+          <div className="space-y-4">
+            <p className="whitespace-pre-line text-[15px] leading-7 text-ink-soft">{openReport.description || "No description provided."}</p>
+            <dl className="grid gap-3 sm:grid-cols-2">
+              {[
+                ["Category", openReport.category], ["Status", openReport.status || "missing"],
+                ["Last seen at", openReport.last_location], ["Date lost", openReport.last_seen_date],
+                ...(openReport.distinctive_marks ? [["Private marks (only you and admins)", openReport.distinctive_marks]] : []),
+              ].map(([label, value]) => (
+                <div key={label} className={`rounded-2xl border border-line bg-frost-50 p-3.5 ${label.startsWith("Private") ? "sm:col-span-2" : ""}`}>
+                  <dt className="text-[12px] font-medium text-ink-muted">{label}</dt>
+                  <dd className="mt-0.5 break-words text-[15px] font-semibold text-ink">{value || "Not recorded"}</dd>
+                </div>
+              ))}
+            </dl>
+            <div className="grid grid-cols-3 gap-2 rounded-2xl border border-line bg-white p-3 text-center">
+              {[
+                ["55%+ matched", summaryOf(openReport.mpost_id).matched_above_55, "text-emerald-700"],
+                ["54% or lower", summaryOf(openReport.mpost_id).matched_below_54, "text-gold-700"],
+                ["Total matches", summaryOf(openReport.mpost_id).total_matches, "text-navy-800"],
+              ].map(([label, value, tone]) => (
+                <div key={label as string}>
+                  <p className={`font-[family-name:var(--font-heading)] text-[22px] font-semibold tabular-nums ${tone}`}>{value as number}</p>
+                  <p className="text-[12px] font-medium text-ink-muted">{label as string}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Authenticity confirmation */}
+      <Modal
+        open={confirmationOpen}
+        onClose={() => setConfirmationOpen(false)}
+        dismissible={!isLoading}
+        size="sm"
+        tone="navy"
+        icon={<SearchCheck size={21} />}
+        eyebrow="Authenticity confirmation"
+        title="Confirm this missing report"
+        description="Reports must be valid and authentic. False or misleading reports may lead to disciplinary or legal action under university rules."
+        footer={
+          <>
+            <button type="button" disabled={isLoading} onClick={() => setConfirmationOpen(false)} className={CX.btnGhost}>Cancel</button>
+            <button type="button" disabled={!agreed || countdown > 0 || isLoading} onClick={() => void confirmSubmit()} className={CX.btnNavy}>{isLoading ? "Submitting…" : "Confirm and submit"}</button>
+          </>
+        }
+      >
+        <CountdownConsent
+          countdown={countdown}
+          checked={agreed}
+          onCheckedChange={setAgreed}
+          label="I confirm this report is truthful and describes an item that belongs to me."
+        />
+      </Modal>
+    </main>
   );
 }
+
 
 function FieldLabel({ htmlFor, label, required, icon }: { htmlFor: string; label: string; required?: boolean; icon?: React.ReactNode }) {
   return (

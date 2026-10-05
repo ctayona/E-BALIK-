@@ -1,7 +1,9 @@
 """Users page: accounts, access levels, status, deletion and account verification review."""
+import uuid
 from datetime import datetime, timezone
+from email_validator import EmailNotValidError, validate_email
 from flask import Blueprint, current_app, jsonify, request
-from app.utils import get_db
+from app.utils import PasswordService, get_db
 from app.utils.admin_mfa import matched_totp_step
 from app.utils.crypto_service import CryptoService
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
@@ -252,3 +254,141 @@ def update_user_access_level(account_id):
     except Exception as error:
         current_app.logger.exception('Super admin access update failed for %s: %s', account_id, error)
         return jsonify({'error': 'Unable to update user access level'}), 500
+
+
+USER_ROLES = {'student': 'Student', 'faculty': 'Faculty', 'staff': 'Staff', 'others': 'Others'}
+MIN_PASSWORD_LENGTH = 16
+FIELD_LIMITS = {'fname': 100, 'mname': 100, 'lname': 100, 'campus_id': 50, 'email': 255}
+REQUIRED_FIELD_LABELS = {'fname': 'First name', 'lname': 'Last name', 'campus_id': 'Campus ID', 'email': 'Email'}
+
+
+def _map_admin_user(row):
+    """Shape a user_profiles row like list_admin_users() so the admin UI can merge it directly."""
+    return {
+        'id': str(row.get('account_id')),
+        'name': f"{row.get('fname') or ''} {row.get('lname') or ''}".strip(),
+        'initials': (row.get('fname') or 'U')[0].upper() + (row.get('lname') or 'U')[0].upper(),
+        'studentId': row.get('campus_id') or 'N/A',
+        'email': row.get('email') or '',
+        'program': row.get('user_role') or 'Student',
+        'accessLevel': row.get('access_level') or 'user',
+        'status': 'Active' if row.get('is_active') is not False else 'Suspended',
+        'lastActivity': row.get('last_login_at') or row.get('created_at') or 'Unknown',
+    }
+
+
+def _clean_profile_fields(payload, partial):
+    """Validate and normalise editable profile fields. Returns (fields, error_message)."""
+    fields = {}
+    for key in ('fname', 'mname', 'lname', 'campus_id', 'email'):
+        if partial and key not in payload:
+            continue
+        value = str(payload.get(key) or '').strip()
+        if key in REQUIRED_FIELD_LABELS and not value:
+            return None, f'{REQUIRED_FIELD_LABELS[key]} is required'
+        if len(value) > FIELD_LIMITS[key]:
+            return None, f'{REQUIRED_FIELD_LABELS.get(key, "Middle name")} must be {FIELD_LIMITS[key]} characters or fewer'
+        fields[key] = value
+    if 'email' in fields:
+        try:
+            fields['email'] = validate_email(fields['email'], check_deliverability=False).normalized.lower()
+        except EmailNotValidError:
+            return None, 'Enter a valid email address'
+    if 'user_role' in payload or not partial:
+        role = USER_ROLES.get(str(payload.get('user_role') or 'student').strip().lower())
+        if not role:
+            return None, 'Role must be Student, Faculty, Staff, or Others'
+        fields['user_role'] = role
+    return fields, None
+
+
+@users_bp.route('/users', methods=['POST'])
+def create_user_account():
+    """Create a standard user account (admins and super admins). Access levels are changed separately."""
+    try:
+        actor = _require_admin()
+        payload = request.get_json(silent=True) or {}
+        fields, error = _clean_profile_fields(payload, partial=False)
+        if error:
+            return jsonify({'error': error}), 400
+        password = str(payload.get('password') or '')
+        if len(password) < MIN_PASSWORD_LENGTH:
+            return jsonify({'error': f'Temporary password must be at least {MIN_PASSWORD_LENGTH} characters'}), 400
+
+        db = get_db(
+            url=current_app.config['SUPABASE_URL'],
+            service_key=current_app.config['SUPABASE_SERVICE_KEY']
+        )
+        if db.get_user_by_email(fields['email']):
+            return jsonify({'error': 'An account with this email already exists'}), 409
+        if db.get_user_by_campus_id(fields['campus_id']):
+            return jsonify({'error': 'This campus ID is already registered to another account'}), 409
+
+        created = db.create_user_profile({
+            'account_id': str(uuid.uuid4()),
+            **fields,
+            'password_hash': PasswordService.hash_password(password),
+            'auth_provider': 'local',
+            'access_level': 'user',
+            'is_active': True,
+            'failed_login_attempts': 0,
+            'locked_until': None,
+            'last_login_at': None,
+        })
+        if not created:
+            return jsonify({'error': 'Unable to create the account'}), 500
+        _log_admin_action(db, actor, 'Create User', 'Users', fields['email'], created.get('account_id'))
+        return jsonify({'user': _map_admin_user(created), 'message': f"Account created for {fields['email']}"}), 201
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except PermissionError as error:
+        return jsonify({'error': str(error)}), 403
+    except Exception as error:
+        current_app.logger.exception('Admin user creation error: %s', error)
+        return jsonify({'error': 'Unable to create the account'}), 500
+
+
+@users_bp.route('/users/<account_id>', methods=['PATCH'])
+def update_user_account(account_id):
+    """Edit profile details (names, email, campus ID, role). Super-admin accounts are editable only by super admins."""
+    try:
+        actor = _require_admin()
+        payload = request.get_json(silent=True) or {}
+        if any(key in payload for key in ('access_level', 'password', 'password_hash', 'is_active')):
+            return jsonify({'error': 'Access level, status and password cannot be changed here'}), 400
+        fields, error = _clean_profile_fields(payload, partial=True)
+        if error:
+            return jsonify({'error': error}), 400
+        if not fields:
+            return jsonify({'error': 'No changes were provided'}), 400
+
+        db = get_db(
+            url=current_app.config['SUPABASE_URL'],
+            service_key=current_app.config['SUPABASE_SERVICE_KEY']
+        )
+        target = db.get_user_by_account_id(account_id)
+        if not target:
+            return jsonify({'error': 'User not found'}), 404
+        if str(target.get('access_level') or '').lower() == 'super_admin' and actor.get('access_level') != 'super_admin':
+            return jsonify({'error': 'Only a super administrator can edit a super administrator account'}), 403
+        if 'email' in fields and fields['email'] != str(target.get('email') or '').lower():
+            existing = db.get_user_by_email(fields['email'])
+            if existing and str(existing.get('account_id')) != str(account_id):
+                return jsonify({'error': 'An account with this email already exists'}), 409
+        if 'campus_id' in fields and fields['campus_id'] != (target.get('campus_id') or ''):
+            existing = db.get_user_by_campus_id(fields['campus_id'])
+            if existing and str(existing.get('account_id')) != str(account_id):
+                return jsonify({'error': 'This campus ID is already registered to another account'}), 409
+
+        updated = db.update_user(account_id, {**fields, 'updated_at': datetime.now(timezone.utc).isoformat()})
+        if not updated:
+            return jsonify({'error': 'Unable to update the account'}), 500
+        _log_admin_action(db, actor, 'Edit User', 'Users', updated.get('email') or account_id, account_id)
+        return jsonify({'user': _map_admin_user(updated), 'message': 'Account details updated'}), 200
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except PermissionError as error:
+        return jsonify({'error': str(error)}), 403
+    except Exception as error:
+        current_app.logger.exception('Admin user edit error for %s: %s', account_id, error)
+        return jsonify({'error': 'Unable to update the account'}), 500

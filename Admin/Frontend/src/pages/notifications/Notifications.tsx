@@ -3,7 +3,9 @@ import { fetchAdminActivityLogs, fetchAdminClaims, reportAdminProcess, type User
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import { getStoredNotifications, persistNotifications, type AdminNotification as Notification, type AdminNotificationPriority as NotificationPriority, type AdminNotificationType as NotificationType } from "../../utils/notificationsStore";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
+import { T } from "../../components/ui/management";
 
+import { tr } from "../../utils/preferences";
 type Tab = "All" | "Unread" | "High Priority" | "Medium Priority" | "Low Priority";
 
 const TABS: Tab[] = ["All", "Unread", "High Priority", "Medium Priority", "Low Priority"];
@@ -16,15 +18,15 @@ function getPriorityFromModule(module: string): NotificationPriority {
 }
 
 function toRelativeTime(value?: string): string {
-  if (!value) return "Just now";
+  if (!value) return tr("Just now");
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Just now";
+  if (Number.isNaN(date.getTime())) return tr("Just now");
   const diffMinutes = Math.max(1, Math.round((Date.now() - date.getTime()) / 60000));
-  if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes === 1 ? "" : "s"} ago`;
+  if (diffMinutes < 60) return tr("{0} minute{1} ago", { "0": diffMinutes, "1": diffMinutes === 1 ? "" : "s" });
   const diffHours = Math.round(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+  if (diffHours < 24) return tr("{0} hour{1} ago", { "0": diffHours, "1": diffHours === 1 ? "" : "s" });
   const diffDays = Math.round(diffHours / 24);
-  return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+  return tr("{0} day{1} ago", { "0": diffDays, "1": diffDays === 1 ? "" : "s" });
 }
 
 function PriorityBadge({ priority }: { priority: NotificationPriority }) {
@@ -37,7 +39,7 @@ function PriorityBadge({ priority }: { priority: NotificationPriority }) {
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: s.bg, color: s.text }}>
       <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.dot }}></span>
-      {priority}
+      {tr(priority)}
     </span>
   );
 }
@@ -65,7 +67,7 @@ export default function Notifications() {
         const mapped: Notification[] = logs.map((log: UserActivityLog): Notification => ({
           id: log.id,
           title: log.action,
-          message: `${log.user} ${log.action.toLowerCase()} on ${log.target}.`,
+          message: tr("{0} {1} on {2}.", { "0": log.user, "1": log.action.toLowerCase(), "2": log.target }),
           priority: getPriorityFromModule(log.module),
           time: toRelativeTime(log.timestamp),
           read: false,
@@ -83,8 +85,8 @@ export default function Notifications() {
           .slice(0, 3)
           .map((claim) => ({
             id: `claim-${claim.id}`,
-            title: "Claim Requires Verification",
-            message: `${claim.claimant} submitted a claim for ${claim.item}.`,
+            title: tr("Claim Requires Verification"),
+            message: tr("{0} submitted a claim for {1}.", { "0": claim.claimant, "1": claim.item }),
             priority: "High" as const,
             time: toRelativeTime(claim.submitted),
             read: false,
@@ -162,14 +164,14 @@ export default function Notifications() {
 
   return (
     <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Notifications</h1>
-          <p className="text-sm text-slate-500">{unreadCount} unread notification{unreadCount !== 1 ? "s" : ""}</p>
+          <h1 className="font-[family-name:var(--font-heading)] text-[26px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[30px]"><T k="page.notifications" /></h1>
+          <p className="mt-1 max-w-[68ch] text-[14px] leading-6 text-ink-muted">{unreadCount} unread notification{unreadCount !== 1 ? "s" : ""}</p>
         </div>
         {unreadCount > 0 && (
           <button onClick={() => setPendingAction({ type: "read-all" })} className="text-sm font-semibold hover:opacity-80 transition-opacity" style={{ color: "#2563eb" }}>
-            Mark all as read
+            {tr("Mark all as read")}
           </button>
         )}
       </div>
@@ -182,7 +184,7 @@ export default function Notifications() {
             className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
             style={activeTab === tab ? { background: "#1f3160", color: "white" } : { color: "#6b7280" }}
           >
-            {tab === "Unread" ? `Unread (${unreadCount})` : tab}
+            {tab === "Unread" ? tr("Unread ({0})", { "0": unreadCount }) : tr(tab)}
           </button>
         ))}
       </div>
@@ -193,7 +195,7 @@ export default function Notifications() {
         <div className="space-y-3">
           {filtered.length === 0 ? (
             <div className="bg-white rounded-2xl border border-line shadow-card p-16 text-center text-slate-400">
-              No notifications in this category
+              {tr("No notifications in this category")}
             </div>
           ) : (
             filtered.map((n) => {
@@ -215,12 +217,12 @@ export default function Notifications() {
                       <div className="flex items-center gap-4">
                         {!n.read && (
                           <button onClick={() => setPendingAction({ type: "read", id: n.id })} className="text-xs font-semibold hover:opacity-80" style={{ color: "#2563eb" }}>
-                            Mark as read
+                            {tr("Mark as read")}
                           </button>
                         )}
                         <button onClick={() => setPendingAction({ type: "dismiss", id: n.id })} className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500 transition-colors">
                           <svg width="12" height="12" fill="none" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
-                          Dismiss
+                          {tr("Dismiss")}
                         </button>
                       </div>
                     </div>
@@ -232,9 +234,9 @@ export default function Notifications() {
         </div>
       )}
       {pendingAction && <ConfirmActionDialog
-        title={pendingAction.type === "read-all" ? "mark all notifications as read" : pendingAction.type === "dismiss" ? "dismiss this notification" : "mark this notification as read"}
-        description="This updates your admin notification list."
-        confirmLabel={pendingAction.type === "dismiss" ? "Dismiss" : "Confirm"}
+        title={pendingAction.type === "read-all" ? tr("mark all notifications as read") : pendingAction.type === "dismiss" ? tr("dismiss this notification") : tr("mark this notification as read")}
+        description={tr("This updates your admin notification list.")}
+        confirmLabel={pendingAction.type === "dismiss" ? tr("Dismiss") : tr("Confirm")}
         danger={pendingAction.type === "dismiss"}
         onCancel={() => setPendingAction(null)}
         onConfirm={confirmPendingAction}

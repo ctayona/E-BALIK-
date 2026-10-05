@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, X, CheckCircle2, XCircle, ShieldCheck, Sparkles } from "lucide-react";
-import umakLogo from "@/imports/umaklogo.png";
+import umakLogo from "@/imports/umaklogo.webp";
 import OTPModal from "@/app/pages/home/OTPModal";
 import { useAuth } from "@/app/utils/useAuth";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
@@ -259,7 +259,7 @@ export default function Register({
         }}
         onSubmit={handleOtpSubmit}
         email={email}
-        title="Verify Your Account"
+        title="Verify your account"
         description="Enter the 6-digit code sent to your university email to complete registration."
         isLoading={isLoading}
         error={submitError || error || ""}
@@ -269,7 +269,7 @@ export default function Register({
   }
 
   return (
-    <div className="relative flex flex-col gap-5 items-start p-10 w-[620px] max-w-[92vw] my-10 max-h-[calc(100vh-80px)] overflow-y-auto [scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.7)_transparent] [&::-webkit-scrollbar]:w-[5px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 rounded-2xl border border-line bg-white/98 backdrop-blur-sm">
+    <div className="relative flex max-h-[92dvh] w-full flex-col items-start gap-5 overflow-y-auto overscroll-contain px-6 pb-[max(2rem,env(safe-area-inset-bottom))] pt-9 sm:my-10 sm:max-h-[calc(100dvh-80px)] sm:w-[620px] sm:p-10 [scrollbar-width:thin] rounded-t-[28px] sm:rounded-[26px] border border-white/70 bg-white shadow-overlay">
       <button
         onClick={onClose}
         className="absolute top-5 right-5 text-slate-500 hover:text-navy-800 transition-colors w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100"
@@ -283,7 +283,7 @@ export default function Register({
           <img alt="University of Makati" className="size-[38px] object-contain" src={umakLogo} />
         </div>
         <div>
-          <p className="font-semibold text-navy-800 text-[13px] leading-tight" style={{ fontFamily: 'var(--font-heading)' }}>UNIVERSITY OF MAKATI</p>
+          <p className="font-semibold text-navy-800 text-[13px] leading-tight" style={{ fontFamily: 'var(--font-heading)' }}>University of Makati</p>
           <p className="font-bold text-[#d1a153] text-[12px] leading-tight tracking-wide">E-BALIK SYSTEM</p>
         </div>
       </div>
@@ -291,7 +291,7 @@ export default function Register({
       <div className="w-full h-px bg-line" />
 
       <div>
-        <p className="font-semibold text-navy-800 text-[24px]" style={{ fontFamily: 'var(--font-heading)' }}>Create Your Account</p>
+        <p className="font-semibold text-navy-800 text-[24px]" style={{ fontFamily: 'var(--font-heading)' }}>Create your account</p>
         <p className="text-ink-muted text-[14px] mt-1">Register with your UM institutional credentials</p>
       </div>
 
@@ -308,7 +308,7 @@ export default function Register({
             { label: 'Middle Name', value: middleName, setter: setMiddleName, placeholder: '(Optional)', required: false },
             { label: 'Last Name', value: lastName, setter: setLastName, placeholder: 'Dela Cruz', required: true }].map(({ label, value, setter, placeholder, required }) => (
             <div key={label} className="flex flex-col gap-2">
-              <label className="font-bold text-navy-800 text-[12px] tracking-wide uppercase">{label}</label>
+              <label className="font-bold text-navy-800 text-[12px]">{label}</label>
               <input type="text" value={value} onChange={(e) => setter(e.target.value)}
                 placeholder={placeholder} required={required} className={clayInput} />
             </div>
@@ -318,12 +318,12 @@ export default function Register({
         {/* Email + Student ID side by side */}
         <div className="flex gap-3">
           <div className="flex flex-col gap-2 flex-1 min-w-0">
-            <label className="font-bold text-navy-800 text-[12px] tracking-wide uppercase">University Email</label>
+            <label className="font-bold text-navy-800 text-[12px]">University email</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value.toLowerCase())}
               placeholder="username@umak.edu.ph" required className={clayInput} />
           </div>
           <div className="flex flex-col gap-2 flex-1 min-w-0">
-            <label className="font-bold text-navy-800 text-[12px] tracking-wide uppercase">Student/Employee ID</label>
+            <label className="font-bold text-navy-800 text-[12px]">Student or employee ID</label>
             <input type="text" value={studentId} onChange={(e) => setStudentId(e.target.value)}
               placeholder="e.g. A2023-12345" className={clayInput} />
           </div>
@@ -331,7 +331,7 @@ export default function Register({
 
         {/* Password */}
         <div className="flex flex-col gap-2">
-          <label className="font-bold text-navy-800 text-[12px] tracking-wide uppercase">Password</label>
+          <label className="font-bold text-navy-800 text-[12px]">Password</label>
           <div className="relative">
             <input
               type={showPw ? "text" : "password"}
@@ -359,7 +359,7 @@ export default function Register({
 
         {/* Confirm Password */}
         <div className="flex flex-col gap-2">
-          <label className="font-bold text-navy-800 text-[12px] tracking-wide uppercase">Confirm Password</label>
+          <label className="font-bold text-navy-800 text-[12px]">Confirm password</label>
           <div className="relative">
             <input
               type={showConfirm ? "text" : "password"}
