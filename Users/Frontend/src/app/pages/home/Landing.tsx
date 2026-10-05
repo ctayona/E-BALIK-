@@ -278,7 +278,7 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
                 className={`${clay.btnGold} flex gap-3 items-center px-8 py-4`}
               >
                 <IconPlusCircle />
-                <span className="font-bold text-navy-800 text-[16px]">Report a Lost Item</span>
+                <span className="font-bold text-navy-950 text-[16px]">Report a Lost Item</span>
               </motion.button>
 
               {/* Ghost white clay button */}
@@ -395,7 +395,7 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
           </div>
 
           <div className="mx-8 md:mx-16 h-px bg-white/10" />
-          <p className="text-white/30 text-[12px] px-8 md:px-16 py-6">
+          <p className="text-white/60 text-[12px] px-8 md:px-16 py-6">
             © 2026 University of Makati. All rights reserved. Registered trademark of UM Administrative Systems.
           </p>
         </footer>

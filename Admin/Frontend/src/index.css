@@ -6,6 +6,8 @@
 
 /* E-Balik "Campus Utility" tokens — kept in sync with Users/Frontend/src/styles/theme.css */
 @theme {
+  /* Tailwind's default slate-400 is 2.6:1 on white. Helper text, table headings and empty states use it, so light mode darkens it to pass 4.5:1. Dark mode sets its own value below. */
+  --color-slate-400: #5b6b82;
   --font-heading: 'Outfit', ui-sans-serif, system-ui, sans-serif;
   --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
 

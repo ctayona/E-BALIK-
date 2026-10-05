@@ -19,6 +19,8 @@
 
 /* ── E-Balik brand tokens (Tailwind v4 utilities: bg-navy-800, text-gold-700, shadow-card…) ── */
 @theme {
+  /* Tailwind's default slate-400 is 2.6:1 on white. Helper text, table headings and empty states use it, so light mode darkens it to pass 4.5:1. Dark mode sets its own value below. */
+  --color-slate-400: #5b6b82;
   --color-navy-50: #f2f5fb;
   --color-navy-100: #e3e9f4;
   --color-navy-200: #c5d1e8;
@@ -276,6 +278,18 @@
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
   }
+
+  /* Every field states its own text colour. Without this, a field inherits the page text colour,
+     which is near-white in dark mode and unreadable on a light input background. Utility classes
+     (text-white, text-ink...) still win because they sit in a later layer. */
+  input, textarea, select {
+    color: var(--color-ink);
+    caret-color: var(--color-ink);
+  }
+  input::placeholder, textarea::placeholder {
+    color: var(--color-ink-muted);
+    opacity: 0.8;
+  }
 }
 
 /* ── Custom scrollbar ─────────────────────────────────────────────── */
@@ -453,6 +467,19 @@ a, button, [role="button"], input, select, textarea, label { touch-action: manip
   border-color: rgba(255, 255, 255, 0.08);
 }
 :root[data-theme="dark"] :is(.bg-\[\#fffbeb\], .bg-\[\#fffdf0\], .bg-\[\#fef8ec\]) { background-color: rgba(209, 161, 83, 0.12); }
+:root[data-theme="dark"] :is(.bg-\[\#f8f9fc\], .bg-\[\#eef2f7\], .bg-\[\#e8edf5\]) { background-color: rgba(255, 255, 255, 0.06); }
+:root[data-theme="dark"] :is(.focus\:bg-white):focus { background-color: rgba(255, 255, 255, 0.1); }
+:root[data-theme="dark"] :is(input, textarea, select):disabled { color: #97a3bd; -webkit-text-fill-color: #97a3bd; }
+/* Browser autofill paints its own pale background; keep the text readable in both themes. */
+input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
+  -webkit-text-fill-color: var(--color-ink);
+  caret-color: var(--color-ink);
+  transition: background-color 9999s ease-out 0s;
+}
+:root[data-theme="dark"] input:-webkit-autofill, :root[data-theme="dark"] textarea:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px #16213f inset;
+  box-shadow: 0 0 0 1000px #16213f inset;
+}
 :root[data-theme="dark"] [class*="border-[#e"], :root[data-theme="dark"] [class*="border-[#d"] { border-color: rgba(255, 255, 255, 0.08); }
 :root[data-theme="dark"] [class*="border-white/"]:not(.glass-dark):not(header):not([class*="bg-navy"]) { border-color: rgba(255, 255, 255, 0.08); }
 

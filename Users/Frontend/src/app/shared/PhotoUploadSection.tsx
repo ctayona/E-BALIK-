@@ -38,14 +38,14 @@ export default function PhotoUploadSection({ label }: { label: string }) {
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          className="flex-1 bg-[#d1a153] text-white font-semibold text-[14px] h-[44px] rounded-[8px] flex items-center justify-center gap-2 hover:bg-[#b8893e] transition-colors"
+          className="flex-1 bg-[#d1a153] text-navy-950 font-semibold text-[14px] h-[44px] rounded-[8px] flex items-center justify-center gap-2 hover:bg-[#b8893e] transition-colors"
         >
           <Camera size={16} /> Take Photo
         </button>
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          className="flex-1 border border-gold-400 text-[#d1a153] font-semibold text-[14px] h-[44px] rounded-[8px] flex items-center justify-center gap-2 hover:bg-[#fef8ec] transition-colors"
+          className="flex-1 border border-gold-500 text-gold-800 font-semibold text-[14px] h-[44px] rounded-[8px] flex items-center justify-center gap-2 hover:bg-[#fef8ec] transition-colors"
         >
           <ImageIcon size={16} /> From Gallery
         </button>
