@@ -10,7 +10,7 @@ This puts E-Balik online for free:
 
 Both apps share one Vercel site on purpose. The admin sign-in hands its session from the user app to the console, and that only works on one origin.
 
-Files this guide relies on, already in the repo: `vercel.json`, `render.yaml`, `Procfile`, `requirements.txt`, `scripts/merge-admin-build.mjs`, `Environment_Configs/backend/production.env.example` and `Environment_Configs/frontend/production.env.example`.
+Files this guide relies on, already in the repo: `vercel.json`, `render.yaml`, `Procfile`, `scripts/merge-admin-build.mjs`, `Environment_Configs/backend/production.env.example` and `Environment_Configs/frontend/production.env.example`.
 
 Allow about 30 minutes. Do the steps in order, because each one gives you a value the next needs.
 

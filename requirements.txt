@@ -1,2 +1,0 @@
-# Lets hosts that look for a root requirements.txt (Render, Railway, Heroku) find the backend dependencies.
--r Server/requirements.txt
