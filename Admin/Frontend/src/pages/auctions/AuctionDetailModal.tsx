@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Ban, CheckCheck, EyeOff, Eye, Gavel, PackageCheck, Pencil, Repeat2, Timer, Trash2, Trophy, Undo2, UserX } from "lucide-react";
+import { Ban, CheckCheck, EyeOff, Eye, Gavel, Heart, Mail, PackageCheck, Pencil, Repeat2, Timer, Trash2, Trophy, Undo2, UserX } from "lucide-react";
 import AdminModal from "../../components/ui/AdminModal";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import SuspendUserModal from "../../components/SuspendUserModal";
@@ -7,7 +7,7 @@ import ReauctionModal from "./ReauctionModal";
 import { BTN, INPUT } from "../../components/ui/primitives";
 import { DetailGrid, SegmentedFilter, StatusPill, type Tone } from "../../components/ui/management";
 import {
-  cancelAdminAuction, deleteAdminAuction, endAdminAuction, fetchAdminAuctionDetail, finalizeAdminAuction, moderateAuctionComment, peso, setAdminAuctionFulfillment,
+  cancelAdminAuction, deleteAdminAuction, endAdminAuction, fetchAdminAuctionDetail, finalizeAdminAuction, moderateAuctionComment, peso, resendAdminWinnerEmail, setAdminAuctionFulfillment,
   type AdminAuction, type AuctionDetail,
 } from "../../utils/auctionApi";
 import { formatDateTime, formatRemaining, serverOffset, useNow } from "../../utils/countdown";
@@ -20,7 +20,7 @@ export function statusLabel(auction: AdminAuction) {
   return { live: "Live", scheduled: "Scheduled", awaiting: "Awaiting admin", cancelled: "Cancelled" }[auction.status] ?? auction.status;
 }
 
-type Tab = "bids" | "comments" | "pickup";
+type Tab = "bids" | "comments" | "hearts" | "pickup";
 type Pending = "end" | "delete" | "collected" | "forfeited" | "finalize" | null;
 
 export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onChanged }: {
@@ -96,10 +96,14 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
   const tabs = [
     { value: "bids" as Tab, label: "Bids", count: detail.bids.length },
     { value: "comments" as Tab, label: "Comments", count: detail.comments.length },
+    { value: "hearts" as Tab, label: "Hearts", count: detail.reactors?.length ?? auction.reaction_count ?? 0 },
     ...(auction.sold || awaiting ? [{ value: "pickup" as Tab, label: awaiting ? "Result" : "Pickup" }] : []),
   ];
+  const emailFailed = Boolean(auction.winner_email_mode?.endsWith("_failed"));
   const email = auction.winner_notified_at
-    ? (auction.winner_email_mode === "mock" ? tr("Mock email logged {0}. No real email was sent.", { "0": formatDateTime(auction.winner_notified_at) }) : tr("Winner emailed {0}.", { "0": formatDateTime(auction.winner_notified_at) }))
+    ? (emailFailed ? tr("The winner email could not be sent. Check the email settings, then resend it.")
+      : auction.winner_email_mode === "mock" ? tr("Mock email logged {0}. No real email was sent.", { "0": formatDateTime(auction.winner_notified_at) })
+        : tr("Winner emailed {0}.", { "0": formatDateTime(auction.winner_notified_at) }))
     : tr("The winner has not been notified yet.");
 
   return (
@@ -113,7 +117,6 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
         footer={<>
           {canDelete && !live && !awaiting && !pickupPending && <button type="button" onClick={() => setPending("delete")} className={`${BTN.ghost} sm:mr-auto`}><Trash2 size={16} aria-hidden="true" />{tr("Delete")}</button>}
           {(live || awaiting) && <button type="button" onClick={() => setCancelOpen(true)} className={`${BTN.ghost} sm:mr-auto`}><Ban size={16} aria-hidden="true" />{tr("Cancel auction")}</button>}
-          {awaiting && <button type="button" onClick={() => setReauctionOpen(true)} className={BTN.ghost}><Repeat2 size={16} aria-hidden="true" />{tr("Re-auction")}</button>}
           {awaiting && <button type="button" onClick={() => setPending("finalize")} className={BTN.success}><CheckCheck size={16} aria-hidden="true" />{tr("Confirm winner")}</button>}
           {auction.status === "live" && <button type="button" onClick={() => setPending("end")} className={BTN.ghost}><Timer size={16} aria-hidden="true" />{tr("End now")}</button>}
           {live && <button type="button" onClick={() => onEdit(auction)} className={BTN.primary}><Pencil size={16} aria-hidden="true" />{tr("Edit")}</button>}
@@ -148,7 +151,7 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
             {awaiting && (
               <div className="rounded-2xl border border-iris-300/70 bg-iris-50 px-4 py-3.5 text-[14px] leading-6 text-ink-soft dark:bg-iris-500/10" role="status">
                 <p className="font-semibold text-ink">{tr("Bidding is closed. The result needs your decision.")}</p>
-                <p className="mt-1">{tr("Confirm the winner to notify them for pickup, or re-auction if the sale cannot go ahead.")}</p>
+                <p className="mt-1">{tr("Confirm the winner to notify them for pickup. If they do not collect, you can re-auction the item afterwards.")}</p>
               </div>
             )}
             {auction.reauctioned_from && <p className="rounded-2xl border border-line bg-frost-50 px-4 py-3 text-[13.5px] leading-6 text-ink-soft">{tr("This is a re-auction of an earlier sale.")}{auction.reauction_reason ? ` ${auction.reauction_reason}` : ""}</p>}
@@ -193,6 +196,22 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
               </ul>
             ))}
 
+            {tab === "hearts" && (!detail.reactors || detail.reactors.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-line-strong px-5 py-10 text-center text-[14px] text-ink-muted">{tr("No one has hearted this lot yet.")}</p>
+            ) : (
+              <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line">
+                {detail.reactors.map((person) => (
+                  <li key={`${person.name}-${person.created_at}`} className="flex items-center gap-3 px-4 py-3">
+                    <Heart size={16} className="shrink-0 text-rose-500" fill="currentColor" aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14.5px] font-semibold text-ink">{person.name}</span>
+                      <span className="block text-[12.5px] text-ink-muted">{person.campus_id || "—"} · {formatDateTime(person.created_at)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ))}
+
             {tab === "pickup" && awaiting && (
               <div className="space-y-4">
                 <div className="rounded-2xl border border-gold-300/60 bg-gold-50 p-4 dark:bg-gold-500/10">
@@ -207,7 +226,6 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
                 ]} />
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => setPending("finalize")} className={BTN.success}><CheckCheck size={16} aria-hidden="true" />{tr("Confirm winner")}</button>
-                  <button type="button" onClick={() => setReauctionOpen(true)} className={BTN.ghost}><Repeat2 size={16} aria-hidden="true" />{tr("Re-auction")}</button>
                   {bidder && <button type="button" onClick={() => setSuspendOpen(true)} className={BTN.ghost}><UserX size={16} aria-hidden="true" />{tr("Suspend bidder")}</button>}
                 </div>
               </div>
@@ -225,7 +243,10 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
                   ["Email", auction.winner_detail?.email ?? "—"],
                   ["Pickup status", auction.fulfillment_status === "collected" ? tr("Collected") : auction.fulfillment_status === "forfeited" ? tr("Forfeited, back in custody") : tr("Waiting for pickup")],
                 ]} />
-                <p className="rounded-2xl border border-line bg-frost-50 px-4 py-3 text-[13.5px] leading-6 text-ink-soft">{email}</p>
+                <p className={`rounded-2xl border px-4 py-3 text-[13.5px] leading-6 ${emailFailed ? "border-rose-200 bg-rose-50 text-rose-800" : "border-line bg-frost-50 text-ink-soft"}`} role={emailFailed ? "alert" : undefined}>{email}</p>
+                {(auction.fulfillment_status === "awaiting_pickup" || auction.fulfillment_status === "collected") && (
+                  <button type="button" disabled={busy} onClick={() => void run(() => resendAdminWinnerEmail(auction.id))} className={BTN.ghost}><Mail size={16} aria-hidden="true" />{tr("Resend winner email")}</button>
+                )}
                 {auction.fulfillment_status === "awaiting_pickup" && (
                   <div className="flex flex-wrap gap-2">
                     <button type="button" onClick={() => setPending("collected")} className={BTN.success}><PackageCheck size={16} aria-hidden="true" />{tr("Mark collected")}</button>

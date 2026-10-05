@@ -18,7 +18,7 @@ services:
       - key: FLASK_ENV
         value: production
       - key: AUCTION_EMAIL_MODE
-        value: mock
+        value: auto
       - key: OTP_EXPIRATION_MINUTES
         value: "10"
       - key: JWT_SECRET_KEY

@@ -20,6 +20,8 @@ interface ApiResponse<T = unknown> {
   error?: string;
   message?: string;
   status: number;
+  /** The server's machine-readable reason (report_limit, duplicate_report, dpa_required...) when it sent one. */
+  errorCode?: string;
   /** Set when the server blocked the request for a system reason (maintenance, suspension, revoked session, unverified account). */
   code?: SystemCode;
 }
@@ -121,6 +123,7 @@ async function rawApiCall<T = unknown>(
         message: data.message,
         status: response.status,
         code,
+        errorCode: typeof data.code === 'string' ? data.code : undefined,
       };
     }
 
@@ -269,10 +272,12 @@ export const authApi = {
   async uploadVerificationDocument(data: {
     document: File;
     document_type?: string;
+    dpa_consent: boolean;
   }) {
     const formData = new FormData();
     formData.append('document', data.document);
     if (data.document_type) formData.append('document_type', data.document_type);
+    formData.append('dpa_consent', String(data.dpa_consent));
     return apiCall('/api/auth/profile/document-upload', {
       method: 'POST',
       body: formData,
@@ -301,10 +306,11 @@ export const foundItemsApi = {
     image?: File;
     turnover_location: string;
     guard_name_or_id: string;
+    dpa_consent: boolean;
   }) {
     const formData = new FormData();
     Object.entries(data).forEach(([key, value]) => {
-      if (value !== undefined) formData.append(key, value);
+      if (value !== undefined) formData.append(key, value instanceof File ? value : String(value));
     });
     return apiCall('/api/found-items', {
       method: 'POST',
@@ -342,6 +348,7 @@ export const missingItemsApi = {
     last_location: string;
     last_seen_date: string;
     authorized: boolean;
+    dpa_consent: boolean;
     image?: File;
   }) {
     const formData = new FormData();
@@ -381,8 +388,10 @@ export const claimsApi = {
     proof_image: File;
     identity_document: File;
     identity_document_type: string;
+    dpa_consent: boolean;
   }) {
     const formData = new FormData();
+    formData.append('dpa_consent', String(data.dpa_consent));
     formData.append('fpost_id', data.fpost_id);
     formData.append('claim_reason', data.claim_reason);
     formData.append('proof_image', data.proof_image);

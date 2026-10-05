@@ -42,6 +42,7 @@ export interface AdminAuction {
   ended_at?: string | null;
   winner_email_mode: string | null;
   finalized_at?: string | null;
+  reaction_count?: number;
   reauctioned_from?: string | null;
   reauction_reason?: string | null;
   created_at: string;
@@ -65,7 +66,8 @@ export interface EligibleItem {
 
 export interface AuctionBidRow { id: string; name: string; campus_id: string; amount: number; created_at: string }
 export interface AuctionCommentRow { id: string; name: string; campus_id: string; body: string; created_at: string; hidden: boolean }
-export interface AuctionDetail { auction: AdminAuction; bids: AuctionBidRow[]; comments: AuctionCommentRow[]; server_time: string }
+export interface AuctionReactorRow { name: string; campus_id: string; created_at: string }
+export interface AuctionDetail { auction: AdminAuction; bids: AuctionBidRow[]; comments: AuctionCommentRow[]; reactors?: AuctionReactorRow[]; server_time: string }
 
 export interface AuctionForm {
   found_item_reference?: string;
@@ -127,6 +129,7 @@ export interface ReauctionForm {
 }
 export const finalizeAdminAuction = (id: string) => mutate<{ success: boolean; outcome: "finalized" | "cancelled"; message?: string }>(`auctions/${encodeURIComponent(id)}/finalize`, "POST", "Confirm auction result");
 export const reauctionAdminAuction = (id: string, form: ReauctionForm) => mutate<{ success: boolean; auction_id?: string; message?: string; suspension?: { applied: boolean; days?: number; error?: string } | null }>(`auctions/${encodeURIComponent(id)}/reauction`, "POST", "Re-auction item", form);
+export const resendAdminWinnerEmail = (id: string) => mutate<{ success: boolean; message?: string; mode?: string }>(`auctions/${encodeURIComponent(id)}/resend-winner-email`, "POST", "Resend winner email");
 export const endAdminAuction = (id: string) => mutate(`auctions/${encodeURIComponent(id)}/end`, "POST", "End auction early");
 export const setAdminAuctionFulfillment = (id: string, action: "collected" | "forfeited") => mutate(`auctions/${encodeURIComponent(id)}/fulfillment`, "POST", action === "collected" ? "Mark auction collected" : "Mark auction forfeited", { action });
 export const moderateAuctionComment = (id: string, commentId: string, hidden: boolean) => mutate(`auctions/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, "PATCH", hidden ? "Hide comment" : "Restore comment", { hidden });

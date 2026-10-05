@@ -52,6 +52,19 @@ def my_bids():
     return jsonify(_service().my_bids(_authenticated_account_id())), 200
 
 
+@auctions_bp.route('/watching', methods=['GET'])
+@_handled('load your hearts')
+def my_reactions():
+    return jsonify({'ids': _service().my_reaction_ids(_authenticated_account_id())}), 200
+
+
+@auctions_bp.route('/<auction_id>/reaction', methods=['PUT', 'DELETE'])
+@_handled('save your heart')
+def set_reaction(auction_id):
+    on = request.method == 'PUT'
+    return jsonify({'success': True, **_service().set_reaction(auction_id, _authenticated_account_id(), on)}), 200
+
+
 @auctions_bp.route('/<auction_id>', methods=['GET'])
 @_handled('load the auction')
 def auction_detail(auction_id):

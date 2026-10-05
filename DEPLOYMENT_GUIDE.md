@@ -71,9 +71,10 @@ Server/manual_migrations/20261003_superadmin_delete_user.sql
 Server/manual_migrations/20261004_claim_report_closeout.sql
 Server/manual_migrations/20261005_auction_hall.sql
 Server/manual_migrations/20261006_system_control_verification.sql
+Server/manual_migrations/20261007_report_integrity_and_reactions.sql
 ```
 
-The last two are required for auctions, maintenance mode, verification roles and suspensions. Run `20261005` before `20261006`. Then check them:
+The last three are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts and duplicate-claim protection. Run them in order (`20261005`, then `20261006`, then `20261007`). Then check them:
 
 ```sql
 SELECT to_regclass('public.auctions') AS auctions,
@@ -123,7 +124,7 @@ UPDATE public.user_profiles SET access_level = 'super_admin' WHERE email = 'you@
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | your Google values, or leave blank if unused |
 | `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` | your SendGrid values, or leave blank if unused |
 
-Render fills in `JWT_SECRET_KEY` itself, and `render.yaml` already sets `FLASK_ENV`, `PYTHON_VERSION` and `AUCTION_EMAIL_MODE`. Leave those alone. The same list as a checklist file is `Environment_Configs/backend/production.env.example`.
+Render fills in `JWT_SECRET_KEY` itself, and `render.yaml` already sets `FLASK_ENV`, `PYTHON_VERSION` and `AUCTION_EMAIL_MODE=auto`. Leave those alone. With `auto`, auction winner emails (and AI-match emails) are really sent as soon as `SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL` are set. The same list as a checklist file is `Environment_Configs/backend/production.env.example`.
 
 ### 2.3 Deploy and watch the log
 

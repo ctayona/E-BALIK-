@@ -163,7 +163,7 @@ export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) 
                     </div>
                   ) : (
                     <div className="mx-auto max-w-[680px] space-y-6 lg:mx-0">
-                      {live.map((a) => <AuctionPost key={a.id} auction={a} now={now} offset={offset} watching={watch.watching(a.id)} onToggleWatch={watch.toggle} onOpen={openAuction} />)}
+                      {live.map((a) => <AuctionPost key={a.id} auction={a} now={now} offset={offset} watching={watch.watching(a.id)} hearts={watch.countFor(a.id, a.reaction_count ?? 0)} onToggleWatch={watch.toggle} onOpen={openAuction} />)}
                     </div>
                   )}
                 </>

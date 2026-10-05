@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, CheckCircle2, Clock3, Gavel, Hourglass, MapPin, MessageCircle, ShieldAlert, ShieldCheck, Trash2, Trophy, TrendingDown } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, Gavel, Heart, Hourglass, ListChecks, MapPin, MessageCircle, ShieldAlert, ShieldCheck, Trash2, Trophy, TrendingDown } from "lucide-react";
 import Modal from "@/app/shared/modal/Modal";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { isVerified, useCurrentUser } from "@/app/utils/system";
@@ -25,6 +25,7 @@ function Stat({ label, value, tone = "default" }: { label: string; value: string
 }
 
 function initials(name: string) {
+  if (name.startsWith("Bidder_")) return name.slice(7, 9);  // anonymous alias: show its code, e.g. Bidder_8X9 -> 8X
   const parts = name.replace(".", "").split(" ").filter(Boolean);
   return `${parts[0]?.[0] ?? "?"}${parts[1]?.[0] ?? ""}`.toUpperCase();
 }
@@ -54,6 +55,9 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [showAllBids, setShowAllBids] = useState(false);
+  const [reacted, setReacted] = useState<boolean | null>(null);
+  const [hearts, setHearts] = useState<number | null>(null);
+  const heartBusy = useRef(false);
   const [commentText, setCommentText] = useState("");
   const [commentBusy, setCommentBusy] = useState(false);
   const [commentError, setCommentError] = useState("");
@@ -162,7 +166,19 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
       setCommentText("");
       await load();
     } catch (reason) {
-      setCommentError(reason instanceof Error ? reason.message : "The comment could not be posted.");
+      if (reason instanceof AuctionRequestError && reason.code === "profanity") {
+        // Keep what they typed so they can edit it; tell them clearly why it was blocked.
+        setCommentError("");
+        showInfoModal({
+          variant: "warning",
+          title: "Comment not posted",
+          message: reason.message,
+          details: ["Comments with foul or abusive language are blocked automatically.", "Edit your comment and post it again."],
+          autoCloseMs: null,
+        });
+      } else {
+        setCommentError(reason instanceof Error ? reason.message : "The comment could not be posted.");
+      }
     } finally {
       setCommentBusy(false);
     }
@@ -177,6 +193,28 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
     }
   };
 
+  const toggleHeart = async () => {
+    if (heartBusy.current || !signedIn) return;
+    heartBusy.current = true;
+    const current = reacted ?? Boolean(detail?.viewer.reacted);
+    const baseCount = hearts ?? a.reaction_count ?? 0;
+    setReacted(!current);
+    setHearts(Math.max(0, baseCount + (current ? -1 : 1)));
+    try {
+      const result = await auctionsApi.react(a.id, !current);
+      setHearts(result.reaction_count);
+      onChanged();
+    } catch (reason) {
+      setReacted(current);
+      setHearts(baseCount);
+      showInfoModal({ variant: "error", title: "Heart not saved", message: reason instanceof AuctionRequestError ? reason.message : "Your heart could not be saved. Try again." });
+    } finally {
+      heartBusy.current = false;
+    }
+  };
+  const isReacted = reacted ?? Boolean(detail?.viewer.reacted);
+  const heartCount = hearts ?? a.reaction_count ?? 0;
+  const log = detail?.log ?? [];
   const bids = detail?.bids ?? [];
   const visibleBids = showAllBids ? bids : bids.slice(0, 5);
   const comments = detail?.comments ?? [];
@@ -213,6 +251,21 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
               <Stat label={open ? "Time left" : a.status === "scheduled" ? "Opens" : "Closed"} value={open ? (formatRemaining(left) || "Closing") : a.status === "scheduled" ? formatWhen(a.starts_at) : formatWhen(a.ends_at) || "—"} tone={open && left < 5 * 60000 ? "urgent" : "default"} />
               <Stat label="Bids" value={String(a.bid_count)} />
             </dl>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void toggleHeart()}
+                disabled={!signedIn}
+                aria-pressed={isReacted}
+                aria-label={isReacted ? "Remove your heart" : "Heart this lot"}
+                className={`inline-flex min-h-[40px] items-center gap-2 rounded-full border px-4 text-[14px] font-semibold transition-colors disabled:cursor-default ${isReacted ? "border-rose-300 bg-rose-50 text-rose-700" : "border-line bg-white text-ink-soft hover:border-rose-300"}`}
+              >
+                <Heart size={17} aria-hidden="true" fill={isReacted ? "#e11d48" : "none"} color={isReacted ? "#e11d48" : "currentColor"} />
+                {isReacted ? "Hearted" : "Heart"}
+              </button>
+              <span className="text-[13.5px] text-ink-muted tabular-nums">{heartCount === 0 ? (signedIn ? "Be the first to heart this" : "No hearts yet") : `${heartCount} ${heartCount === 1 ? "person likes" : "people like"} this`}</span>
+            </div>
 
             {a.status === "live" || a.status === "scheduled" ? (
               <p className="flex items-start gap-2.5 rounded-2xl border border-gold-200 bg-gold-50 px-4 py-3 text-[13.5px] leading-6 text-ink-soft">
@@ -266,6 +319,26 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
               )}
               {bids.length > 5 && <button type="button" onClick={() => setShowAllBids((v) => !v)} className="mt-2 text-[13.5px] font-semibold text-iris-700 hover:underline">{showAllBids ? "Show fewer bids" : `Show all ${bids.length} bids`}</button>}
             </section>
+
+            {log.length > 0 && (
+              <section aria-labelledby={`${titleId}-log`}>
+                <h3 id={`${titleId}-log`} className="mb-2 flex items-center gap-2 font-[family-name:var(--font-heading)] text-[17px] font-semibold text-navy-800"><ListChecks size={16} className="text-gold-700" aria-hidden="true" /> Auction log</h3>
+                <ol className="space-y-0 rounded-2xl border border-line px-4 py-3">
+                  {[...log].reverse().map((event, index) => (
+                    <li key={`${event.type}-${index}`} className="relative flex gap-3 pb-3 last:pb-0">
+                      <span className="relative flex flex-col items-center" aria-hidden="true">
+                        <span className={`mt-1.5 size-2.5 shrink-0 rounded-full ${event.type === "bid" ? "bg-gold-500" : event.type === "result" ? "bg-tide-500" : event.type === "forfeited" ? "bg-rose-500" : "bg-iris-400"}`} />
+                        {index < log.length - 1 && <span className="mt-1 w-px flex-1 bg-line" />}
+                      </span>
+                      <span className="min-w-0 flex-1 text-[14px] leading-6 text-ink-soft">
+                        {event.text}
+                        {event.at && <span className="block text-[12.5px] text-ink-muted">{formatWhen(event.at)} · {timeAgo(event.at, now)}</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            )}
 
             <section ref={commentsRef} aria-labelledby={`${titleId}-comments`}>
               <h3 id={`${titleId}-comments`} className="mb-2 flex items-center gap-2 font-[family-name:var(--font-heading)] text-[17px] font-semibold text-navy-800"><MessageCircle size={16} className="text-gold-700" aria-hidden="true" /> Comments <span className="text-[14px] font-medium text-ink-muted">{comments.length}</span></h3>

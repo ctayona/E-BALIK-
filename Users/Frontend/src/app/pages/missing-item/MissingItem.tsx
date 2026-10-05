@@ -4,6 +4,8 @@ import { ArrowLeft, ArrowRight, BadgeCheck, CalendarRange, ChevronDown, Clipboar
 import { useAuth } from "@/app/utils/useAuth";
 import { CX } from "@/app/utils/clay";
 import type { NavigationOptions, Page } from "@/app/types";
+import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
+import { showSubmitError } from "@/app/utils/submitErrors";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 import ItemCollection from "@/app/shared/media/ItemCollection";
 import ItemImage, { type GalleryItem } from "@/app/shared/media/ItemImage";
@@ -65,6 +67,9 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [countdown, setCountdown] = useState(5);
   const [agreed, setAgreed] = useState(false);
+  const [privacy, setPrivacy] = useState(false);
+  const submittingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
   const [reports, setReports] = useState<Report[]>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [matchSummaries, setMatchSummaries] = useState<Record<string, MatchSummary>>({});
@@ -161,11 +166,24 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
     }
     setCountdown(5);
     setAgreed(false);
+    setPrivacy(false);
     setConfirmationOpen(true);
   }
 
+  /** Guarded entry point: a second click or Enter while the request is running is ignored, so one submit means one report. */
   async function confirmSubmit() {
-    if (!agreed || countdown > 0) return;
+    if (!agreed || !privacy || countdown > 0 || submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      await submitMissingReport();
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  }
+
+  async function submitMissingReport() {
     const result = await createMissingItem({
       item_name: itemName,
       category,
@@ -174,11 +192,12 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
       last_location: lastLocation,
       last_seen_date: lastSeenDate,
       authorized,
+      dpa_consent: privacy,
       image,
     });
     setConfirmationOpen(false);
     if (!result.success) {
-      showInfoModal({ variant: "error", title: "Missing report not saved", message: result.error || "Unable to save missing item report." });
+      showSubmitError(result, "Missing report not saved", "Unable to save missing item report.");
       return;
     }
     const created = (result.item || null) as Report | null;
@@ -196,6 +215,8 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
     setImage(undefined);
     setImagePreview("");
     await loadReports();
+    // Take the reporter to the new report so they can see it was saved.
+    onBack?.("my-reports", { highlightReportId: created?.mpost_id });
   }
 
   async function searchReports() {
@@ -535,7 +556,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
       <Modal
         open={confirmationOpen}
         onClose={() => setConfirmationOpen(false)}
-        dismissible={!isLoading}
+        dismissible={!isLoading && !submitting}
         size="sm"
         tone="navy"
         icon={<SearchCheck size={21} />}
@@ -544,8 +565,8 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
         description="Reports must be valid and authentic. False or misleading reports may lead to disciplinary or legal action under university rules."
         footer={
           <>
-            <button type="button" disabled={isLoading} onClick={() => setConfirmationOpen(false)} className={CX.btnGhost}>Cancel</button>
-            <button type="button" disabled={!agreed || countdown > 0 || isLoading} onClick={() => void confirmSubmit()} className={CX.btnNavy}>{isLoading ? "Submitting…" : "Confirm and submit"}</button>
+            <button type="button" disabled={isLoading || submitting} onClick={() => setConfirmationOpen(false)} className={CX.btnGhost}>Cancel</button>
+            <button type="button" disabled={!agreed || !privacy || countdown > 0 || isLoading || submitting} onClick={() => void confirmSubmit()} className={CX.btnNavy}>{isLoading || submitting ? "Submitting…" : "Confirm and submit"}</button>
           </>
         }
       >
@@ -555,6 +576,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
           onCheckedChange={setAgreed}
           label="I confirm this report is truthful and describes an item that belongs to me."
         />
+        <div className="mt-3"><DataPrivacyConsent checked={privacy} onChange={setPrivacy} disabled={countdown > 0} purpose="record this missing item report and match it against found items" /></div>
       </Modal>
     </main>
   );

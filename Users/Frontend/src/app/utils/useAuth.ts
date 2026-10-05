@@ -53,6 +53,19 @@ export function useAuth() {
     };
   });
 
+  // Every component that calls useAuth() has its own state. When any of them refreshes the profile (for example the
+  // Profile page noticing an admin approved the account), the others pick the change up here instead of staying stale.
+  useEffect(() => {
+    const syncFromStorage = () => {
+      const token = authUtils.getToken();
+      const stored = authUtils.getUserData();
+      if (!token || !stored) return;
+      setState((previous) => (JSON.stringify(previous.user) === JSON.stringify(stored) ? previous : { ...previous, user: stored }));
+    };
+    window.addEventListener('ebalik:user-updated', syncFromStorage);
+    return () => window.removeEventListener('ebalik:user-updated', syncFromStorage);
+  }, []);
+
   // Initialize auth state from localStorage
   useEffect(() => {
     const token = authUtils.getToken();
@@ -301,10 +314,11 @@ export function useAuth() {
     found_date: string;
     turnover_location: string;
     guard_name_or_id: string;
+    dpa_consent: boolean;
     image?: File;
   }) => {
     const response = await foundItemsApi.create(data);
-    if (response.error) return { success: false, error: response.error };
+    if (response.error) return { success: false, error: response.error, errorCode: response.errorCode };
     return { success: true, item: response.data?.item };
   }, []);
 
@@ -346,10 +360,11 @@ export function useAuth() {
     last_location: string;
     last_seen_date: string;
     authorized: boolean;
+    dpa_consent: boolean;
     image?: File;
   }) => {
     const response = await missingItemsApi.create(data);
-    if (response.error) return { success: false, error: response.error };
+    if (response.error) return { success: false, error: response.error, errorCode: response.errorCode };
     return { success: true, item: response.data?.item };
   }, []);
 
@@ -365,9 +380,10 @@ export function useAuth() {
     proof_image: File;
     identity_document: File;
     identity_document_type: string;
+    dpa_consent: boolean;
   }) => {
     const response = await claimsApi.create(data);
-    if (response.error) return { success: false, error: response.error };
+    if (response.error) return { success: false, error: response.error, errorCode: response.errorCode };
     return { success: true, claim: response.data?.claim };
   }, []);
 
@@ -437,6 +453,8 @@ export function useAuth() {
     }
 
     const updatedUser: User = { ...currentUser, ...response.data.user };
+    // Nothing changed: skip the write, so polling does not re-render the app or reset form fields every few seconds.
+    if (JSON.stringify(updatedUser) === JSON.stringify(currentUser)) return { success: true, user: currentUser as User };
     authUtils.setUserData(updatedUser);
     setState((previous) => ({ ...previous, user: updatedUser, isAuthenticated: true }));
     return { success: true, user: updatedUser };
@@ -501,7 +519,7 @@ export function useAuth() {
   /**
    * Logout user
    */
-  const uploadVerificationDocument = useCallback(async (document: { document: File; document_type?: string }) => {
+  const uploadVerificationDocument = useCallback(async (document: { document: File; document_type?: string; dpa_consent: boolean }) => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     const response = await authApi.uploadVerificationDocument(document);

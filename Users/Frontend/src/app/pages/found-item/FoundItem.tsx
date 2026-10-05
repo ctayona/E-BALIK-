@@ -3,7 +3,9 @@ import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { ArrowLeft, BadgeCheck, CalendarRange, ChevronDown, ClipboardList, FileStack, ImagePlus, MapPin, PackageSearch, RefreshCw, ShieldCheck, Tag, UserRound, X } from "lucide-react";
 import { useAuth } from "@/app/utils/useAuth";
 import { CX } from "@/app/utils/clay";
-import type { Page } from "@/app/types";
+import type { NavigationOptions, Page } from "@/app/types";
+import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
+import { showSubmitError } from "@/app/utils/submitErrors";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 import ItemCollection from "@/app/shared/media/ItemCollection";
 import ItemImage, { type GalleryItem } from "@/app/shared/media/ItemImage";
@@ -38,7 +40,7 @@ type MatchSummary = {
   total_matches: number;
 };
 
-export default function FoundItem({ focused = false, onBack }: { focused?: boolean; onBack?: (page: Page) => void }) {
+export default function FoundItem({ focused = false, onBack }: { focused?: boolean; onBack?: (page: Page, options?: NavigationOptions) => void }) {
   const { createFoundItem, getFoundItems, getFoundMatchSummaries, isLoading, user } = useAuth();
   const verified = isVerified(useCurrentUser());
   const [activeTab, setActiveTab] = useState<"intake" | "reports">("intake");
@@ -55,6 +57,9 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [countdown, setCountdown] = useState(5);
   const [agreed, setAgreed] = useState(false);
+  const [privacy, setPrivacy] = useState(false);
+  const submittingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
   const [reports, setReports] = useState<Report[]>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [matchSummaries, setMatchSummaries] = useState<Record<string, MatchSummary>>({});
@@ -124,11 +129,24 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
     }
     setCountdown(5);
     setAgreed(false);
+    setPrivacy(false);
     setConfirmationOpen(true);
   }
 
+  /** Guarded entry point: a second click or Enter while the request is running is ignored, so one submit means one report. */
   async function confirmSubmit() {
-    if (!agreed || countdown > 0) return;
+    if (!agreed || !privacy || countdown > 0 || submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      await publishFoundReport();
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  }
+
+  async function publishFoundReport() {
     const result = await createFoundItem({
       item_name: title,
       category,
@@ -137,11 +155,12 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
       found_date: dateFound,
       turnover_location: turnoverLocation,
       guard_name_or_id: guardNameOrId,
+      dpa_consent: privacy,
       image,
     });
     setConfirmationOpen(false);
     if (!result.success) {
-      showInfoModal({ variant: "error", title: "Found report not published", message: result.error || "Unable to save found item report." });
+      showSubmitError(result, "Found report not published", "Unable to save found item report.");
       return;
     }
     const created = (result.item || null) as Report | null;
@@ -159,6 +178,8 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
     setImage(undefined);
     setImagePreview("");
     if (fileRef.current) fileRef.current.value = "";
+    // Take the reporter to the new report so they can see it was saved.
+    onBack?.("my-reports", { highlightReportId: created?.fpost_id });
   }
 
   function switchTab(tab: "intake" | "reports") {
@@ -382,7 +403,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
       <Modal
         open={confirmationOpen}
         onClose={() => setConfirmationOpen(false)}
-        dismissible={!isLoading}
+        dismissible={!isLoading && !submitting}
         size="sm"
         tone="gold"
         icon={<ShieldCheck size={21} />}
@@ -391,8 +412,8 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
         description="Reports must be valid and authentic. False or misleading reports may lead to disciplinary or legal action under university rules."
         footer={
           <>
-            <button type="button" disabled={isLoading} onClick={() => setConfirmationOpen(false)} className={CX.btnGhost}>Cancel</button>
-            <button type="button" disabled={!agreed || countdown > 0 || isLoading} onClick={() => void confirmSubmit()} className={CX.btnGold}>{isLoading ? "Publishing…" : "Confirm and publish"}</button>
+            <button type="button" disabled={isLoading || submitting} onClick={() => setConfirmationOpen(false)} className={CX.btnGhost}>Cancel</button>
+            <button type="button" disabled={!agreed || !privacy || countdown > 0 || isLoading || submitting} onClick={() => void confirmSubmit()} className={CX.btnGold}>{isLoading || submitting ? "Publishing…" : "Confirm and publish"}</button>
           </>
         }
       >
@@ -402,6 +423,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
           onCheckedChange={setAgreed}
           label="I agree that the information submitted is truthful and that the item has been turned over as recorded."
         />
+        <div className="mt-3"><DataPrivacyConsent checked={privacy} onChange={setPrivacy} disabled={countdown > 0} purpose="record this found item report and match it to its owner" /></div>
       </Modal>
     </main>
   );

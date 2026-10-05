@@ -43,6 +43,8 @@ export default function App() {
   const currentUser = user ?? authUtils.getUserData();
   const system = useSystemStatus();
   const lastSystemEvent = useRef({ code: "", at: 0 });
+  const verificationStatus = String(currentUser?.verification_status || "").toLowerCase();
+  const previousVerification = useRef(verificationStatus);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -71,13 +73,28 @@ export default function App() {
     void refreshProfile();
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
-    const refreshInterval = window.setInterval(refresh, 20000);
+    // Check more often while a verification is waiting for an admin, so the approval shows up within seconds.
+    const refreshInterval = window.setInterval(refresh, verificationStatus === "verified" || isStaff(currentUser) ? 20000 : 8000);
     return () => {
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
       window.clearInterval(refreshInterval);
     };
-  }, [isAuthenticated, refreshProfile]);
+  }, [isAuthenticated, refreshProfile, verificationStatus]);
+
+  // Tell the user the moment an admin verifies them, wherever they are in the app.
+  useEffect(() => {
+    const before = previousVerification.current;
+    previousVerification.current = verificationStatus;
+    if (isAuthenticated && before && before !== "verified" && verificationStatus === "verified") {
+      const role = currentUser?.user_category || (currentUser?.user_role === "Others" ? "Visitor" : currentUser?.user_role) || "";
+      showInfoModal({
+        variant: "success",
+        title: "Your account is verified",
+        message: role ? `An administrator verified you as ${role}. You can now report items, file claims and bid in the Auction Hall.` : "An administrator verified your account. You can now report items, file claims and bid in the Auction Hall.",
+      });
+    }
+  }, [verificationStatus, isAuthenticated, currentUser?.user_category, currentUser?.user_role]);
 
   // Server-side blocks (revoked session, suspension, unverified account) are handled once, here, for every page.
   useEffect(() => {
@@ -163,7 +180,7 @@ export default function App() {
         {page === "report-item"  && <ReportItem onNavigate={handleNavigate} />}
         {page === "found-item"   && <FoundItem focused={navigationOptions.mode === "form"} onBack={handleNavigate} />}
         {page === "missing-item" && <MissingItem focused={navigationOptions.mode === "form"} initialSearchTerm={navigationOptions.searchTerm} onBack={handleNavigate} />}
-        {page === "my-reports"   && <MyReports onNavigate={handleNavigate} />}
+        {page === "my-reports"   && <MyReports onNavigate={handleNavigate} highlightId={navigationOptions.highlightReportId} />}
         {page === "matches"      && <Matches initialReportId={navigationOptions.reportId} onNavigate={handleNavigate} />}
         {page === "browse-items" && <BrowseItems onNavigate={handleNavigate} />}
         {page === "claim"        && <Claim foundItemId={navigationOptions.foundItemId} onNavigate={handleNavigate} />}

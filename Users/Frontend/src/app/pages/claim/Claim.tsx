@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Clock3, FileText, ImagePlus, Mail, MapPin, Phone, ShieldCheck, Trash2, Upload, XCircle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "@/app/utils/useAuth";
@@ -7,6 +7,8 @@ import { CX, SPRING } from "@/app/utils/clay";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import Modal, { CountdownConsent } from "@/app/shared/modal/Modal";
+import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
+import { showSubmitError } from "@/app/utils/submitErrors";
 import VerificationGate from "@/app/shared/verification/VerificationGate";
 import { isVerified, useCurrentUser } from "@/app/utils/system";
 
@@ -30,6 +32,9 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [countdown, setCountdown] = useState(5);
   const [truthConfirmed, setTruthConfirmed] = useState(false);
+  const [privacy, setPrivacy] = useState(false);
+  const submittingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
   const [claims,       setClaims]       = useState<ClaimRecord[]>([]);
   const [claimsLoading, setClaimsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved_for_pickup" | "rejected" | "collected">("all");
@@ -91,21 +96,38 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
     }
     setCountdown(5);
     setTruthConfirmed(false);
+    setPrivacy(false);
     setConfirmationOpen(true);
   }
 
+  /**
+   * Guarded entry point. createClaim does not set the shared isLoading flag, so without this a double-click on
+   * "Confirm claim" sent two requests and created two claim records with different IDs.
+   */
   async function confirmSubmission() {
-    if (countdown > 0 || !truthConfirmed || !proof || !identityDocument) return;
+    if (countdown > 0 || !truthConfirmed || !privacy || !proof || !identityDocument || submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      await sendClaim(proof, identityDocument);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  }
+
+  async function sendClaim(proof: File, identityDocument: File) {
     const result = await createClaim({
       fpost_id: reference.trim(),
       claim_reason: reason.trim(),
       proof_image: proof,
       identity_document: identityDocument,
       identity_document_type: identityDocumentType,
+      dpa_consent: privacy,
     });
     setConfirmationOpen(false);
     if (!result.success) {
-      showInfoModal({ variant: "error", title: "Claim not submitted", message: result.error || "Unable to submit claim." });
+      showSubmitError(result, "Claim not submitted", "Unable to submit claim.");
       return;
     }
     showInfoModal({
@@ -390,7 +412,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
         <Modal
           open={confirmationOpen}
           onClose={() => setConfirmationOpen(false)}
-          dismissible={!isLoading}
+          dismissible={!isLoading && !submitting}
           size="sm"
           tone="gold"
           icon={<ShieldCheck size={21} />}
@@ -399,8 +421,8 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
           description="Authorized administrators will review your claim and ID. If approved, bring your original ID to the UMak Lost and Found Office. Online approval doesn't release the item."
           footer={
             <>
-              <button type="button" disabled={isLoading} onClick={() => setConfirmationOpen(false)} className={CX.btnGhost}>Cancel</button>
-              <button type="button" disabled={countdown > 0 || !truthConfirmed || isLoading} onClick={() => void confirmSubmission()} className={CX.btnGold}>{isLoading ? "Submitting…" : "Confirm claim"}</button>
+              <button type="button" disabled={isLoading || submitting} onClick={() => setConfirmationOpen(false)} className={CX.btnGhost}>Cancel</button>
+              <button type="button" disabled={countdown > 0 || !truthConfirmed || !privacy || isLoading || submitting} onClick={() => void confirmSubmission()} className={CX.btnGold}>{isLoading || submitting ? "Submitting…" : "Confirm claim"}</button>
             </>
           }
         >
@@ -410,6 +432,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
             onCheckedChange={setTruthConfirmed}
             label="I confirm that the information and documents are truthful, and understand that final item release requires in-person verification."
           />
+          <div className="mt-3"><DataPrivacyConsent checked={privacy} onChange={setPrivacy} disabled={countdown > 0} purpose="process your claim and verify your identity and ownership" /></div>
         </Modal>
 
       </div>

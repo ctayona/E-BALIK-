@@ -6,6 +6,7 @@ from flask import Blueprint, current_app, jsonify, request
 from werkzeug.utils import secure_filename
 from app.utils import get_db, JWTService
 from Users.Backend.shared.account import _infer_user_role_and_campus, _verification_profile_metadata
+from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, dpa_consent_given
 
 logger = logging.getLogger(__name__)
 profile_bp = Blueprint('user_profile', __name__)
@@ -126,6 +127,8 @@ def upload_verification_document():
         }
         if not document or not document.filename:
             return jsonify({'error': 'Choose a verification document to upload'}), 400
+        if not dpa_consent_given(request.form):
+            return jsonify({'error': DPA_REQUIRED_MESSAGE, 'code': 'dpa_required'}), 400
         if document.mimetype not in allowed_mime_types:
             return jsonify({'error': 'Use a JPG, PNG, WEBP, or PDF document'}), 400
 

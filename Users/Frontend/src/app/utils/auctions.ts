@@ -36,17 +36,20 @@ export interface Auction {
   winning_amount: number | null;
   sold: boolean;
   cancel_reason: string | null;
+  reaction_count?: number;
   my_state?: "leading" | "outbid" | "awaiting" | "won" | "lost" | "cancelled";
   my_best_bid?: number | null;
 }
 
 export interface AuctionBid { id: string; bidder: string; amount: number; created_at: string; is_mine: boolean }
 export interface AuctionComment { id: string; author: string; body: string; created_at: string; is_mine: boolean }
+export interface AuctionLogEvent { type: string; at: string | null; text: string }
 export interface AuctionDetail {
   auction: Auction;
+  log?: AuctionLogEvent[];
   bids: AuctionBid[];
   comments: AuctionComment[];
-  viewer: { signed_in: boolean; is_leading: boolean; is_winner: boolean; my_best_bid: number | null };
+  viewer: { signed_in: boolean; reacted?: boolean; is_leading: boolean; is_winner: boolean; my_best_bid: number | null };
   server_time: string;
 }
 export interface AuctionFeed { live: Auction[]; past: Auction[]; server_time: string }
@@ -57,6 +60,8 @@ export class AuctionRequestError extends Error {
   minBid?: number;
   /** Set when the server refused the request because the account is not verified. */
   verificationRequired = false;
+  /** The server's reason code, such as "profanity" for a blocked comment. */
+  code?: string;
   constructor(message: string, status: number, setupRequired = false, minBid?: number) {
     super(message);
     this.name = "AuctionRequestError";
@@ -84,6 +89,7 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
     else if (token && data.suspended) emitSystemEvent({ code: "suspended", message, until: data.suspended_until });
     const failure = new AuctionRequestError(message, response.status, Boolean(data.setup_required), typeof data.min_bid === "number" ? data.min_bid : undefined);
     failure.verificationRequired = Boolean(data.verification_required);
+    if (typeof data.code === "string") failure.code = data.code;
     throw failure;
   }
   return data as T;
@@ -92,6 +98,8 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
 export const auctionsApi = {
   feed: () => request<AuctionFeed>(""),
   detail: (id: string) => request<AuctionDetail>(`/${encodeURIComponent(id)}`),
+  watching: () => request<{ ids: string[] }>("/watching"),
+  react: (id: string, on: boolean) => request<{ success: boolean; reacted: boolean; reaction_count: number }>(`/${encodeURIComponent(id)}/reaction`, { method: on ? "PUT" : "DELETE" }),
   mine: () => request<{ auctions: Auction[]; server_time: string }>("/mine"),
   bid: (id: string, amount: number) => request<{ success: boolean; message: string; auction: Auction; extended: boolean }>(`/${encodeURIComponent(id)}/bids`, { method: "POST", body: { amount } }),
   comment: (id: string, body: string) => request<{ comment: AuctionComment }>(`/${encodeURIComponent(id)}/comments`, { method: "POST", body: { body } }),

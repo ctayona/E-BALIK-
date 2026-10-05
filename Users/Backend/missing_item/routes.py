@@ -6,6 +6,8 @@ from werkzeug.utils import secure_filename
 from app.utils import get_db
 from app.utils.email_service import send_reference_email_best_effort
 from app.utils.matching import build_match_summaries
+from app.utils.report_guard import ReportRuleError, begin_submission, check_new_report, end_submission
+from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, consent_metadata, dpa_consent_given
 from Users.Backend.shared.request_auth import _authenticated_account_id, _public_url
 
 missing_item_bp = Blueprint('user_missing_item', __name__)
@@ -21,6 +23,7 @@ def _weekday_code(date_value: str) -> str:
 def create_missing_item():
     """Create a missing-item report owned by the authenticated account."""
     uploaded_path = None
+    slot = None
     try:
         account_id = _authenticated_account_id()
         data = request.form
@@ -36,6 +39,8 @@ def create_missing_item():
             return jsonify({'error': 'Complete the item name, category, description, location, and date'}), 400
         if not authorized:
             return jsonify({'error': 'You must authorize matching and notifications before submitting'}), 400
+        if not dpa_consent_given(data):
+            return jsonify({'error': DPA_REQUIRED_MESSAGE, 'code': 'dpa_required'}), 400
         try:
             datetime.strptime(last_seen_date, '%Y-%m-%d')
         except ValueError:
@@ -47,6 +52,12 @@ def create_missing_item():
         reporter = db.get_user_by_account_id(account_id)
         if not reporter:
             return jsonify({'error': 'Authenticated account profile was not found'}), 401
+
+        slot = begin_submission(f'missing:{account_id}')
+        check_new_report(
+            {'item_name': item_name, 'description': description}, 'missing',
+            db.get_missing_items_by_account(account_id), db.get_found_items_by_account(account_id),
+        )
 
         if image and image.filename:
             if image.mimetype not in ALLOWED_IMAGE_TYPES:
@@ -92,7 +103,8 @@ def create_missing_item():
             module='Lost Items',
             target_name=f"{mpost_id} — {item_name}",
             target_id=mpost_id,
-            result='success'
+            result='success',
+            metadata=consent_metadata(),
         )
         email_sent = send_reference_email_best_effort(
             to_email=reporter.get('email'),
@@ -111,6 +123,8 @@ def create_missing_item():
         if not email_sent:
             current_app.logger.warning('Missing report %s was saved, but confirmation email was not sent', mpost_id)
         return jsonify({'message': 'Missing item report created', 'item': item, 'mpost_id': mpost_id}), 201
+    except ReportRuleError as error:
+        return jsonify({'error': error.message, 'code': error.code, **error.extra}), error.status
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except Exception as error:
@@ -119,6 +133,8 @@ def create_missing_item():
         if current_app.debug:
             response['details'] = str(error)
         return jsonify(response), 500
+    finally:
+        end_submission(slot)
 
 
 @missing_item_bp.route('/missing-items', methods=['GET'])

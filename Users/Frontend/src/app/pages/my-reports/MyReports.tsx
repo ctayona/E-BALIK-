@@ -34,7 +34,7 @@ function StatusPill({ status }: { status: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ring-1 ${tone}`}>{status || "unknown"}</span>;
 }
 
-export default function MyReports({ onNavigate }: { onNavigate: (page: Page, options?: NavigationOptions) => void }) {
+export default function MyReports({ onNavigate, highlightId }: { onNavigate: (page: Page, options?: NavigationOptions) => void; highlightId?: string }) {
   const { getFoundItems, getMissingItems, updateFoundItem, updateMissingItem, deleteFoundItem, deleteMissingItem } = useAuth();
   const [mode] = useViewMode();
   const formId = useId();
@@ -77,12 +77,13 @@ export default function MyReports({ onNavigate }: { onNavigate: (page: Page, opt
         location: item.location, date: item.found_date, image: item.image_url,
         status: item.status || "unclaimed", turnover_location: item.turnover_location, kind: "Found",
       }));
-      setReports([...m, ...f].sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()));
+      // Newest first by date, except a report that was just submitted: it always leads, so it is the first thing the reporter sees.
+      setReports([...m, ...f].sort((a, b) => (Number(b.id === highlightId) - Number(a.id === highlightId)) || (new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())));
     } finally {
       setLoading(false);
     }
   }
-  useEffect(() => { void loadReports(); }, [getFoundItems, getMissingItems]);
+  useEffect(() => { void loadReports(); }, [getFoundItems, getMissingItems, highlightId]);
 
   function openReport(report: Report) {
     setSelected(report);
@@ -194,6 +195,7 @@ export default function MyReports({ onNavigate }: { onNavigate: (page: Page, opt
           <ItemCollection
             label="My reports"
             items={visibleGallery}
+            highlightId={highlightId}
             mode={mode}
             onOpen={(_item, index) => openReport(visibleReports[index])}
             badge={(item) => <StatusPill status={item.status || ""} />}

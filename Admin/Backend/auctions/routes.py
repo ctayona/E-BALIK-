@@ -138,7 +138,15 @@ def finalize_auction(auction_id):
     auction = result['auction']
     finalized = result['outcome'] == 'finalized'
     _log_admin_action(db, admin, 'Finalize Auction' if finalized else 'Auction Cancelled At Finalize', 'Auctions', auction.get('title'), auction.get('item_reference') or auction_id)
-    message = 'The result is confirmed. The winner was notified and the item is waiting for pickup.' if finalized else f"The auction was cancelled instead: {auction.get('cancel_reason')}"
+    if finalized:
+        email = service.winner_email_state(auction_id)
+        suffix = {
+            'sendgrid': ' A confirmation email was sent to the winner.',
+            'mock': ' Email is in mock mode, so it was only logged. Set SENDGRID_API_KEY to send real emails.',
+        }.get(email, ' The winner email could not be sent. Open the auction and use Resend winner email.' if email.endswith('_failed') else '')
+        message = 'The result is confirmed. The winner was notified in the app and the item is waiting for pickup.' + suffix
+    else:
+        message = f"The auction was cancelled instead: {auction.get('cancel_reason')}"
     return jsonify({'success': True, 'outcome': result['outcome'], 'message': message}), 200
 
 
@@ -194,6 +202,22 @@ def reauction_auction(auction_id):
     elif suspension and suspension.get('error'):
         message += f" The suspension could not be applied: {suspension['error']}"
     return jsonify({'success': True, 'message': message, 'auction_id': new.get('auction_id'), 'suspension': suspension}), 201
+
+
+@auctions_bp.route('/auctions/<auction_id>/resend-winner-email', methods=['POST'])
+@_handled('resend the winner email')
+def resend_winner_email(auction_id):
+    admin = _require_admin()
+    db, service = _service()
+    result = service.resend_winner_email(auction_id)
+    row = result['auction']
+    _log_admin_action(db, admin, 'Resend Auction Winner Email', 'Auctions', row.get('title'), row.get('item_reference') or auction_id)
+    sent = result.get('sent')
+    if result.get('mode') == 'mock':
+        message = 'Mock mode: the email was logged on the server, not delivered. Set SENDGRID_API_KEY to send real emails.'
+    else:
+        message = 'The winner email was sent again.' if sent else 'The email could not be sent. Check the SendGrid settings.'
+    return jsonify({'success': bool(sent), 'message': message, 'mode': result.get('mode')}), 200 if sent else 502
 
 
 @auctions_bp.route('/auctions/<auction_id>/fulfillment', methods=['POST'])

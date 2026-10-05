@@ -372,7 +372,7 @@ class AuctionLifecycleTests(unittest.TestCase):
         self.assertEqual(db.create_user_notification.call_args.kwargs['notification_type'], 'auction_cancelled')
 
     def test_reauction_forfeits_and_lists_the_item_again(self):
-        service, db = self.service(rows={'auctions': [auction_row()], 'found_items': [{'status': 'unclaimed'}], 'claims': []})
+        service, db = self.service(rows={'auctions': [auction_row(status='ended', fulfillment_status='awaiting_pickup')], 'found_items': [{'status': 'unclaimed'}], 'claims': []})
         result = service.reauction('a1', {'starting_price': '300', 'duration_minutes': 1440, 'reason': 'Winner never replied'}, ACCOUNT)
         writes = [w for w in db.client.writes if w[0] == 'auctions']
         forfeit = writes[0][2]
@@ -388,21 +388,22 @@ class AuctionLifecycleTests(unittest.TestCase):
         service.reauction('a1', {}, ACCOUNT)
         self.assertIn(('found_items', 'update', {'status': 'unclaimed', 'custody_status': 'turned_over', 'updated_at': unittest.mock.ANY}), db.client.writes)
 
-    def test_reauction_only_from_awaiting_or_pickup_states(self):
-        for row in (auction_row(status='active'), auction_row(status='ended', fulfillment_status='collected'), auction_row(status='cancelled')):
+    def test_reauction_only_after_a_winner_was_confirmed(self):
+        # Awaiting admin is refused: the admin must confirm the winner first, then re-auction if they flake.
+        for row in (auction_row(status='awaiting_admin'), auction_row(status='active'), auction_row(status='ended', fulfillment_status='collected'), auction_row(status='cancelled')):
             service, _ = self.service(rows={'auctions': [row]})
             with self.assertRaises(AuctionError) as caught:
                 service.reauction('a1', {}, ACCOUNT)
             self.assertEqual(caught.exception.status, 409)
 
     def test_reauction_refuses_when_an_owner_claim_is_open(self):
-        service, db = self.service(rows={'auctions': [auction_row()], 'found_items': [{'status': 'unclaimed'}], 'claims': [{'claim_id': 'c1'}]})
+        service, db = self.service(rows={'auctions': [auction_row(status='ended', fulfillment_status='awaiting_pickup')], 'found_items': [{'status': 'unclaimed'}], 'claims': [{'claim_id': 'c1'}]})
         with self.assertRaises(AuctionError):
             service.reauction('a1', {}, ACCOUNT)
         self.assertEqual([w for w in db.client.writes if w[0] == 'auctions'], [])
 
     def test_reauction_validates_terms_before_changing_anything(self):
-        service, db = self.service(rows={'auctions': [auction_row()], 'found_items': [{'status': 'unclaimed'}], 'claims': []})
+        service, db = self.service(rows={'auctions': [auction_row(status='ended', fulfillment_status='awaiting_pickup')], 'found_items': [{'status': 'unclaimed'}], 'claims': []})
         for bad in ({'starting_price': '-1'}, {'duration_minutes': 2}, {'bid_increment': 'x'}):
             with self.assertRaises(AuctionError):
                 service.reauction('a1', bad, ACCOUNT)

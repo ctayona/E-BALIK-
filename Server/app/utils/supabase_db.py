@@ -1776,11 +1776,31 @@ class SupabaseDB:
                 notification_type='match_confirmation'
             )
 
+            # Email the affected reporter too, so they hear about it without opening the app. Never undoes the confirmation.
+            email_sent = False
+            try:
+                reporter = self.get_user_by_account_id(str(reporter_account_id)) or {}
+                if reporter.get('email'):
+                    from app.utils.email_service import send_reference_email_best_effort
+                    email_sent = bool(send_reference_email_best_effort(
+                        to_email=reporter.get('email'),
+                        recipient_name=str(reporter.get('fname') or '').strip(),
+                        subject='A possible match was found for your missing item',
+                        summary=(f'An administrator confirmed that a found item may be yours: "{found_item_name}". '
+                                 'Open E-Balik, review the details and submit a claim. Bring your original ID to the Lost and Found Office for in-person verification.'),
+                        reference_label='Missing report reference',
+                        reference=str(missing_item.get('mpost_id') or missing_item_id),
+                        details={'Your item': missing_item_name, 'Found item reference': str(found_item.get('fpost_id') or found_item_id)},
+                    ))
+            except Exception as email_error:
+                logger.warning(f'AI match email was not sent: {email_error}')
+
             return {
                 'success': True,
                 'match_id': match_response.data[0].get('match_id') if match_response.data else None,
                 'notification_id': notification.get('notification_id'),
-                'message': 'Match confirmed and notification sent to user'
+                'email_sent': email_sent,
+                'message': 'Match confirmed. The user was notified in the app and by email.' if email_sent else 'Match confirmed and the user was notified in the app. The email could not be sent.'
             }
         except Exception as e:
             logger.exception(f"✗ Error confirming AI match and notifying: {e}")

@@ -362,6 +362,7 @@ CREATE POLICY "Service role can manage claims"
 
 -- ============================================================================
 -- Verification roles, timed suspension and system control
+-- manual_migrations/20261007_report_integrity_and_reactions.sql adds auction_reactions and the one-open-claim index (run that file on an existing database)
 -- Mirrors manual_migrations/20261006_system_control_verification.sql (run that file on an existing database).
 -- ============================================================================
 ALTER TABLE user_profiles

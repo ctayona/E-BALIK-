@@ -119,6 +119,19 @@ SELECT proname FROM pg_proc WHERE proname = 'auction_finalize';
 Note: once the gate is live, every existing account that is not verified can no
 longer report items, file claims or bid until an admin verifies it.
 
+### Duplicate-claim protection and auction hearts
+
+Run `manual_migrations/20261007_report_integrity_and_reactions.sql` after the one
+above. It creates `auction_reactions` (saved hearts) and a partial unique index
+that allows only one open claim per person per found item. It deletes nothing: if
+duplicate open claims already exist the index is skipped with a notice, and the
+file contains a read-only query to find them. Verify with:
+
+```sql
+SELECT to_regclass('public.auction_reactions');
+SELECT indexname FROM pg_indexes WHERE indexname = 'uq_claims_one_open_per_claimant_item';
+```
+
 ### Method 2: Using Python Script
 ```bash
 cd backend

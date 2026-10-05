@@ -6,11 +6,12 @@ import { formatRemaining, msLeft, peso, type Auction } from "@/app/utils/auction
 import { CX } from "@/app/utils/clay";
 
 /** One auction as a feed post: header, swipeable photos, quick actions, price bar. */
-export default function AuctionPost({ auction, now, offset, watching, onToggleWatch, onOpen }: {
+export default function AuctionPost({ auction, now, offset, watching, hearts, onToggleWatch, onOpen }: {
   auction: Auction;
   now: number;
   offset: number;
   watching: boolean;
+  hearts: number;
   onToggleWatch: (id: string) => void;
   onOpen: (auction: Auction, focus?: "comments") => void;
 }) {
@@ -35,6 +36,7 @@ export default function AuctionPost({ auction, now, offset, watching, onToggleWa
         <button type="button" onClick={() => onToggleWatch(auction.id)} aria-pressed={watching} aria-label={watching ? `Stop watching ${auction.title}` : `Watch ${auction.title}`} className="flex size-11 items-center justify-center rounded-full text-navy-800 transition-colors hover:bg-navy-50">
           <Heart size={23} aria-hidden="true" fill={watching ? "#e11d48" : "none"} color={watching ? "#e11d48" : "currentColor"} />
         </button>
+        {hearts > 0 && <span className="-ml-1 mr-1 text-[13px] font-semibold tabular-nums text-ink-soft" aria-label={`${hearts} ${hearts === 1 ? "heart" : "hearts"}`}>{hearts}</span>}
         <button type="button" onClick={() => onOpen(auction, "comments")} aria-label={`Comments on ${auction.title}`} className="flex size-11 items-center justify-center rounded-full text-navy-800 transition-colors hover:bg-navy-50">
           <MessageCircle size={22} aria-hidden="true" />
         </button>

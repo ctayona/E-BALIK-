@@ -5,6 +5,8 @@ import uuid
 
 from app.utils import JWTService, get_db
 from app.utils.email_service import send_reference_email_best_effort
+from app.utils.report_guard import ReportRuleError, begin_submission, end_submission
+from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, consent_metadata, dpa_consent_given
 
 claims_bp = Blueprint('claims', __name__)
 ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
@@ -43,6 +45,7 @@ def _has_valid_signature(content: bytes, mime_type: str) -> bool:
 
 @claims_bp.route('', methods=['GET', 'POST'])
 def claims():
+    slot = None
     try:
         account_id = _account_id()
         db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
@@ -56,6 +59,10 @@ def claims():
         identity_document_type = str(request.form.get('identity_document_type') or '').strip().lower()
         if not fpost_id or not claim_reason:
             return jsonify({'error': 'Found item reference and claim reason are required'}), 400
+        if not dpa_consent_given(request.form):
+            return jsonify({'error': DPA_REQUIRED_MESSAGE, 'code': 'dpa_required'}), 400
+        # One submission per account and item at a time: a double-click must never create two claims.
+        slot = begin_submission(f'claim:{account_id}:{fpost_id.lower()}')
         if not proof or not proof.filename:
             return jsonify({'error': 'Ownership proof photo is required'}), 400
         if proof.mimetype not in ALLOWED_IMAGE_TYPES:
@@ -124,7 +131,8 @@ def claims():
             module='Claims & Verification',
             target_name=f"{found_item.get('fpost_id', '')} — {found_item.get('item_name', 'Item')}",
             target_id=found_item.get('fpost_id', ''),
-            result='success'
+            result='success',
+            metadata=consent_metadata(),
         )
         claim_reference = claim.get('claim_reference') or claim.get('claim_id')
         email_sent = send_reference_email_best_effort(
@@ -147,13 +155,19 @@ def claims():
         claim_response['proof_image_url'] = _signed_url(db, proof_bucket, proof_path)
         claim_response['identity_document_url'] = _signed_url(db, identity_bucket, identity_path)
         return jsonify({'message': 'Claim submitted and awaiting administrator review', 'claim': claim_response}), 201
+    except ReportRuleError as error:
+        return jsonify({'error': 'You already submitted a claim for this item a moment ago.' if error.code == 'duplicate_submission' else error.message, 'code': error.code}), error.status
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except Exception as error:
+        if 'duplicate key' in str(error).lower() or 'uq_claims_open' in str(error):
+            return jsonify({'error': 'You already have an open claim for this item', 'code': 'duplicate_claim'}), 409
         current_app.logger.exception('Claim request error')
         if current_app.config.get('DEBUG'):
             return jsonify({'error': 'Unable to process claim request', 'details': str(error)}), 500
         return jsonify({'error': 'Unable to process claim request'}), 500
+    finally:
+        end_submission(slot)
 
 
 @claims_bp.route('/<claim_id>', methods=['DELETE'])

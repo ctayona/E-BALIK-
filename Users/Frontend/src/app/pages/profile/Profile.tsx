@@ -7,16 +7,23 @@ import type { User } from "@/app/utils/useAuth";
 import { CX, SPRING } from "@/app/utils/clay";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import Modal from "@/app/shared/modal/Modal";
+import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
+import { useCurrentUser } from "@/app/utils/system";
+import { showSubmitError } from "@/app/utils/submitErrors";
 import VerificationStatusCard, { assignedRole } from "@/app/shared/verification/VerificationStatusCard";
 
 export default function Profile({
-  user,
+  user: userProp,
   onNavigate,
 }: {
   user: User | null;
   onNavigate: (page: Page) => void;
 }) {
-  const { updateProfile, uploadVerificationDocument, isLoading } = useAuth();
+  const { updateProfile, uploadVerificationDocument, refreshProfile, isLoading } = useAuth();
+  // Read the freshest copy of the user, so an admin's approval appears here without signing out and in again.
+  const stored = useCurrentUser() as User | null;
+  const user = stored ?? userProp;
+  const [dpaChecked, setDpaChecked] = useState(false);
   const [formData, setFormData] = useState({
     fname:     user?.fname     ?? "",
     mname:     user?.mname     ?? "",
@@ -31,6 +38,15 @@ export default function Profile({
   const [confirmValue,         setConfirmValue]         = useState("");
   const [errorMessage,         setErrorMessage]         = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Ask the server for the latest status every few seconds while the account is not verified yet.
+  const verified = String(user?.verification_status || "").toLowerCase() === "verified";
+  useEffect(() => {
+    void refreshProfile();
+    if (verified) return;
+    const timer = window.setInterval(() => { if (!document.hidden) void refreshProfile(); }, 6000);
+    return () => window.clearInterval(timer);
+  }, [verified, refreshProfile]);
 
   useEffect(() => {
     if (!user) return;
@@ -62,10 +78,11 @@ export default function Profile({
     const result = await uploadVerificationDocument({
       document: file,
       document_type: selectedDocumentType,
+      dpa_consent: dpaChecked,
     });
     if (!result.success) {
       setShowUploadModal(false);
-      showInfoModal({ variant: "error", title: "Document not uploaded", message: result.error || "Verification upload failed." });
+      showSubmitError(result as { error?: string; errorCode?: string }, "Document not uploaded", "Verification upload failed.");
       return;
     }
     showInfoModal({
@@ -134,7 +151,7 @@ export default function Profile({
           </motion.button>
         </motion.div>
 
-        <VerificationStatusCard user={user} busy={isLoading} onUpload={() => { setErrorMessage(""); setShowUploadModal(true); }} />
+        <VerificationStatusCard user={user} busy={isLoading} onUpload={() => { setErrorMessage(""); setDpaChecked(false); setShowUploadModal(true); }} />
 
         {/* Main clay card */}
         <motion.div
@@ -227,7 +244,7 @@ export default function Profile({
         footer={
           <>
             <button type="button" onClick={() => setShowUploadModal(false)} className={CX.btnGhost}>Cancel</button>
-            <button type="button" onClick={() => { setShowUploadModal(false); fileInputRef.current?.click(); }} className={CX.btnNavy}>Choose file</button>
+            <button type="button" disabled={!dpaChecked} onClick={() => { setShowUploadModal(false); fileInputRef.current?.click(); }} className={CX.btnNavy}>Choose file</button>
           </>
         }
       >
@@ -261,6 +278,7 @@ export default function Profile({
           })}
         </div>
         <p className={`${CX.helper} mt-3`}>JPG, PNG, WEBP or PDF up to 10 MB. Only administrators can see this document.</p>
+        <div className="mt-4"><DataPrivacyConsent checked={dpaChecked} onChange={setDpaChecked} purpose="verify your identity and assign your account role" /></div>
       </Modal>
 
       {/* Confirm save modal */}

@@ -6,6 +6,8 @@ from werkzeug.utils import secure_filename
 from app.utils import get_db
 from app.utils.email_service import send_reference_email_best_effort
 from app.utils.matching import build_found_match_summaries
+from app.utils.report_guard import ReportRuleError, begin_submission, check_new_report, end_submission
+from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, consent_metadata, dpa_consent_given
 from Users.Backend.shared.request_auth import _authenticated_account_id, _public_url
 
 found_item_bp = Blueprint('user_found_item', __name__)
@@ -14,6 +16,7 @@ found_item_bp = Blueprint('user_found_item', __name__)
 @found_item_bp.route('/found-items', methods=['POST'])
 def create_found_item():
     """Store a verified found-item turnover report for the authenticated user."""
+    slot = None
     try:
         account_id = _authenticated_account_id()
         data = request.form
@@ -28,6 +31,8 @@ def create_found_item():
 
         if not item_name or not location or not category or not found_date or not turnover_location or not guard_name_or_id:
             return jsonify({'error': 'Complete the item and security turnover details'}), 400
+        if not dpa_consent_given(data):
+            return jsonify({'error': DPA_REQUIRED_MESSAGE, 'code': 'dpa_required'}), 400
 
         try:
             datetime.strptime(found_date, '%Y-%m-%d')
@@ -42,6 +47,11 @@ def create_found_item():
         if not reporter:
             return jsonify({'error': 'Authenticated account profile was not found'}), 401
 
+        slot = begin_submission(f'found:{account_id}')
+        check_new_report(
+            {'item_name': item_name, 'description': description}, 'found',
+            db.get_missing_items_by_account(account_id), db.get_found_items_by_account(account_id),
+        )
         weekday_code = str(datetime.strptime(found_date, '%Y-%m-%d').weekday() + 1)
         fpost_id = db.next_fpost_id(found_date, weekday_code)
 
@@ -84,7 +94,8 @@ def create_found_item():
             module='Found Items',
             target_name=f"{fpost_id} — {item_name}",
             target_id=fpost_id,
-            result='success'
+            result='success',
+            metadata=consent_metadata(),
         )
         email_sent = send_reference_email_best_effort(
             to_email=reporter.get('email'),
@@ -104,11 +115,15 @@ def create_found_item():
         if not email_sent:
             current_app.logger.warning('Found item %s was saved, but confirmation email was not sent', fpost_id)
         return jsonify({'message': 'Found item report created', 'item': item, 'fpost_id': fpost_id}), 201
+    except ReportRuleError as error:
+        return jsonify({'error': error.message, 'code': error.code, **error.extra}), error.status
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except Exception as error:
         current_app.logger.error(f'Found item creation error: {error}')
         return jsonify({'error': f'Unable to save found item report: {error}'}), 500
+    finally:
+        end_submission(slot)
 
 
 @found_item_bp.route('/found-items', methods=['GET'])

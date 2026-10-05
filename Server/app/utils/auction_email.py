@@ -1,4 +1,4 @@
-"""Auction winner email. Runs in mock mode by default: the message is built and logged, not delivered."""
+"""Auction winner email. AUCTION_EMAIL_MODE: auto (default: send when SENDGRID_API_KEY is set, else log), sendgrid or mock."""
 import logging
 import os
 from typing import Any, Dict
@@ -39,7 +39,9 @@ def build_winner_email(recipient_name: str, item_title: str, reference: str, amo
 
 def send_auction_won_email(*, to_email: str, recipient_name: str, item_title: str, reference: str, amount: Any) -> Dict[str, Any]:
     """Return {'mode', 'sent', 'subject'}. Never raises: a failed notice must not undo the saved auction result."""
-    mode = (os.getenv('AUCTION_EMAIL_MODE') or 'mock').strip().lower()
+    mode = (os.getenv('AUCTION_EMAIL_MODE') or 'auto').strip().lower()
+    if mode == 'auto':  # real emails whenever SendGrid is configured, otherwise a logged mock for local development
+        mode = 'sendgrid' if os.getenv('SENDGRID_API_KEY') else 'mock'
     message = build_winner_email(recipient_name, item_title, reference, amount)
     if mode == 'sendgrid':
         try:

@@ -949,4 +949,10 @@ export const PHRASES_TL: Record<string, string> = {
   "Verification": "Beripikasyon",
   "Auctions awaiting your decision": "Mga auction na naghihintay ng desisyon mo",
   "Bidding closed. Confirm the winner or re-auction": "Sarado na ang bidding. Kumpirmahin ang nanalo o i-re-auction",
+  // Auction lifecycle refinements
+  "Confirm the winner to notify them for pickup. If they do not collect, you can re-auction the item afterwards.": "Kumpirmahin ang nanalo para maabisuhan sila sa pickup. Kung hindi nila kukunin, maaari mong i-re-auction ang item pagkatapos.",
+  "The winner email could not be sent. Check the email settings, then resend it.": "Hindi naipadala ang email sa nanalo. Suriin ang mga setting ng email, saka ipadala muli.",
+  "Resend winner email": "Ipadala muli ang email sa nanalo",
+  "No one has hearted this lot yet.": "Wala pang nag-heart sa lot na ito.",
+  "Hearts": "Mga heart",
 };

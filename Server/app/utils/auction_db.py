@@ -4,13 +4,16 @@ Every database access goes through `AuctionService(db)`. Bid validation, price u
 winner selection run inside Postgres (see Server/manual_migrations/20261005_auction_hall.sql) so concurrent bids
 cannot corrupt a price or award an auction twice.
 """
+import hashlib
 import logging
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Dict, Iterable, List, Optional
 
 from app.utils.auction_email import format_peso, send_auction_won_email
+from app.utils.profanity import find_profanity
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +124,19 @@ def mask_name(profile: Optional[Dict[str, Any]]) -> str:
     return f"{first} {last[0].upper()}." if last else first
 
 
+_ALIAS_CHARS = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ'  # no I or O, so aliases are easy to read
+
+
+def bidder_alias(auction_id: Any, account_id: Any) -> str:
+    """Anonymous public name such as Bidder_8X9. Stable inside one auction (the same person always gets the same
+    alias there), different across auctions, and not derivable without the server secret."""
+    if not account_id:
+        return 'Former bidder'
+    secret = os.getenv('JWT_SECRET_KEY', '')
+    number = int.from_bytes(hashlib.sha256(f'{auction_id}:{account_id}:{secret}'.encode()).digest()[:4], 'big')
+    return 'Bidder_' + ''.join(_ALIAS_CHARS[(number // len(_ALIAS_CHARS) ** i) % len(_ALIAS_CHARS)] for i in range(3))
+
+
 def _chunks(values: List[str], size: int = 100) -> Iterable[List[str]]:
     for index in range(0, len(values), size):
         yield values[index:index + size]
@@ -167,7 +183,8 @@ class AuctionService:
             return 'live'
         return status or 'ended'
 
-    def card(self, row: Dict[str, Any], profiles: Dict[str, Dict[str, Any]], now: Optional[datetime] = None) -> Dict[str, Any]:
+    def card(self, row: Dict[str, Any], profiles: Dict[str, Dict[str, Any]], now: Optional[datetime] = None,
+             anonymous: bool = True, reactions: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
         now = now or _now()
         starting, increment, current = _num(row.get('starting_price')), _num(row.get('bid_increment')), _num(row.get('current_price'))
         bid_count = int(row.get('bid_count') or 0)
@@ -198,8 +215,9 @@ class AuctionService:
             'max_extensions': int(row.get('max_extensions') or 0),
             'status': status,
             'is_open': status == 'live',
-            'leader': mask_name(profiles.get(leader_id)) if leader_id else None,
-            'winner': mask_name(profiles.get(winner_id)) if winner_id and status == 'ended' else None,
+            'leader': (bidder_alias(row['auction_id'], leader_id) if anonymous else mask_name(profiles.get(leader_id))) if leader_id else None,
+            'winner': (bidder_alias(row['auction_id'], winner_id) if anonymous else mask_name(profiles.get(winner_id))) if winner_id and status == 'ended' else None,
+            'reaction_count': int((reactions or {}).get(str(row['auction_id']), 0)),
             'winning_amount': _num(row.get('winning_amount')) if winner_id and status == 'ended' else None,
             'sold': bool(winner_id) and status == 'ended',
             'awaiting_admin': status == 'awaiting',
@@ -270,14 +288,44 @@ class AuctionService:
             )
         except Exception as error:
             logger.exception('Winner in-app notification failed: %s', error)
+        self._email_winner(auction, winner)
+
+    def _email_winner(self, auction: Dict[str, Any], winner: Dict[str, Any]) -> Dict[str, Any]:
+        """Send the winner email and record how it went (`mode`, or `mode_failed`) so an admin can see and resend it."""
         result = send_auction_won_email(
             to_email=winner.get('email') or '',
             recipient_name=str(winner.get('fname') or '').strip(),
-            item_title=title,
+            item_title=auction.get('title') or 'the item',
             reference=auction.get('item_reference') or '',
-            amount=amount,
+            amount=auction.get('winning_amount'),
         )
-        self.client.table('auctions').update({'winner_email_mode': result.get('mode')}).eq('auction_id', auction['auction_id']).execute()
+        recorded = result.get('mode') if result.get('sent') else f"{result.get('mode')}_failed"
+        self.client.table('auctions').update({'winner_email_mode': recorded}).eq('auction_id', auction['auction_id']).execute()
+        return {**result, 'recorded': recorded}
+
+    def winner_email_state(self, auction_id: str) -> str:
+        """How the winner email went: 'sendgrid', 'mock', 'sendgrid_failed' or '' when none was attempted."""
+        try:
+            return str(self._live_row(auction_id).get('winner_email_mode') or '')
+        except Exception:
+            return ''
+
+    def resend_winner_email(self, auction_id: str) -> Dict[str, Any]:
+        """Admin action: send the winner email again (for example after a SendGrid failure)."""
+        try:
+            row = self._live_row(auction_id)
+        except AuctionError:
+            raise
+        except Exception as error:
+            self._guard(error)
+        if not (row.get('status') == 'ended' and row.get('winner_account_id') and row.get('fulfillment_status') in ('awaiting_pickup', 'collected')):
+            raise AuctionError('Only a confirmed winner can be emailed.', 409)
+        winner = (self._profiles([row.get('winner_account_id')]) or {}).get(str(row['winner_account_id']))
+        if not winner or not winner.get('email'):
+            raise AuctionError('The winner has no email address on file.', 409)
+        result = self._email_winner(row, winner)
+        self.client.table('auctions').update({'winner_notified_at': _iso(_now())}).eq('auction_id', auction_id).execute()
+        return {'auction': row, **result}
 
     # ------------------------------------------------------------------ public reads
     def public_feed(self) -> Dict[str, Any]:
@@ -291,7 +339,8 @@ class AuctionService:
             self._guard(error)
         rows = live + past
         profiles = self._profiles([r.get(k) for r in rows for k in ('highest_bidder_id', 'winner_account_id')])
-        cards = [self.card(r, profiles, now) for r in rows]
+        reactions = self.reaction_counts([str(r['auction_id']) for r in rows])
+        cards = [self.card(r, profiles, now, reactions=reactions) for r in rows]
         return {
             'live': [c for c in cards if c['status'] in ('live', 'scheduled')],
             'past': [c for c in cards if c['status'] in ('ended', 'awaiting')],
@@ -306,7 +355,7 @@ class AuctionService:
             if not rows:
                 raise AuctionError('Auction not found.', 404)
             row = rows[0]
-            bids = self.client.table('auction_bids').select('bid_id,bidder_account_id,amount,created_at').eq('auction_id', auction_id).order('amount', desc=True).order('created_at').limit(30).execute().data or []
+            bids = self.client.table('auction_bids').select('bid_id,bidder_account_id,amount,created_at').eq('auction_id', auction_id).order('amount', desc=True).order('created_at').limit(100).execute().data or []
             comments = self.client.table('auction_comments').select('comment_id,account_id,body,created_at').eq('auction_id', auction_id).eq('is_hidden', False).order('created_at', desc=True).limit(100).execute().data or []
         except AuctionError:
             raise
@@ -314,33 +363,99 @@ class AuctionService:
             self._guard(error)
         ids = [row.get('highest_bidder_id'), row.get('winner_account_id'), *(b.get('bidder_account_id') for b in bids), *(c.get('account_id') for c in comments)]
         profiles = self._profiles(ids)
-        card = self.card(row, profiles, now)
+        reactions = self.reaction_counts([str(auction_id)])
+        card = self.card(row, profiles, now, reactions=reactions)
         viewer = str(viewer_id) if viewer_id else None
         my_bids = [_num(b['amount']) for b in bids if viewer and str(b.get('bidder_account_id')) == viewer]
         return {
             'auction': card,
+            'log': self._activity_log(row, card, bids),
             'bids': [{
                 'id': str(b['bid_id']),
-                'bidder': mask_name(profiles.get(str(b['bidder_account_id']))) if b.get('bidder_account_id') else 'Former bidder',
+                'bidder': bidder_alias(auction_id, b.get('bidder_account_id')),
                 'amount': _num(b['amount']),
                 'created_at': b['created_at'],
                 'is_mine': bool(viewer) and str(b.get('bidder_account_id')) == viewer,
             } for b in bids],
             'comments': [{
                 'id': str(c['comment_id']),
-                'author': mask_name(profiles.get(str(c['account_id']))),
+                'author': bidder_alias(auction_id, c.get('account_id')),
                 'body': c['body'],
                 'created_at': c['created_at'],
                 'is_mine': bool(viewer) and str(c['account_id']) == viewer,
             } for c in comments],
             'viewer': {
                 'signed_in': bool(viewer),
+                'reacted': bool(viewer) and str(auction_id) in self.my_reaction_ids(viewer),
                 'is_leading': bool(viewer) and str(row.get('highest_bidder_id')) == viewer,
                 'is_winner': bool(viewer) and str(row.get('winner_account_id')) == viewer and card['status'] == 'ended',
                 'my_best_bid': max(my_bids) if my_bids else None,
             },
             'server_time': _iso(now),
         }
+
+    def _activity_log(self, row: Dict[str, Any], card: Dict[str, Any], bids: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Public timeline of the auction: opening, every bid (anonymous), time extensions and the result."""
+        auction_id = row['auction_id']
+        events: List[Dict[str, Any]] = [{'type': 'opened', 'at': row.get('starts_at'), 'text': f"Auction opened at {format_peso(row.get('starting_price'))}"}]
+        for bid in sorted(bids, key=lambda b: (b.get('created_at') or '', _num(b.get('amount')))):
+            events.append({'type': 'bid', 'at': bid.get('created_at'), 'text': f"{bidder_alias(auction_id, bid.get('bidder_account_id'))} bid {format_peso(bid.get('amount'))}"})
+        if int(row.get('extension_count') or 0) > 0:
+            count = int(row['extension_count'])
+            events.append({'type': 'extended', 'at': None, 'text': f"Closing time extended {count} time{'s' if count != 1 else ''} by late bids"})
+        status = card['status']
+        closed_at = row.get('ended_at') or row.get('ends_at')
+        if status in ('awaiting', 'ended', 'cancelled'):
+            count = int(row.get('bid_count') or 0)
+            events.append({'type': 'closed', 'at': closed_at, 'text': f"Bidding closed with {count} bid{'s' if count != 1 else ''}" if status != 'cancelled' else 'Auction cancelled'})
+        if row.get('status') == 'awaiting_admin':
+            events.append({'type': 'pending', 'at': None, 'text': 'Waiting for an administrator to confirm the result'})
+        if row.get('finalized_at') and row.get('winner_account_id'):
+            events.append({'type': 'result', 'at': row.get('finalized_at'), 'text': f"Winner confirmed: {bidder_alias(auction_id, row['winner_account_id'])} at {format_peso(row.get('winning_amount'))}"})
+        if row.get('fulfillment_status') == 'forfeited':
+            events.append({'type': 'forfeited', 'at': row.get('fulfillment_updated_at'), 'text': 'The winner did not complete the purchase. The item was offered again'})
+        return events
+
+    # ------------------------------------------------------------------ reactions (hearts)
+    def reaction_counts(self, auction_ids: List[str]) -> Dict[str, int]:
+        """Number of reactors per auction. Reactions are optional, so a missing table just means zero."""
+        counts: Dict[str, int] = {}
+        if not auction_ids:
+            return counts
+        try:
+            for chunk in _chunks(list(auction_ids)):
+                for row in self.client.table('auction_reactions').select('auction_id').in_('auction_id', chunk).limit(5000).execute().data or []:
+                    counts[str(row['auction_id'])] = counts.get(str(row['auction_id']), 0) + 1
+        except Exception as error:
+            if not _is_missing_schema(error):
+                logger.warning('Reaction counts unavailable: %s', error)
+        return counts
+
+    def my_reaction_ids(self, account_id: str) -> List[str]:
+        try:
+            rows = self.client.table('auction_reactions').select('auction_id').eq('account_id', account_id).limit(500).execute().data or []
+        except Exception as error:
+            if not _is_missing_schema(error):
+                logger.warning('Reactions unavailable: %s', error)
+            return []
+        return [str(r['auction_id']) for r in rows]
+
+    def set_reaction(self, auction_id: str, account_id: str, on: bool) -> Dict[str, Any]:
+        """Save or remove a heart. Stored per account so the admin can see who is interested."""
+        try:
+            if not (self.client.table('auctions').select('auction_id').eq('auction_id', auction_id).limit(1).execute().data or []):
+                raise AuctionError('Auction not found.', 404)
+            if on:
+                self.client.table('auction_reactions').upsert({'auction_id': auction_id, 'account_id': account_id}, on_conflict='auction_id,account_id').execute()
+            else:
+                self.client.table('auction_reactions').delete().eq('auction_id', auction_id).eq('account_id', account_id).execute()
+        except AuctionError:
+            raise
+        except Exception as error:
+            if _is_missing_schema(error):
+                raise AuctionsUnavailable('Saving hearts needs the 20261007_auction_reactions.sql migration in Supabase.') from error
+            raise
+        return {'reacted': on, 'reaction_count': self.reaction_counts([str(auction_id)]).get(str(auction_id), 0)}
 
     def my_bids(self, account_id: str) -> Dict[str, Any]:
         now = _now()
@@ -425,6 +540,8 @@ class AuctionService:
             raise AuctionError('Write a comment first.')
         if len(text) > MAX_COMMENT_LENGTH:
             raise AuctionError(f'Comments can be up to {MAX_COMMENT_LENGTH} characters.')
+        if find_profanity(text):
+            raise AuctionError('Your comment contains language that is not allowed on E-Balik, so it was not posted. Please rewrite it respectfully.', 422, code='profanity')
         try:
             rows = self.client.table('auctions').select('auction_id,status').eq('auction_id', auction_id).limit(1).execute().data or []
             if not rows:
@@ -439,9 +556,8 @@ class AuctionService:
             raise
         except Exception as error:
             self._guard(error)
-        profile = self._profiles([account_id]).get(str(account_id))
         row = created[0]
-        return {'id': str(row['comment_id']), 'author': mask_name(profile), 'body': row['body'], 'created_at': row['created_at'], 'is_mine': True}
+        return {'id': str(row['comment_id']), 'author': bidder_alias(auction_id, account_id), 'body': row['body'], 'created_at': row['created_at'], 'is_mine': True}
 
     def delete_own_comment(self, auction_id: str, comment_id: str, account_id: str) -> bool:
         try:
@@ -538,8 +654,8 @@ class AuctionService:
         return created[0]
 
     # ------------------------------------------------------------------ admin: reads
-    def _admin_card(self, row: Dict[str, Any], profiles: Dict[str, Dict[str, Any]], now: datetime) -> Dict[str, Any]:
-        card = self.card(row, profiles, now)
+    def _admin_card(self, row: Dict[str, Any], profiles: Dict[str, Dict[str, Any]], now: datetime, reactions: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
+        card = self.card(row, profiles, now, anonymous=False, reactions=reactions)
         winner = profiles.get(str(row['winner_account_id'])) if row.get('winner_account_id') else None
         leader = profiles.get(str(row['highest_bidder_id'])) if row.get('highest_bidder_id') else None
 
@@ -553,6 +669,7 @@ class AuctionService:
                 'winner_notified_at': row.get('winner_notified_at'), 'winner_email_mode': row.get('winner_email_mode'),
                 'cancelled_at': row.get('cancelled_at'), 'ended_at': row.get('ended_at'), 'created_at': row.get('created_at'),
                 'finalized_at': row.get('finalized_at'), 'reauctioned_from': str(row['reauctioned_from']) if row.get('reauctioned_from') else None, 'reauction_reason': row.get('reauction_reason'),
+                'leader': (person(leader) or {}).get('name') or card['leader'],
                 'leader_detail': person(leader), 'winner_detail': person(winner) if card['status'] == 'ended' else None,
                 'winner': (person(winner) or {}).get('name') if card['status'] == 'ended' and winner else None}
 
@@ -564,7 +681,8 @@ class AuctionService:
         except Exception as error:
             self._guard(error)
         profiles = self._profiles([r.get(k) for r in rows for k in ('highest_bidder_id', 'winner_account_id')])
-        cards = [self._admin_card(r, profiles, now) for r in rows]
+        reactions = self.reaction_counts([str(r['auction_id']) for r in rows])
+        cards = [self._admin_card(r, profiles, now, reactions) for r in rows]
         sold = [c for c in cards if c['sold'] and c['fulfillment_status'] != 'forfeited']
         stats = {
             'live': sum(1 for c in cards if c['status'] == 'live'),
@@ -596,8 +714,19 @@ class AuctionService:
         def who(account_id):
             profile = profiles.get(str(account_id)) if account_id else None
             return {'name': f"{profile.get('fname') or ''} {profile.get('lname') or ''}".strip() if profile else 'Former user', 'campus_id': (profile or {}).get('campus_id') or ''}
+        reactors = []
+        try:
+            reacted = self.client.table('auction_reactions').select('account_id,created_at').eq('auction_id', auction_id).order('created_at', desc=True).limit(200).execute().data or []
+            reactor_profiles = self._profiles([r['account_id'] for r in reacted])
+            for r in reacted:
+                profile = reactor_profiles.get(str(r['account_id']))
+                reactors.append({'name': f"{(profile or {}).get('fname') or ''} {(profile or {}).get('lname') or ''}".strip() or 'Former user', 'campus_id': (profile or {}).get('campus_id') or '', 'created_at': r['created_at']})
+        except Exception as error:
+            if not _is_missing_schema(error):
+                logger.warning('Reactors unavailable: %s', error)
         return {
-            'auction': self._admin_card(row, profiles, now),
+            'auction': self._admin_card(row, profiles, now, {str(auction_id): len(reactors)}),
+            'reactors': reactors,
             'bids': [{'id': str(b['bid_id']), **who(b.get('bidder_account_id')), 'amount': _num(b['amount']), 'created_at': b['created_at']} for b in bids],
             'comments': [{'id': str(c['comment_id']), **who(c['account_id']), 'body': c['body'], 'created_at': c['created_at'], 'hidden': bool(c.get('is_hidden'))} for c in comments],
             'server_time': _iso(now),
@@ -782,14 +911,14 @@ class AuctionService:
         return {'outcome': result.get('outcome'), 'auction': auction}
 
     def reauction(self, auction_id: str, payload: Dict[str, Any], admin_id: str) -> Dict[str, Any]:
-        """The winner did not complete the sale: forfeit it, put the item back in custody and list it again."""
+        """The confirmed winner did not complete the sale: forfeit it, put the item back in custody and list it again."""
         now = _now()
         reason = str(payload.get('reason') or '').strip()[:300] or 'The winning bidder did not complete the purchase.'
         try:
             row = self._live_row(auction_id)
             status, fulfillment = row.get('status'), row.get('fulfillment_status')
-            if not (status == 'awaiting_admin' or (status == 'ended' and fulfillment == 'awaiting_pickup')):
-                raise AuctionError('Only an auction that is waiting for an admin or waiting for pickup can be re-auctioned.', 409)
+            if not (status == 'ended' and fulfillment == 'awaiting_pickup'):
+                raise AuctionError('Confirm the winner first. An item can be re-auctioned only after a confirmed winner has not collected it.', 409)
             original_minutes = 4320
             starts_old, ends_old = _parse(row.get('starts_at')), _parse(row.get('original_ends_at'))
             if starts_old and ends_old:
