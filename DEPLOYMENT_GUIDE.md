@@ -135,6 +135,8 @@ Then add the variables from the table above.
 | `VITE_ENABLE_PASSWORD_RESET` | `true` |
 | `VITE_GOOGLE_CLIENT_ID` | your Google client ID (optional) |
 
+   If `VITE_API_URL` is missing or wrong, the build stops with a clear message instead of shipping a site that calls `localhost` (`scripts/check-deploy-env.mjs`).
+
    Do **not** set `VITE_ADMIN_URL`. The admin console is served at `/admin/` automatically. The same list is in `Environment_Configs/frontend/production.env.example`.
 
    These values are public in the built site. Never put the Supabase service key or any secret here.
