@@ -3,9 +3,13 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "build": "vite build --config Users/Frontend/vite.config.ts",
     "build:admin": "cd Admin/Frontend && npm run build",
+    "build:vercel": "vite build --config Users/Frontend/vite.config.ts && npm run build --prefix Admin/Frontend && node scripts/merge-admin-build.mjs",
     "dev:frontend": "vite --config Users/Frontend/vite.config.ts --port 5173",
     "dev:backend": "cd Server && venv\\Scripts\\python run.py",
     "dev:admin": "cd Admin/Frontend && npm run dev -- --port 8443",

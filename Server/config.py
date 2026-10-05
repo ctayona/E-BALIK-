@@ -65,9 +65,8 @@ class ProductionConfig(Config):
     """Production configuration"""
     DEBUG = False
     TESTING = False
-    CORS_ORIGINS = [
-        "https://yourdomain.com",  # Update with your production domain
-    ]
+    # Comma-separated list of allowed site origins, e.g. https://ebalik.vercel.app (set CORS_ORIGINS on the host)
+    CORS_ORIGINS = [origin.strip().rstrip('/') for origin in os.getenv('CORS_ORIGINS', '').split(',') if origin.strip()]
 
 class TestingConfig(Config):
     """Testing configuration"""

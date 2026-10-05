@@ -1,0 +1,43 @@
+# Render Blueprint: creates the Flask API as a free web service.
+# Render dashboard > New > Blueprint > pick this repo. Secrets marked sync:false are asked for during setup.
+services:
+  - type: web
+    name: ebalik-api
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: pip install --upgrade pip && pip install -r Server/requirements.txt
+    # One worker keeps memory inside the free 512 MB; threads handle concurrent requests.
+    startCommand: gunicorn --chdir Server run:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120
+    healthCheckPath: /api/system/status
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.4
+      - key: FLASK_ENV
+        value: production
+      - key: AUCTION_EMAIL_MODE
+        value: mock
+      - key: OTP_EXPIRATION_MINUTES
+        value: "10"
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: APP_ENCRYPTION_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: SENDGRID_FROM_EMAIL
+        sync: false

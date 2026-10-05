@@ -355,6 +355,10 @@ GET  /api/system/status                    public: {maintenance, message, since}
 
 Cleanup only ever touches `user_notifications` (read ones by default), `otp_tokens` and `admin_mfa_challenges` older than the chosen age (minimum 30 days). The health scan checks environment variables (names only, never values), database latency, schema, unverified users with high activity, admin MFA coverage, the verification backlog, suspensions, table bloat, auctions waiting too long and the system controls. Frontend: `Admin/Frontend/src/pages/system-control/SystemControl.tsx` with `utils/systemApi.ts`; the sidebar item and route are super-admin only.
 
+## Deployment
+
+Free-tier setup is in `DEPLOYMENT_GUIDE.md`: Vercel serves the user app at `/` and the admin console at `/admin/` from one project (`vercel.json`, `npm run build:vercel`, `scripts/merge-admin-build.mjs`), Render runs the Flask API (`render.yaml`, `Procfile`, gunicorn `Server/run.py:app`) and Supabase stays the database. Production CORS comes from the `CORS_ORIGINS` environment variable. Environment checklists are `Environment_Configs/*/production.env.example`.
+
 ## Image Upload Rules
 
 The missing image upload bug was fixed in `Users/Frontend/src/app/utils/api.ts`.
