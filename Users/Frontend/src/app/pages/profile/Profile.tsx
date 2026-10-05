@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, IdCard, Save, Upload, UserRound, CheckCircle2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, IdCard, Save, UserRound, CheckCircle2 } from "lucide-react";
 import { motion } from "motion/react";
 import type { Page } from "@/app/types";
 import { useAuth } from "@/app/utils/useAuth";
@@ -7,6 +7,7 @@ import type { User } from "@/app/utils/useAuth";
 import { CX, SPRING } from "@/app/utils/clay";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import Modal from "@/app/shared/modal/Modal";
+import VerificationStatusCard, { assignedRole } from "@/app/shared/verification/VerificationStatusCard";
 
 export default function Profile({
   user,
@@ -24,7 +25,6 @@ export default function Profile({
     email:     user?.email     ?? "",
     user_role: user?.user_role ?? "Others",
   });
-  const [documentName,         setDocumentName]         = useState(user?.verification_document_name ?? "");
   const [showConfirmModal,     setShowConfirmModal]     = useState(false);
   const [showUploadModal,      setShowUploadModal]      = useState(false);
   const [selectedDocumentType, setSelectedDocumentType] = useState<"cor" | "student_id" | "government_id">("cor");
@@ -42,7 +42,6 @@ export default function Profile({
       email:     user.email     ?? "",
       user_role: user.user_role ?? "Others",
     });
-    setDocumentName(user.verification_document_name ?? "");
   }, [user]);
 
   function handleChange(field: keyof typeof formData, value: string) {
@@ -75,7 +74,6 @@ export default function Profile({
       message: "Your account verification request is pending administrator review. You'll be notified once it's approved.",
       details: [`File: ${result.document_name || file.name}`],
     });
-    setDocumentName(result.document_name || file.name);
     setErrorMessage("");
     setShowUploadModal(false);
   }
@@ -136,6 +134,8 @@ export default function Profile({
           </motion.button>
         </motion.div>
 
+        <VerificationStatusCard user={user} busy={isLoading} onUpload={() => { setErrorMessage(""); setShowUploadModal(true); }} />
+
         {/* Main clay card */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -159,24 +159,6 @@ export default function Profile({
 
           {/* Form body */}
           <form onSubmit={handleSubmit} className="flex flex-col gap-6 p-6 md:p-8">
-            {/* Verification reminder */}
-            <div className={`${user?.verification_status === "verified" ? CX.alertSuccess : CX.alertInfo} flex items-start gap-3`}>
-              <ShieldCheck size={18} className="shrink-0 mt-0.5" />
-              <div>
-                <p className="text-[13px] font-semibold mb-1">Account verification</p>
-                <p className="text-[14px] text-navy-800">
-                  {user?.verification_status === "verified"
-                    ? "Your identity document has been reviewed and your account is verified."
-                    : user?.verification_status === "pending"
-                      ? "Your verification request is awaiting administrator review."
-                      : user?.verification_status === "rejected"
-                        ? "Your document needs attention. Review the administrator note and upload a corrected document."
-                        : "Upload a school or government document to verify your identity and account category."}
-                </p>
-                {user?.verification_review_note && <p className="mt-2 text-[13px] font-semibold text-rose-700">Review note: {user.verification_review_note}</p>}
-              </div>
-            </div>
-
             {errorMessage && <div className={CX.alertError}>{errorMessage}</div>}
 
             {/* Name fields */}
@@ -208,41 +190,7 @@ export default function Profile({
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-[12px] font-bold text-navy-800">Role</label>
-                <input value={formData.user_role || "Others"} readOnly className={clayFieldReadonly} />
-              </div>
-            </div>
-
-            {/* Role info */}
-            <div className={`${CX.alertInfo}`}>
-              <p className="text-[12px] font-bold text-blue-800 mb-1">Incorrect role?</p>
-              <p>If your account type was detected incorrectly, complete your verification steps below to confirm your role before continuing.</p>
-            </div>
-
-            {/* Document upload */}
-            <div className="rounded-2xl border border-dashed border-gold-400/60 bg-[#fffbeb] p-5">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-[14px] font-bold text-navy-800">Verify through Documents</p>
-                  <p className="text-[13px] text-ink-muted mt-1 max-w-[440px] leading-relaxed">
-                    Upload a valid government or school-issued document to confirm your identity and account role.
-                  </p>
-                  {documentName && (
-                    <p className="mt-2 text-[12px] font-semibold text-navy-800">
-                      ✓ {user?.verification_status === "verified" ? "Verified document" : "Submitted document"}: {documentName}
-                    </p>
-                  )}
-                </div>
-                <motion.button
-                  type="button"
-                  onClick={() => { setErrorMessage(""); setShowUploadModal(true); }}
-                  disabled={isLoading || user?.verification_status === "verified"}
-                  whileHover={{ y: -2, scale: 1.03 }}
-                  whileTap={{ scale: 0.98 }}
-                  transition={SPRING}
-                  className={`${CX.btnNavy} flex items-center gap-2 px-5 py-3 text-[13px] shrink-0`}
-                >
-                  <Upload size={15} /> {isLoading ? "Uploading…" : user?.verification_status === "verified" ? "Verified" : user?.verification_status === "pending" ? "Replace document" : "Upload document"}
-                </motion.button>
+                <input value={assignedRole(user) ?? "Assigned when you are verified"} readOnly className={clayFieldReadonly} />
               </div>
             </div>
 

@@ -2,7 +2,7 @@ import { API_URL, adminMutationRequest, getAuthHeaders } from "./api";
 
 /** Admin Auctions API. Reads throw `AuctionSetupError` when the Supabase migration has not been applied yet. */
 
-export type AuctionStatus = "scheduled" | "live" | "ended" | "cancelled";
+export type AuctionStatus = "scheduled" | "live" | "awaiting" | "ended" | "cancelled";
 
 export interface AuctionPerson { account_id: string; name: string; campus_id: string; email: string }
 
@@ -41,10 +41,13 @@ export interface AdminAuction {
   winner_notified_at: string | null;
   ended_at?: string | null;
   winner_email_mode: string | null;
+  finalized_at?: string | null;
+  reauctioned_from?: string | null;
+  reauction_reason?: string | null;
   created_at: string;
 }
 
-export interface AuctionStats { live: number; scheduled: number; ended: number; awaiting_pickup: number; total_bids: number; sales_total: number }
+export interface AuctionStats { live: number; scheduled: number; ended: number; awaiting_admin?: number; awaiting_pickup: number; total_bids: number; sales_total: number }
 export interface AuctionList { auctions: AdminAuction[]; stats: AuctionStats; server_time: string; min_custody_days: number }
 
 export interface EligibleItem {
@@ -115,6 +118,15 @@ export const fetchEligibleAuctionItems = () => read<{ items: EligibleItem[]; min
 export const createAdminAuction = (form: AuctionForm) => mutate("auctions", "POST", "Create auction", form);
 export const updateAdminAuction = (id: string, form: AuctionForm) => mutate(`auctions/${encodeURIComponent(id)}`, "PATCH", "Update auction", form);
 export const cancelAdminAuction = (id: string, reason: string) => mutate(`auctions/${encodeURIComponent(id)}/cancel`, "POST", "Cancel auction", { reason });
+export interface ReauctionForm {
+  starting_price?: string | number;
+  bid_increment?: string | number;
+  duration_minutes?: number;
+  reason?: string;
+  suspend_days?: number | null;
+}
+export const finalizeAdminAuction = (id: string) => mutate<{ success: boolean; outcome: "finalized" | "cancelled"; message?: string }>(`auctions/${encodeURIComponent(id)}/finalize`, "POST", "Confirm auction result");
+export const reauctionAdminAuction = (id: string, form: ReauctionForm) => mutate<{ success: boolean; auction_id?: string; message?: string; suspension?: { applied: boolean; days?: number; error?: string } | null }>(`auctions/${encodeURIComponent(id)}/reauction`, "POST", "Re-auction item", form);
 export const endAdminAuction = (id: string) => mutate(`auctions/${encodeURIComponent(id)}/end`, "POST", "End auction early");
 export const setAdminAuctionFulfillment = (id: string, action: "collected" | "forfeited") => mutate(`auctions/${encodeURIComponent(id)}/fulfillment`, "POST", action === "collected" ? "Mark auction collected" : "Mark auction forfeited", { action });
 export const moderateAuctionComment = (id: string, commentId: string, hidden: boolean) => mutate(`auctions/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, "PATCH", hidden ? "Hide comment" : "Restore comment", { hidden });

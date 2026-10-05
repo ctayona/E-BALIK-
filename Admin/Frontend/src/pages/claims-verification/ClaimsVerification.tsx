@@ -201,7 +201,7 @@ function ReviewModal({ claim, onClose, onApprove, onReject, onCollect, onEditRea
                 <figcaption className="mb-2 text-[12.5px] font-medium text-ink-muted">{label}</figcaption>
                 {src ? (
                   <button type="button" onClick={() => setZoomedImage(src)} className="group relative block w-full overflow-hidden rounded-xl" aria-label={tr("Enlarge {0}", { "0": label.toLowerCase() })}>
-                    <img src={src} alt={label} className="h-56 w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
+                    <img decoding="async" src={src} alt={label} className="h-56 w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
                     <span className="absolute right-2 top-2 flex size-8 items-center justify-center rounded-lg bg-navy-950/60 text-white opacity-0 backdrop-blur transition-opacity group-hover:opacity-100"><ZoomIn size={16} aria-hidden="true" /></span>
                   </button>
                 ) : (
@@ -264,7 +264,7 @@ function ReviewModal({ claim, onClose, onApprove, onReject, onCollect, onEditRea
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-6 backdrop-blur-sm" onClick={() => setZoomedImage(null)} role="dialog" aria-modal="true" aria-label={tr("Enlarged image")}>
           <div className="relative max-h-[90vh] w-full max-w-5xl" onClick={(event) => event.stopPropagation()}>
             <button type="button" onClick={() => setZoomedImage(null)} aria-label={tr("Close image")} className="absolute -right-3 -top-3 z-10 flex size-10 items-center justify-center rounded-full bg-white text-xl text-navy-950 shadow-lg">×</button>
-            <img src={zoomedImage} alt={tr("Enlarged claim evidence")} className="max-h-[90vh] w-full rounded-2xl object-contain" />
+            <img decoding="async" src={zoomedImage} alt={tr("Enlarged claim evidence")} className="max-h-[90vh] w-full rounded-2xl object-contain" />
           </div>
         </div>
       )}

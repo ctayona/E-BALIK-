@@ -181,7 +181,7 @@ export default function Notifications() {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-[color,background-color,border-color,box-shadow,opacity,transform]"
             style={activeTab === tab ? { background: "#1f3160", color: "white" } : { color: "#6b7280" }}
           >
             {tab === "Unread" ? tr("Unread ({0})", { "0": unreadCount }) : tr(tab)}
@@ -201,7 +201,7 @@ export default function Notifications() {
             filtered.map((n) => {
               const ti = typeIcon[n.type];
               return (
-                <div key={n.id} className="bg-white rounded-xl border shadow-sm p-5 transition-all" style={{ borderColor: n.read ? "#f1f5f9" : "#e0f2fe" }}>
+                <div key={n.id} className="bg-white rounded-xl border shadow-sm p-5 transition-[color,background-color,border-color,box-shadow,opacity,transform]" style={{ borderColor: n.read ? "#f1f5f9" : "#e0f2fe" }}>
                   <div className="flex items-start gap-4">
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: ti.bg, color: ti.color }}>
                       {ti.icon}

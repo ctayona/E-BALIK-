@@ -27,6 +27,7 @@ def _verification_profile_metadata(db, user):
     profile = db._decrypt_profile_sensitive_fields(user) or user
     return {
         'verification_status': profile.get('verification_status') or 'pending',
+        'user_category': profile.get('user_category') or '',
         'verification_document_name': profile.get('verification_document_name') or '',
         'verification_document_type': profile.get('verification_document_type') or '',
         'verification_uploaded_at': profile.get('verification_uploaded_at') or '',

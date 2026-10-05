@@ -137,7 +137,7 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
         >
           {/* Clay logo chip */}
           <div className="relative flex items-center justify-center rounded-[16px] size-[48px] border border-white/20 bg-navy-800">
-            <img alt="UM Seal" className="size-[36px] object-contain rounded-[10px]" src={headerUmSeal} />
+            <img decoding="async" alt="UM Seal" className="size-[36px] object-contain rounded-[10px]" src={headerUmSeal} />
             <span className="absolute -bottom-1 -right-1 size-3.5 rounded-full bg-gold-500 border-2 border-[#1a2d5a]" />
           </div>
           <div>
@@ -376,7 +376,7 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
             {/* Clay logo block */}
             <div className="flex items-center gap-4">
               <div className="flex items-center justify-center rounded-[16px] size-[56px] bg-navy-800 border border-white/15">
-                <img alt="UMak Logo" className="size-[40px] object-contain" src={umakLogo} />
+                <img decoding="async" alt="UMak Logo" className="size-[40px] object-contain" src={umakLogo} />
               </div>
               <div>
                 <p className="font-bold text-white text-[15px]" style={{ fontFamily: "var(--font-heading)" }}>

@@ -5,6 +5,7 @@ import { useWatchlist } from "@/app/shared/auction/useWatchlist";
 import { auctionsApi, formatRemaining, msLeft, pesoShort, useAuctionFeed, useNow, type Auction } from "@/app/utils/auctions";
 import { authUtils } from "@/app/utils/api";
 import { CX } from "@/app/utils/clay";
+import type { Page } from "@/app/types";
 import AuctionDetail from "@/app/shared/auction/AuctionDetail";
 import AuctionPost from "./AuctionPost";
 
@@ -21,6 +22,7 @@ const MY_STATE_LABEL: Record<NonNullable<Auction["my_state"]>, { text: string; c
   leading: { text: "You're leading", className: "bg-tide-600 text-white" },
   outbid: { text: "Outbid", className: "bg-rose-600 text-white" },
   won: { text: "You won", className: "bg-gold-500 text-navy-950" },
+  awaiting: { text: "Awaiting result", className: "bg-iris-600 text-white" },
   lost: { text: "Not won", className: "bg-slate-600 text-white" },
   cancelled: { text: "Cancelled", className: "bg-slate-600 text-white" },
 };
@@ -29,7 +31,7 @@ function monthLabel(value: string) {
   return new Date(value).toLocaleString([], { month: "long", year: "numeric" });
 }
 
-export default function AuctionHall() {
+export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) => void }) {
   const { feed, error, setupRequired, loading, offset, refresh } = useAuctionFeed();
   const now = useNow();
   const watch = useWatchlist();
@@ -81,7 +83,7 @@ export default function AuctionHall() {
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: "live", label: "Live", count: liveAll.length },
     { id: "upcoming", label: "Upcoming", count: upcomingAll.length },
-    { id: "sold", label: "Sold", count: feed?.past.length ?? 0 },
+    { id: "sold", label: "Results", count: feed?.past.length ?? 0 },
     ...(signedIn ? [{ id: "mine" as Tab, label: "My bids" }] : []),
   ];
 
@@ -170,7 +172,7 @@ export default function AuctionHall() {
                   <div className="grid gap-4 sm:grid-cols-2">{upcoming.map((a) => <AuctionTile key={a.id} auction={a} now={now} offset={offset} onOpen={(auction) => openAuction(auction)} />)}</div>
                 )
               ) : tab === "sold" ? (
-                soldGroups.length === 0 ? <div className={`${CX.card} p-10 text-center text-[14.5px] text-ink-muted`}>Nothing has sold yet. Finished auctions appear here.</div> : (
+                soldGroups.length === 0 ? <div className={`${CX.card} p-10 text-center text-[14.5px] text-ink-muted`}>No results yet. Finished auctions appear here.</div> : (
                   <div className="space-y-8">
                     {soldGroups.map(([month, items]) => (
                       <section key={month} aria-label={month}>
@@ -204,7 +206,7 @@ export default function AuctionHall() {
                     {endingSoon.map((a) => (
                       <li key={a.id}>
                         <button type="button" onClick={() => openAuction(a)} className="flex w-full items-center gap-3 rounded-xl p-1.5 text-left transition-colors hover:bg-navy-50">
-                          {a.image_url ? <img src={a.image_url} alt="" className="size-12 shrink-0 rounded-lg object-cover" /> : <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-navy-800 text-gold-300"><Gavel size={18} aria-hidden="true" /></span>}
+                          {a.image_url ? <img decoding="async" src={a.image_url} alt="" className="size-12 shrink-0 rounded-lg object-cover" /> : <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-navy-800 text-gold-300"><Gavel size={18} aria-hidden="true" /></span>}
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[14px] font-semibold text-navy-800">{a.title}</span>
                             <span className="block text-[13px] tabular-nums text-ink-muted">{pesoShort(a.current_price)}</span>
@@ -230,7 +232,7 @@ export default function AuctionHall() {
         )}
       </div>
 
-      {open && <AuctionDetail auction={open.auction} signedIn={signedIn} focus={open.focus} onClose={closeAuction} onChanged={changed} />}
+      {open && <AuctionDetail auction={open.auction} signedIn={signedIn} focus={open.focus} onClose={closeAuction} onChanged={changed} onVerify={onNavigate ? () => { closeAuction(); onNavigate("profile"); } : undefined} />}
     </main>
   );
 }

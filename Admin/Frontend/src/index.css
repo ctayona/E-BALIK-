@@ -271,7 +271,6 @@ body {
   font-family: var(--font-body);
   background-color: var(--canvas);
   background-image: var(--canvas-glow);
-  background-attachment: fixed;
   color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

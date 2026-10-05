@@ -12,6 +12,7 @@ import { BTN, PageHeader, RolePill } from "../../components/ui/primitives";
 import { DataTable, DetailGrid, ExportButton, FilterSelect, IconAction, RowActions, SearchField, SegmentedFilter, StatusPill, TableFooter, Toolbar, usePagination, type Tone } from "../../components/ui/management";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
+import SuspendUserModal from "../../components/SuspendUserModal";
 import { showInfoModal } from "../../components/info-modal/infoModalStore";
 import { tr } from "../../utils/preferences";
 
@@ -27,6 +28,12 @@ const AVATAR_GRADIENTS = [
 const ALL = "__all__";
 
 type ConfirmState = { type: "suspend" | "activate" | "access" | "delete"; userId: string; title: string; description: string; confirmText: string };
+
+function VerificationPill({ status }: { status?: User["verification"] }) {
+  if (status === "verified") return <StatusPill tone="mint">Verified</StatusPill>;
+  if (status === "rejected") return <StatusPill tone="rose">Rejected</StatusPill>;
+  return <StatusPill tone="gold">Not verified</StatusPill>;
+}
 
 function Avatar({ user, size = 36 }: { user: User; size?: number }) {
   const seed = Array.from(user.id).reduce((sum, char) => sum + char.charCodeAt(0), 0);
@@ -49,6 +56,7 @@ export default function Users() {
   const [accessBusy, setAccessBusy] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmState | null>(null);
   const [activeTab, setActiveTab] = useState<"users" | "verification">("users");
+  const [suspendTarget, setSuspendTarget] = useState<User | null>(null);
   const [userForm, setUserForm] = useState<{ user?: User } | null>(null);
   const [verificationRequests, setVerificationRequests] = useState<AdminAccountVerificationRequest[]>([]);
   const [verificationLoading, setVerificationLoading] = useState(true);
@@ -140,9 +148,8 @@ export default function Users() {
     }
   };
 
-  const askStatus = (user: User) => setConfirmAction(user.status === "Active"
-    ? { type: "suspend", userId: user.id, title: tr("suspend {0}?", { "0": user.name }), description: tr("{0} can't sign in or file reports until the account is reactivated.", { "0": user.name }), confirmText: "Suspend account" }
-    : { type: "activate", userId: user.id, title: tr("reactivate {0}?", { "0": user.name }), description: tr("{0} can sign in and use E-Balik again.", { "0": user.name }), confirmText: "Reactivate account" });
+  const askStatus = (user: User) => user.status === "Active" ? setSuspendTarget(user) : setConfirmAction(
+    { type: "activate", userId: user.id, title: tr("reactivate {0}?", { "0": user.name }), description: tr("{0} can sign in and use E-Balik again.", { "0": user.name }), confirmText: "Reactivate account" });
 
   const askAccess = (user: User) => setConfirmAction({
     type: "access",
@@ -236,11 +243,17 @@ export default function Users() {
                 </div>
               </td>
               <td><div className="max-w-[240px] truncate text-[13.5px]" title={user.email}>{user.email}</div></td>
-              <td className="whitespace-nowrap">{user.program}</td>
+              <td className="whitespace-nowrap">
+                <div>{user.program}</div>
+                {user.accessLevel === "user" && <div className="mt-0.5"><VerificationPill status={user.verification} /></div>}
+              </td>
               <td><StatusPill tone={ACCESS_TONE[user.accessLevel]}>{ACCESS_LABEL[user.accessLevel]}</StatusPill></td>
               <td className="text-right font-semibold text-ink">{user.reports}</td>
               <td className="text-right font-semibold text-ink">{user.claims}</td>
-              <td><StatusPill tone={STATUS_TONE[user.status]}>{user.status}</StatusPill></td>
+              <td>
+                <StatusPill tone={STATUS_TONE[user.status]}>{user.status}</StatusPill>
+                {user.status === "Suspended" && <div className="mt-1 text-[12.5px] text-ink-muted">{user.suspendedUntil ? tr("Until {0}", { "0": new Date(user.suspendedUntil).toLocaleDateString(undefined, { month: "short", day: "numeric" }) }) : tr("Until reactivated")}</div>}
+              </td>
               <td className="whitespace-nowrap text-[13px] text-ink-muted">{user.lastActivity}</td>
               <RowActions>
                 <IconAction label={`${t("common.view")} ${user.name}`} onClick={() => setViewUser(user)} icon={<Eye size={17} aria-hidden="true" />} />
@@ -306,6 +319,8 @@ export default function Users() {
           <DetailGrid items={[
             ["Email", viewUser.email],
             ["Role", viewUser.program],
+            ["Verification", viewUser.accessLevel === "user" ? tr({ verified: "Verified", rejected: "Rejected", pending: "Not verified" }[viewUser.verification ?? "pending"]) : tr("Not required for admins")],
+            ...(viewUser.status === "Suspended" ? [["Suspended until", viewUser.suspendedUntil ? new Date(viewUser.suspendedUntil).toLocaleString() : tr("Until reactivated")] as [string, string]] : []),
             ["Lost reports", String(viewUser.reports)],
             ["Claims filed", String(viewUser.claims)],
             ["Last activity", viewUser.lastActivity],
@@ -350,6 +365,15 @@ export default function Users() {
             else if (actionType === "activate") await setStatus(user.id, "active");
             else await changeAccess(user);
           }}
+        />
+      )}
+
+      {suspendTarget && (
+        <SuspendUserModal
+          accountId={suspendTarget.id}
+          name={suspendTarget.name}
+          onClose={() => setSuspendTarget(null)}
+          onDone={() => { void fetchAdminUsers().then(setUsers).catch(() => undefined); }}
         />
       )}
 

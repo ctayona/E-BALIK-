@@ -321,6 +321,40 @@ Items in custody (found item status `unclaimed`) for at least 30 days with no op
 - User: `Users/Frontend/src/app/utils/auctions.ts` (typed client, `useAuctionFeed`, countdown helpers), `shared/auction/` (`Gallery`, `AuctionParts` with the clock, tile and SOLD tile, `AuctionDetail` bidding dialog, `AuctionShelf` for the dashboard, `AuctionShowcase` for the landing page, `useWatchlist`), and `pages/auction-hall/` (the feed page and post card). The Auction Hall is a social-style feed with swipeable photos, a two-step confirm to bid, comments and a Sold grid. Countdowns follow the server clock.
 - Landing: `pages/home/LiveBoard.tsx` shows recent missing reports and found items from `/api/public/board`; the hero counts are real data.
 
+**Lifecycle (Awaiting admin):** when the timer ends, `auction_settle_due()` no longer closes the auction. With bids it moves to `awaiting_admin` (shown as `awaiting`): bidding stops, the leader and price are kept provisionally and the item is untouched. Without bids it ends; if the item is gone or an owner claim is open it is cancelled. Only an admin finishes it:
+- `POST /api/admin/auctions/<id>/finalize` calls `auction_finalize` (admin only, only from `awaiting_admin`). It confirms the winner (`fulfillment_status = awaiting_pickup`, item marked `auctioned`, winner notified) or cancels when the item or winner is no longer valid.
+- `POST /api/admin/auctions/<id>/reauction` is the "winner flaked" action. It works from `awaiting_admin` or from a sold auction that is still `awaiting_pickup`. It forfeits the old sale, returns the item to `unclaimed` and opens a new auction (`reauctioned_from`, `reauction_reason`) with new terms. Optional `suspend_days` (1 to 365) suspends the previous winner and notifies them. Staff and the acting admin are never suspended.
+- A forfeited sale never receives a "You won" notice (`_notify_pending_winners` only notifies `awaiting_pickup` and `collected`).
+- Users see "Awaiting result" badges; the Sold tab is now Results. Bidding uses a confirmation `Modal` and the global message box for every outcome. Admin actions use `AdminModal` (finalize, re-auction, suspend) and `ConfirmActionDialog` (end, delete, collect, forfeit).
+
+## System control, verification gate and suspensions
+
+Run `Server/manual_migrations/20261006_system_control_verification.sql` after `20261005_auction_hall.sql`. Until it runs, the code degrades: no maintenance or force logout (the Control Panel shows the setup notice), role assignment and timed suspension answer with a clear message, and the health check still works.
+
+**Database:** `user_profiles` gains `user_category` (Student, Faculty, Staff, Visitor), `suspended_until`, `suspension_reason`, `suspended_by`. New table `system_settings(setting_key, setting_value JSONB, ...)` holds `maintenance_mode`, `sessions_valid_after` and `last_cleanup` (RLS on, service key only). `auctions` gains the awaiting-admin columns. `SupabaseDB.supports_governance_fields` detects the new columns.
+
+**Enforcement (`Server/app/utils/system_control.py`)** is one Flask `before_request` hook registered in `Server/app/__init__.py`, with a 5 second cache that fails open if the database is unreachable. Order: maintenance, revoked session, suspension, verification gate. Admins and super admins skip everything except maintenance, which never blocks them.
+- **Maintenance:** non-staff get `503 {maintenance: true}` on every `/api` path except sign-in and `GET /api/system/status`. `login_block` rejects non-staff sign-in and Google sign-in with the message. The user app shows `shared/system/MaintenanceScreen.tsx` (with a staff-only sign-in), and the admin header shows a "Maintenance mode is ON" pill.
+- **Force logout:** stores `sessions_valid_after`. Any non-staff token with `iat` older than that gets `401 {session_revoked: true}`. Staff tokens are never revoked.
+- **Suspension:** `is_active = false` plus optional `suspended_until`. It is enforced at sign-in and on every request, and an expired suspension is lifted automatically. Admin: `PATCH /api/admin/users/<id>/status` accepts `days` and `reason`.
+- **Verification gate:** unverified users get `403 {verification_required: true}` for `POST /api/found-items`, `/api/missing-items`, `/api/claims` and `/api/auctions/<id>/bids`. The UI (`shared/verification/VerificationGate.tsx`) explains this and disables submit.
+- **Roles:** the admin verification review requires one of Student, Faculty, Staff, Visitor (`user_category`; the legacy `user_role` keeps working, Visitor maps to Others). Verified users cannot change their email or campus ID. The Profile page shows status, role, progress and what is unlocked (`VerificationStatusCard`).
+- **Client events:** `Users/Frontend/src/app/utils/system.ts` raises `ebalik:system` events from the API clients; `App.tsx` signs the user out on a revoked session or suspension and shows the maintenance screen.
+
+**Control Panel API (super admin only, including reads), `Admin/Backend/system_control`:**
+
+```text
+GET  /api/admin/system/overview            maintenance state, last forced logout, last cleanup, setup_required
+PUT  /api/admin/system/maintenance         {enabled: bool, message}
+POST /api/admin/system/force-logout        revoke every standard user session
+GET  /api/admin/system/health              run the 10-check scan (read only)
+GET  /api/admin/system/cleanup/preview     ?days=&include_unread=
+POST /api/admin/system/cleanup             {days >= 30, include_unread, targets[]}
+GET  /api/system/status                    public: {maintenance, message, since}
+```
+
+Cleanup only ever touches `user_notifications` (read ones by default), `otp_tokens` and `admin_mfa_challenges` older than the chosen age (minimum 30 days). The health scan checks environment variables (names only, never values), database latency, schema, unverified users with high activity, admin MFA coverage, the verification backlog, suspensions, table bloat, auctions waiting too long and the system controls. Frontend: `Admin/Frontend/src/pages/system-control/SystemControl.tsx` with `utils/systemApi.ts`; the sidebar item and route are super-admin only.
+
 ## Image Upload Rules
 
 The missing image upload bug was fixed in `Users/Frontend/src/app/utils/api.ts`.

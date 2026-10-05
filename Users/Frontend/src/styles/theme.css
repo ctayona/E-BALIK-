@@ -325,7 +325,6 @@ button:not(:disabled), [role="button"]:not([aria-disabled="true"]), select, summ
     radial-gradient(1200px 520px at 8% -10%, rgba(110, 142, 240, 0.16), transparent 60%),
     radial-gradient(900px 480px at 100% 0%, rgba(209, 161, 83, 0.14), transparent 55%),
     radial-gradient(900px 600px at 50% 110%, rgba(63, 191, 159, 0.08), transparent 60%);
-  background-attachment: fixed;
 }
 .glass {
   background: rgba(255, 255, 255, 0.68);

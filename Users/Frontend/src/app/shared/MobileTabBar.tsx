@@ -39,6 +39,7 @@ export default function MobileTabBar({ currentPage, onNavigate }: { currentPage:
       aria-label="Primary"
       className="app-chrome fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-navy-900/85 pb-[env(safe-area-inset-bottom)] text-white shadow-[0_-12px_30px_-16px_rgba(5,10,30,0.7)] backdrop-blur-xl backdrop-saturate-150 lg:hidden print:hidden"
     >
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(209,161,83,0.55),transparent)]" aria-hidden="true" />
       <div className="mx-auto flex max-w-[560px] items-stretch px-2">
         {left.map(tab)}
         <div className="flex flex-1 items-start justify-center">

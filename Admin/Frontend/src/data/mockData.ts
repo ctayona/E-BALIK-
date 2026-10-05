@@ -63,6 +63,9 @@ export interface User {
   status: "Active" | "Suspended" | "Inactive";
   accessLevel: "user" | "admin" | "super_admin";
   lastActivity: string;
+  verification?: "pending" | "verified" | "rejected";
+  category?: string | null;
+  suspendedUntil?: string | null;
 }
 
 export interface ActivityLog {

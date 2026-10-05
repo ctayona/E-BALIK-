@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { emitSystemEvent } from "./system";
 
 /** Auction Hall client: typed API, live countdown helpers and a polling feed hook. */
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-export type AuctionState = "scheduled" | "live" | "ended" | "cancelled";
+export type AuctionState = "scheduled" | "live" | "awaiting" | "ended" | "cancelled";
 
 export interface Auction {
   id: string;
@@ -35,7 +36,7 @@ export interface Auction {
   winning_amount: number | null;
   sold: boolean;
   cancel_reason: string | null;
-  my_state?: "leading" | "outbid" | "won" | "lost" | "cancelled";
+  my_state?: "leading" | "outbid" | "awaiting" | "won" | "lost" | "cancelled";
   my_best_bid?: number | null;
 }
 
@@ -54,6 +55,8 @@ export class AuctionRequestError extends Error {
   status: number;
   setupRequired: boolean;
   minBid?: number;
+  /** Set when the server refused the request because the account is not verified. */
+  verificationRequired = false;
   constructor(message: string, status: number, setupRequired = false, minBid?: number) {
     super(message);
     this.name = "AuctionRequestError";
@@ -75,7 +78,13 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new AuctionRequestError(typeof data.error === "string" ? data.error : "Something went wrong.", response.status, Boolean(data.setup_required), typeof data.min_bid === "number" ? data.min_bid : undefined);
+    const message = typeof data.error === "string" ? data.error : "Something went wrong.";
+    if (data.maintenance) emitSystemEvent({ code: "maintenance", message });
+    else if (token && data.session_revoked) emitSystemEvent({ code: "session_revoked", message });
+    else if (token && data.suspended) emitSystemEvent({ code: "suspended", message, until: data.suspended_until });
+    const failure = new AuctionRequestError(message, response.status, Boolean(data.setup_required), typeof data.min_bid === "number" ? data.min_bid : undefined);
+    failure.verificationRequired = Boolean(data.verification_required);
+    throw failure;
   }
   return data as T;
 }

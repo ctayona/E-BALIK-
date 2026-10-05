@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Database, Eye, Gavel, PackageCheck, Pencil, Plus, RefreshCw, Timer, Trash2, Trophy } from "lucide-react";
+import { CheckCheck, Database, Eye, Gavel, PackageCheck, Pencil, Plus, RefreshCw, Timer, Trash2, Trophy } from "lucide-react";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import { BTN, PageHeader, RolePill } from "../../components/ui/primitives";
@@ -38,6 +38,7 @@ function TimeLeft({ auction, now }: { auction: AdminAuction; now: number }) {
     return <span className={`tabular-nums ${urgent ? "font-semibold text-rose-600" : "text-ink"}`}>{formatRemaining(left) || tr("Closing")}</span>;
   }
   if (auction.status === "scheduled") return <span className="tabular-nums text-ink-soft">{tr("Opens {0}", { "0": formatDateTime(auction.starts_at) })}</span>;
+  if (auction.status === "awaiting") return <span className="tabular-nums font-semibold text-iris-700 dark:text-iris-300">{tr("Closed {0}", { "0": formatDateTime(auction.ends_at) })}</span>;
   return <span className="tabular-nums text-ink-muted">{formatDateTime(auction.ended_at ?? auction.ends_at)}</span>;
 }
 
@@ -83,6 +84,7 @@ export default function Auctions() {
   const counts = useMemo(() => ({
     live: auctions.filter((a) => a.status === "live").length,
     scheduled: auctions.filter((a) => a.status === "scheduled").length,
+    awaiting: auctions.filter((a) => a.status === "awaiting").length,
     ended: auctions.filter((a) => a.status === "ended").length,
     cancelled: auctions.filter((a) => a.status === "cancelled").length,
   }), [auctions]);
@@ -127,6 +129,7 @@ export default function Auctions() {
   const tabs = [
     { value: ALL, label: "All", count: auctions.length },
     { value: "live", label: "Live", count: counts.live },
+    { value: "awaiting", label: "Awaiting admin", count: counts.awaiting },
     { value: "scheduled", label: "Scheduled", count: counts.scheduled },
     { value: "ended", label: "Ended", count: counts.ended },
     ...(counts.cancelled ? [{ value: "cancelled", label: "Cancelled", count: counts.cancelled }] : []),
@@ -149,7 +152,7 @@ export default function Auctions() {
           {[
             { label: "Live now", value: String(stats?.live ?? 0), hint: stats?.scheduled ? tr("{0} scheduled", { "0": stats.scheduled }) : tr("Open for bids"), icon: <Gavel size={16} aria-hidden="true" /> },
             { label: "Ready to auction", value: eligible === null ? "—" : String(eligible), hint: tr("Unclaimed over {0} days", { "0": data?.min_custody_days ?? 30 }), icon: <Timer size={16} aria-hidden="true" /> },
-            { label: "Awaiting pickup", value: String(stats?.awaiting_pickup ?? 0), hint: tr("Winners to collect"), icon: <PackageCheck size={16} aria-hidden="true" /> },
+            { label: "Needs your decision", value: String(stats?.awaiting_admin ?? counts.awaiting), hint: stats?.awaiting_pickup ? tr("{0} winners to collect", { "0": stats.awaiting_pickup }) : tr("Closed, not confirmed"), icon: <PackageCheck size={16} aria-hidden="true" /> },
             { label: "Sales total", value: peso(stats?.sales_total), hint: tr("{0} bids placed", { "0": stats?.total_bids ?? 0 }), icon: <Trophy size={16} aria-hidden="true" /> },
           ].map((stat) => (
             <div key={stat.label} className="px-5 py-4 sm:px-6 sm:py-5">
@@ -201,7 +204,7 @@ export default function Auctions() {
               <div className="font-semibold tabular-nums text-ink">{peso(auction.current_price)}</div>
               <div className="text-[13px] text-ink-muted">{auction.bid_count === 0 ? tr("No bids") : tr("{0} bids", { "0": auction.bid_count })}</div>
             </td>
-            <td>{auction.winner ?? auction.leader ?? <span className="text-ink-muted">—</span>}</td>
+            <td>{auction.winner ?? auction.leader ?? <span className="text-ink-muted">—</span>}{auction.status === "awaiting" && auction.leader && <div className="text-[12.5px] text-ink-muted">{tr("Leading bidder")}</div>}</td>
             <td className="whitespace-nowrap"><TimeLeft auction={auction} now={now} /></td>
             <td>
               <div className="flex flex-wrap items-center gap-1.5">
@@ -211,8 +214,9 @@ export default function Auctions() {
             </td>
             <RowActions>
               <IconAction label={`${tr("View")} ${auction.reference || auction.title}`} onClick={() => setDetailId(auction.id)} icon={<Eye size={17} aria-hidden="true" />} />
+              {auction.status === "awaiting" && <IconAction label={`${tr("Review result")} ${auction.reference || auction.title}`} tone="success" onClick={() => setDetailId(auction.id)} icon={<CheckCheck size={17} aria-hidden="true" />} />}
               {(auction.status === "live" || auction.status === "scheduled") && <IconAction label={`${tr("Edit")} ${auction.reference || auction.title}`} tone="gold" onClick={() => setForm({ edit: auction })} icon={<Pencil size={16} aria-hidden="true" />} />}
-              {isSuperAdmin && auction.status !== "live" && auction.status !== "scheduled" && auction.fulfillment_status !== "awaiting_pickup" && (
+              {isSuperAdmin && auction.status !== "live" && auction.status !== "scheduled" && auction.status !== "awaiting" && auction.fulfillment_status !== "awaiting_pickup" && (
                 <IconAction label={`${tr("Delete")} ${auction.reference || auction.title}`} tone="danger" onClick={() => setDeleteTarget(auction)} icon={<Trash2 size={16} aria-hidden="true" />} />
               )}
             </RowActions>

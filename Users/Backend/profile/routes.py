@@ -61,15 +61,22 @@ def update_profile():
                 return jsonify({'error': 'Email already registered'}), 409
 
         inferred_role, inferred_campus_id = _infer_user_role_and_campus(requested_email, data.get('campus_id') or current_user.get('campus_id'))
+        verified = str(current_user.get('verification_status') or '').lower() == 'verified'
+        new_campus_id = (data.get('campus_id') or inferred_campus_id or current_user.get('campus_id') or '').strip()
+        if verified and (requested_email != current_user['email'] or new_campus_id != (current_user.get('campus_id') or '')):
+            # The admin verified this email and campus ID against an uploaded document; changing them would void that check.
+            return jsonify({'error': 'Your email and campus ID are locked after verification. Contact the Lost and Found Office to change them.'}), 409
         updated_fields = {
             'fname': data['fname'].strip(),
             'mname': (data.get('mname') or '').strip(),
             'lname': data['lname'].strip(),
             'email': requested_email,
-            'campus_id': (data.get('campus_id') or inferred_campus_id or current_user.get('campus_id') or '').strip(),
-            'user_role': inferred_role,
+            'campus_id': new_campus_id,
             'updated_at': 'now()',
         }
+        if not verified:
+            # Before verification the role is only a guess from the email. Once an admin has assigned a role it is never overwritten here.
+            updated_fields['user_role'] = inferred_role
 
         db.update_user(payload['account_id'], updated_fields)
         updated_user = db.get_user_by_account_id(payload['account_id'])
@@ -84,6 +91,7 @@ def update_profile():
                 'lname': updated_user.get('lname', ''),
                 'email': updated_user.get('email', ''),
                 'user_role': updated_user.get('user_role') or 'Others',
+                'user_category': updated_user.get('user_category') or '',
                 'verification_status': updated_user.get('verification_status') or 'pending',
             }
         }), 200

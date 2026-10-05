@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Bell, ChevronDown, ChevronRight, Moon, Sun } from "lucide-react";
+import { Bell, ChevronDown, ChevronRight, LockKeyhole, Moon, Sun } from "lucide-react";
 import umakLogo from "../imports/UMak Logo.png";
 import { AdminUser } from "../utils/api";
+import { fetchPublicSystemStatus } from "../utils/systemApi";
 import { useLanguage, useT, useTheme, tr } from "../utils/preferences";
 import type { Language } from "../i18n/strings";
 
@@ -25,6 +26,7 @@ export default function Header({ breadcrumb, title, notifCount, onNotifClick, on
   const [theme, setTheme] = useTheme();
   const [language, setLanguage] = useLanguage();
   const t = useT();
+  const [maintenance, setMaintenance] = useState(false);
   const roleLabel = user.access_level === "super_admin" ? t("role.superAdmin") : t("role.admin");
 
   useEffect(() => {
@@ -36,6 +38,15 @@ export default function Header({ breadcrumb, title, notifCount, onNotifClick, on
       document.head.appendChild(favicon);
     }
     favicon.href = umakLogo;
+  }, []);
+
+  // Admins keep working during maintenance, so remind them the app is locked for everyone else.
+  useEffect(() => {
+    let active = true;
+    const check = () => { if (!document.hidden) fetchPublicSystemStatus().then((status) => { if (active) setMaintenance(status.maintenance); }).catch(() => undefined); };
+    check();
+    const timer = window.setInterval(check, 30000);
+    return () => { active = false; window.clearInterval(timer); };
   }, []);
 
   // Close profile dropdown on outside click or Escape
@@ -55,6 +66,7 @@ export default function Header({ breadcrumb, title, notifCount, onNotifClick, on
 
   return (
     <header className="print-hide sticky top-0 z-20 flex min-h-[68px] shrink-0 items-center justify-between gap-3 border-b border-line bg-[var(--chrome)] px-4 py-2.5 backdrop-blur-xl sm:px-6">
+      <span className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,transparent,rgba(209,161,83,0.5),transparent)]" aria-hidden="true" />
       <div className="min-w-0">
         <nav aria-label={tr("Breadcrumb")} className="hidden items-center gap-1 text-[12.5px] font-medium text-ink-muted sm:flex">
           {breadcrumb.map((b, i) => (
@@ -68,6 +80,11 @@ export default function Header({ breadcrumb, title, notifCount, onNotifClick, on
       </div>
 
       <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
+        {maintenance && (
+          <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-rose-50 p-2 text-[12.5px] font-semibold text-rose-700 ring-1 ring-rose-200 xl:px-3 xl:py-1.5 dark:bg-rose-500/15 dark:text-rose-200 dark:ring-rose-500/40" role="status" title={tr("Maintenance mode is ON")}>
+            <LockKeyhole size={14} aria-hidden="true" /><span className="hidden xl:inline">{tr("Maintenance mode is ON")}</span><span className="sr-only xl:hidden">{tr("Maintenance mode is ON")}</span>
+          </span>
+        )}
         {/* Language */}
         <div role="radiogroup" aria-label={t("header.language")} className="flex rounded-xl border border-line bg-frost-50 p-1">
           {LANGUAGES.map((option) => {

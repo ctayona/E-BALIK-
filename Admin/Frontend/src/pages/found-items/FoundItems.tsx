@@ -121,7 +121,7 @@ function FoundItemFormModal({ item, busy, onClose, onSubmit }: { item?: FoundIte
             <input type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(e) => choosePhoto(e.target.files?.[0])} />
             {form.photo ? (
               <>
-                <img src={form.photo} alt={tr("Found item preview")} className="absolute inset-0 size-full object-cover" />
+                <img decoding="async" src={form.photo} alt={tr("Found item preview")} className="absolute inset-0 size-full object-cover" />
                 <span className="absolute inset-x-2 bottom-2 rounded-xl bg-navy-950/70 px-2 py-1.5 text-[12.5px] font-semibold text-white opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">{tr("Replace photo")}</span>
               </>
             ) : (
@@ -325,7 +325,7 @@ export default function FoundItems() {
         >
           <div className="grid gap-5 sm:grid-cols-[200px_minmax(0,1fr)]">
             {viewItem.photo ? (
-              <img src={viewItem.photo} alt={tr("{0} photo", { "0": viewItem.item })} className="aspect-square w-full rounded-2xl object-cover ring-1 ring-line" />
+              <img decoding="async" src={viewItem.photo} alt={tr("{0} photo", { "0": viewItem.item })} className="aspect-square w-full rounded-2xl object-cover ring-1 ring-line" />
             ) : (
               <div className="flex aspect-square w-full items-center justify-center rounded-2xl bg-frost-100 text-[13px] text-ink-muted ring-1 ring-line">{tr("No photo")}</div>
             )}

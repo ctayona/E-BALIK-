@@ -7,7 +7,7 @@ import { CX } from "@/app/utils/clay";
 import { msLeft, useAuctionFeed, useNow, type Auction } from "@/app/utils/auctions";
 
 /** Dashboard panel: the live auctions closing soonest, with bidding available right from the tile. */
-export default function AuctionShelf({ onViewAll }: { onViewAll: () => void }) {
+export default function AuctionShelf({ onViewAll, onVerify }: { onViewAll: () => void; onVerify?: () => void }) {
   const { feed, setupRequired, loading, offset, refresh } = useAuctionFeed(30000);
   const now = useNow();
   const [open, setOpen] = useState<Auction | null>(null);
@@ -58,7 +58,7 @@ export default function AuctionShelf({ onViewAll }: { onViewAll: () => void }) {
       )}
       <button type="button" onClick={onViewAll} className={`${CX.btnGhost} mt-4 w-full sm:hidden`}>View all auctions <ArrowRight size={15} aria-hidden="true" /></button>
 
-      {open && <AuctionDetail auction={open} signedIn onClose={close} onChanged={() => void refresh()} />}
+      {open && <AuctionDetail auction={open} signedIn onClose={close} onChanged={() => void refresh()} onVerify={onVerify ? () => { close(); onVerify(); } : undefined} />}
     </section>
   );
 }

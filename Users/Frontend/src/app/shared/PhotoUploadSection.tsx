@@ -19,7 +19,7 @@ export default function PhotoUploadSection({ label }: { label: string }) {
         onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
       >
         {preview ? (
-          <img src={preview} alt="Preview" className="max-h-[160px] max-w-full rounded object-contain" />
+          <img decoding="async" src={preview} alt="Preview" className="max-h-[160px] max-w-full rounded object-contain" />
         ) : (
           <>
             <Upload size={28} className="text-[#d1a153]" />

@@ -361,6 +361,36 @@ CREATE POLICY "Service role can manage claims"
     WITH CHECK (auth.jwt() ->> 'role' = 'service_role');
 
 -- ============================================================================
+-- Verification roles, timed suspension and system control
+-- Mirrors manual_migrations/20261006_system_control_verification.sql (run that file on an existing database).
+-- ============================================================================
+ALTER TABLE user_profiles
+    ADD COLUMN IF NOT EXISTS user_category VARCHAR(20),          -- 'Student' | 'Faculty' | 'Staff' | 'Visitor', assigned by an admin when verifying
+    ADD COLUMN IF NOT EXISTS suspended_until TIMESTAMP WITH TIME ZONE,  -- NULL with is_active = false means an indefinite suspension
+    ADD COLUMN IF NOT EXISTS suspension_reason TEXT,
+    ADD COLUMN IF NOT EXISTS suspended_by UUID REFERENCES user_profiles(account_id) ON DELETE SET NULL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_profiles_user_category_check') THEN
+        ALTER TABLE user_profiles
+            ADD CONSTRAINT user_profiles_user_category_check
+            CHECK (user_category IS NULL OR user_category IN ('Student', 'Faculty', 'Staff', 'Visitor'));
+    END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_user_profiles_suspended_until ON user_profiles(suspended_until) WHERE suspended_until IS NOT NULL;
+
+-- System settings (key/value). Keys: maintenance_mode {enabled, message, since}, sessions_valid_after {ts}, last_cleanup {...}
+CREATE TABLE IF NOT EXISTS system_settings (
+    setting_key VARCHAR(64) PRIMARY KEY,
+    setting_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_by UUID REFERENCES user_profiles(account_id) ON DELETE SET NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+ALTER TABLE system_settings ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================================
 -- Auction Hall (auctions, auction_bids, auction_comments, auction_place_bid, auction_settle_due)
 -- Defined in manual_migrations/20261005_auction_hall.sql. Run that file in the SQL Editor; it is not repeated here.
 -- ============================================================================

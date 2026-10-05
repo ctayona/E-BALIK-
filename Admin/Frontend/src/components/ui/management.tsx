@@ -139,7 +139,7 @@ export function IconAction({ label, onClick, icon, tone, disabled }: { label: st
 /** Thumbnail cell for item photos with a neutral placeholder. */
 export function Thumb({ src, alt }: { src?: string; alt: string }) {
   return src ? (
-    <img src={src} alt={alt} loading="lazy" className="size-11 shrink-0 rounded-xl object-cover ring-1 ring-line" />
+    <img decoding="async" src={src} alt={alt} loading="lazy" className="size-11 shrink-0 rounded-xl object-cover ring-1 ring-line" />
   ) : (
     <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-frost-100 text-ink-muted ring-1 ring-line" aria-hidden="true">
       <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="1.8" /><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" /><path d="m21 15-5-5L5 21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>

@@ -58,7 +58,7 @@ export default function ItemImage({
     const glyph = size === "sm" ? 20 : size === "lg" ? 56 : 34;
     return (
       <div className={`relative flex items-center justify-center overflow-hidden bg-[radial-gradient(120%_90%_at_20%_0%,#33497f_0%,#1f3160_45%,#0e1830_100%)] ${className}`} role="img" aria-label={`${item.title}: no photo provided`}>
-        <img src={umSeal} alt="" aria-hidden="true" className="pointer-events-none absolute -right-[12%] -bottom-[18%] w-[70%] max-w-[260px] opacity-[0.07] grayscale" />
+        <img decoding="async" src={umSeal} alt="" aria-hidden="true" className="pointer-events-none absolute -right-[12%] -bottom-[18%] w-[70%] max-w-[260px] opacity-[0.07] grayscale" />
         <div className="relative flex flex-col items-center gap-2 text-center">
           <span className={`flex items-center justify-center rounded-2xl bg-white/10 text-gold-300 ring-1 ring-white/15 ${size === "sm" ? "size-10" : size === "lg" ? "size-24" : "size-16"}`}>
             <Icon size={glyph} strokeWidth={1.6} aria-hidden="true" />

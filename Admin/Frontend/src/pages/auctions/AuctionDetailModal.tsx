@@ -1,25 +1,27 @@
 import { useCallback, useEffect, useState } from "react";
-import { Ban, EyeOff, Eye, Gavel, PackageCheck, Pencil, Timer, Trash2, Trophy, Undo2 } from "lucide-react";
+import { Ban, CheckCheck, EyeOff, Eye, Gavel, PackageCheck, Pencil, Repeat2, Timer, Trash2, Trophy, Undo2, UserX } from "lucide-react";
 import AdminModal from "../../components/ui/AdminModal";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
+import SuspendUserModal from "../../components/SuspendUserModal";
+import ReauctionModal from "./ReauctionModal";
 import { BTN, INPUT } from "../../components/ui/primitives";
 import { DetailGrid, SegmentedFilter, StatusPill, type Tone } from "../../components/ui/management";
 import {
-  cancelAdminAuction, deleteAdminAuction, endAdminAuction, fetchAdminAuctionDetail, moderateAuctionComment, peso, setAdminAuctionFulfillment,
+  cancelAdminAuction, deleteAdminAuction, endAdminAuction, fetchAdminAuctionDetail, finalizeAdminAuction, moderateAuctionComment, peso, setAdminAuctionFulfillment,
   type AdminAuction, type AuctionDetail,
 } from "../../utils/auctionApi";
 import { formatDateTime, formatRemaining, serverOffset, useNow } from "../../utils/countdown";
 import { tr } from "../../utils/preferences";
 
-export const STATUS_TONE: Record<string, Tone> = { live: "gold", scheduled: "iris", ended: "mint", cancelled: "rose" };
+export const STATUS_TONE: Record<string, Tone> = { live: "gold", scheduled: "iris", awaiting: "iris", ended: "mint", cancelled: "rose" };
 
 export function statusLabel(auction: AdminAuction) {
   if (auction.status === "ended") return auction.sold ? "Sold" : "Ended, no bids";
-  return { live: "Live", scheduled: "Scheduled", cancelled: "Cancelled" }[auction.status] ?? auction.status;
+  return { live: "Live", scheduled: "Scheduled", awaiting: "Awaiting admin", cancelled: "Cancelled" }[auction.status] ?? auction.status;
 }
 
 type Tab = "bids" | "comments" | "pickup";
-type Pending = "end" | "delete" | "collected" | "forfeited" | null;
+type Pending = "end" | "delete" | "collected" | "forfeited" | "finalize" | null;
 
 export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onChanged }: {
   id: string;
@@ -35,6 +37,8 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
   const [photo, setPhoto] = useState(0);
   const [pending, setPending] = useState<Pending>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [reauctionOpen, setReauctionOpen] = useState(false);
+  const [suspendOpen, setSuspendOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [busy, setBusy] = useState(false);
   const now = useNow() + offset;
@@ -58,6 +62,8 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
 
   const auction = detail?.auction;
   const live = auction?.status === "live" || auction?.status === "scheduled";
+  const awaiting = auction?.status === "awaiting";
+  const pickupPending = auction?.fulfillment_status === "awaiting_pickup";
 
   const run = async (action: () => Promise<unknown>, closeAfter = false) => {
     setBusy(true);
@@ -84,12 +90,13 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
 
   const remaining = new Date(auction.ends_at).getTime() - now;
   const opensIn = new Date(auction.starts_at).getTime() - now;
-  const timeText = auction.status === "live" ? (formatRemaining(remaining) || tr("Closing")) : auction.status === "scheduled" ? tr("Opens in {0}", { "0": formatRemaining(opensIn) || "—" }) : formatDateTime(auction.ends_at);
+  const bidder = auction.winner_detail ?? auction.leader_detail;
+  const timeText = auction.status === "awaiting" ? tr("Closed {0}", { "0": formatDateTime(auction.ends_at) }) : auction.status === "live" ? (formatRemaining(remaining) || tr("Closing")) : auction.status === "scheduled" ? tr("Opens in {0}", { "0": formatRemaining(opensIn) || "—" }) : formatDateTime(auction.ends_at);
   const gallery = auction.gallery.length ? auction.gallery : auction.image_url ? [auction.image_url] : [];
   const tabs = [
     { value: "bids" as Tab, label: "Bids", count: detail.bids.length },
     { value: "comments" as Tab, label: "Comments", count: detail.comments.length },
-    ...(auction.sold ? [{ value: "pickup" as Tab, label: "Pickup" }] : []),
+    ...(auction.sold || awaiting ? [{ value: "pickup" as Tab, label: awaiting ? "Result" : "Pickup" }] : []),
   ];
   const email = auction.winner_notified_at
     ? (auction.winner_email_mode === "mock" ? tr("Mock email logged {0}. No real email was sent.", { "0": formatDateTime(auction.winner_notified_at) }) : tr("Winner emailed {0}.", { "0": formatDateTime(auction.winner_notified_at) }))
@@ -104,8 +111,10 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
         size="xl"
         onClose={onClose}
         footer={<>
-          {canDelete && !live && auction.fulfillment_status !== "awaiting_pickup" && <button type="button" onClick={() => setPending("delete")} className={`${BTN.ghost} sm:mr-auto`}><Trash2 size={16} aria-hidden="true" />{tr("Delete")}</button>}
-          {live && <button type="button" onClick={() => setCancelOpen(true)} className={`${BTN.ghost} sm:mr-auto`}><Ban size={16} aria-hidden="true" />{tr("Cancel auction")}</button>}
+          {canDelete && !live && !awaiting && !pickupPending && <button type="button" onClick={() => setPending("delete")} className={`${BTN.ghost} sm:mr-auto`}><Trash2 size={16} aria-hidden="true" />{tr("Delete")}</button>}
+          {(live || awaiting) && <button type="button" onClick={() => setCancelOpen(true)} className={`${BTN.ghost} sm:mr-auto`}><Ban size={16} aria-hidden="true" />{tr("Cancel auction")}</button>}
+          {awaiting && <button type="button" onClick={() => setReauctionOpen(true)} className={BTN.ghost}><Repeat2 size={16} aria-hidden="true" />{tr("Re-auction")}</button>}
+          {awaiting && <button type="button" onClick={() => setPending("finalize")} className={BTN.success}><CheckCheck size={16} aria-hidden="true" />{tr("Confirm winner")}</button>}
           {auction.status === "live" && <button type="button" onClick={() => setPending("end")} className={BTN.ghost}><Timer size={16} aria-hidden="true" />{tr("End now")}</button>}
           {live && <button type="button" onClick={() => onEdit(auction)} className={BTN.primary}><Pencil size={16} aria-hidden="true" />{tr("Edit")}</button>}
           <button type="button" onClick={onClose} className={BTN.ghost}>{tr("Close")}</button>
@@ -114,14 +123,14 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
         <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
           <div className="min-w-0 space-y-4">
             <div className="relative overflow-hidden rounded-2xl bg-navy-900 ring-1 ring-line">
-              {gallery[photo] ? <img src={gallery[photo]} alt={auction.title} className="aspect-[4/3] max-h-[32dvh] w-full object-cover lg:max-h-none" /> : <div className="flex aspect-[4/3] items-center justify-center text-[13px] text-navy-200">{tr("No photo")}</div>}
+              {gallery[photo] ? <img decoding="async" src={gallery[photo]} alt={auction.title} className="aspect-[4/3] max-h-[32dvh] w-full object-cover lg:max-h-none" /> : <div className="flex aspect-[4/3] items-center justify-center text-[13px] text-navy-200">{tr("No photo")}</div>}
               <span className="absolute left-3 top-3"><StatusPill tone={STATUS_TONE[auction.status] ?? "slate"}>{statusLabel(auction)}</StatusPill></span>
             </div>
             {gallery.length > 1 && (
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {gallery.map((url, index) => (
                   <button key={url} type="button" onClick={() => setPhoto(index)} aria-label={tr("Photo {0}", { "0": index + 1 })} aria-current={photo === index} className={`size-16 shrink-0 overflow-hidden rounded-xl ring-2 transition ${photo === index ? "ring-gold-500" : "ring-transparent opacity-70 hover:opacity-100"}`}>
-                    <img src={url} alt="" loading="lazy" className="size-full object-cover" />
+                    <img decoding="async" src={url} alt="" loading="lazy" className="size-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -136,6 +145,13 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
               ["Anti-snipe", auction.anti_snipe_enabled ? tr("{0} min window, +{1} min", { "0": Math.round(auction.anti_snipe_window_seconds / 60), "1": Math.round(auction.anti_snipe_extension_seconds / 60) }) : tr("Off")],
               ["Extensions used", `${auction.extension_count} / ${auction.max_extensions}`],
             ]} />
+            {awaiting && (
+              <div className="rounded-2xl border border-iris-300/70 bg-iris-50 px-4 py-3.5 text-[14px] leading-6 text-ink-soft dark:bg-iris-500/10" role="status">
+                <p className="font-semibold text-ink">{tr("Bidding is closed. The result needs your decision.")}</p>
+                <p className="mt-1">{tr("Confirm the winner to notify them for pickup, or re-auction if the sale cannot go ahead.")}</p>
+              </div>
+            )}
+            {auction.reauctioned_from && <p className="rounded-2xl border border-line bg-frost-50 px-4 py-3 text-[13.5px] leading-6 text-ink-soft">{tr("This is a re-auction of an earlier sale.")}{auction.reauction_reason ? ` ${auction.reauction_reason}` : ""}</p>}
             {auction.status === "cancelled" && auction.cancel_reason && <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] leading-6 text-rose-800">{tr("Cancelled: {0}", { "0": auction.cancel_reason })}</p>}
           </div>
 
@@ -177,6 +193,26 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
               </ul>
             ))}
 
+            {tab === "pickup" && awaiting && (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-gold-300/60 bg-gold-50 p-4 dark:bg-gold-500/10">
+                  <p className="text-[13px] font-medium text-ink-muted">{tr("Highest bid")}</p>
+                  <p className="font-[family-name:var(--font-heading)] text-[30px] font-semibold tabular-nums text-ink">{peso(auction.current_price)}</p>
+                </div>
+                <DetailGrid items={[
+                  ["Leading bidder", bidder?.name ?? "—"],
+                  ["Campus ID", bidder?.campus_id ?? "—"],
+                  ["Email", bidder?.email ?? "—"],
+                  ["Bids placed", String(auction.bid_count)],
+                ]} />
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => setPending("finalize")} className={BTN.success}><CheckCheck size={16} aria-hidden="true" />{tr("Confirm winner")}</button>
+                  <button type="button" onClick={() => setReauctionOpen(true)} className={BTN.ghost}><Repeat2 size={16} aria-hidden="true" />{tr("Re-auction")}</button>
+                  {bidder && <button type="button" onClick={() => setSuspendOpen(true)} className={BTN.ghost}><UserX size={16} aria-hidden="true" />{tr("Suspend bidder")}</button>}
+                </div>
+              </div>
+            )}
+
             {tab === "pickup" && auction.sold && (
               <div className="space-y-4">
                 <div className="rounded-2xl border border-gold-300/60 bg-gold-50 p-4">
@@ -193,6 +229,8 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
                 {auction.fulfillment_status === "awaiting_pickup" && (
                   <div className="flex flex-wrap gap-2">
                     <button type="button" onClick={() => setPending("collected")} className={BTN.success}><PackageCheck size={16} aria-hidden="true" />{tr("Mark collected")}</button>
+                    <button type="button" onClick={() => setReauctionOpen(true)} className={BTN.ghost}><Repeat2 size={16} aria-hidden="true" />{tr("Winner flaked: re-auction")}</button>
+                    {auction.winner_detail && <button type="button" onClick={() => setSuspendOpen(true)} className={BTN.ghost}><UserX size={16} aria-hidden="true" />{tr("Suspend winner")}</button>}
                     <button type="button" onClick={() => setPending("forfeited")} className={BTN.ghost}><Undo2 size={16} aria-hidden="true" />{tr("Forfeit and return to custody")}</button>
                   </div>
                 )}
@@ -219,7 +257,41 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
         </AdminModal>
       )}
 
-      {pending && (
+      {reauctionOpen && <ReauctionModal auction={auction} onClose={() => setReauctionOpen(false)} onDone={() => { onChanged(); onClose(); }} />}
+
+      {suspendOpen && bidder && (
+        <SuspendUserModal
+          accountId={bidder.account_id}
+          name={bidder.name}
+          defaultReason={`Did not complete an auction purchase (${auction.reference || auction.title}).`}
+          onClose={() => setSuspendOpen(false)}
+          onDone={() => { onChanged(); void load(); }}
+        />
+      )}
+
+      {pending === "finalize" && (
+        <AdminModal
+          title={tr("Confirm the winner?")}
+          description={tr("This closes the auction for good.")}
+          icon={<CheckCheck size={19} />} tone="mint" size="sm" busy={busy} onClose={() => setPending(null)}
+          footer={<>
+            <button type="button" onClick={() => setPending(null)} disabled={busy} className={BTN.ghost}>{tr("Back")}</button>
+            <button type="button" disabled={busy} onClick={() => void run(() => finalizeAdminAuction(auction.id))} className={BTN.success}>{busy ? tr("Working…") : tr("Confirm winner")}</button>
+          </>}
+        >
+          <div className="rounded-2xl border border-gold-300/60 bg-gold-50 px-4 py-4 dark:bg-gold-500/10">
+            <p className="text-[13px] font-medium text-ink-muted">{bidder?.name ?? "—"}</p>
+            <p className="font-[family-name:var(--font-heading)] text-[28px] font-semibold tabular-nums text-ink">{peso(auction.current_price)}</p>
+          </div>
+          <ul className="mt-4 space-y-1.5 text-[14px] leading-6 text-ink-soft">
+            <li>{tr("The winner is notified to collect and pay at the Lost and Found Office.")}</li>
+            <li>{tr("The item is marked as auctioned and waits for pickup.")}</li>
+            <li>{tr("If the winner does not show up, you can still re-auction it.")}</li>
+          </ul>
+        </AdminModal>
+      )}
+
+      {pending && pending !== "finalize" && (
         <ConfirmActionDialog
           title={{ end: "end this auction now?", delete: "delete this auction and its bids?", collected: "mark this item as collected?", forfeited: "forfeit this sale?" }[pending]}
           description={{

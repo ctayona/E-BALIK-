@@ -12,14 +12,17 @@ const clay = {
 
 export default function Login({
   onClose,
-  onSwitchToRegister,
-  onForgotPassword,
+  onSwitchToRegister = () => undefined,
+  onForgotPassword = () => undefined,
   onLoginSuccess,
+  staffOnly = false,
 }: {
   onClose: () => void;
-  onSwitchToRegister: () => void;
-  onForgotPassword: () => void;
+  onSwitchToRegister?: () => void;
+  onForgotPassword?: () => void;
   onLoginSuccess: () => void;
+  /** Maintenance screen: only admins can sign in, so hide registration and password recovery. */
+  staffOnly?: boolean;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -174,7 +177,7 @@ export default function Login({
       {/* UMak branding — clay chip */}
       <div className="flex items-center gap-3 w-full">
         <div className="flex items-center justify-center rounded-xl size-[52px] border border-[#e8edf5] bg-white">
-          <img alt="University of Makati" className="size-[38px] object-contain" src={umakLogo} />
+          <img decoding="async" alt="University of Makati" className="size-[38px] object-contain" src={umakLogo} />
         </div>
         <div>
           <p className="font-semibold text-navy-800 text-[13px] leading-tight" style={{ fontFamily: "var(--font-heading)" }}>
@@ -231,13 +234,15 @@ export default function Login({
         </div>
 
         {/* Forgot password */}
-        <button
-          type="button"
-          onClick={onForgotPassword}
-          className="font-semibold text-navy-800 text-[13px] underline hover:text-[#d1a153] transition-colors self-start"
-        >
-          Forgot Password?
-        </button>
+        {!staffOnly && (
+          <button
+            type="button"
+            onClick={onForgotPassword}
+            className="font-semibold text-navy-800 text-[13px] underline hover:text-[#d1a153] transition-colors self-start"
+          >
+            Forgot Password?
+          </button>
+        )}
 
         {/* Error */}
         {(submitError || error) && (
@@ -275,18 +280,22 @@ export default function Login({
         <div id="google-signin-button" className="w-full" />
       </div>
 
-      <div className="w-full h-px bg-line" />
+      {!staffOnly && (
+        <>
+          <div className="w-full h-px bg-line" />
 
-      {/* Switch to register */}
-      <div className="flex gap-1 items-center justify-center w-full">
-        <span className="text-ink-muted text-[14px]">Don&apos;t have an account?</span>
-        <button
-          onClick={onSwitchToRegister}
-          className="font-bold text-navy-800 text-[14px] underline hover:text-[#d1a153] transition-colors"
-        >
-          Register
-        </button>
-      </div>
+          {/* Switch to register */}
+          <div className="flex gap-1 items-center justify-center w-full">
+            <span className="text-ink-muted text-[14px]">Don&apos;t have an account?</span>
+            <button
+              onClick={onSwitchToRegister}
+              className="font-bold text-navy-800 text-[14px] underline hover:text-[#d1a153] transition-colors"
+            >
+              Register
+            </button>
+          </div>
+        </>
+      )}
 
       {/* Google register prompt — nested clay dialog */}
       {googleRegisterPrompt?.open && (

@@ -10,6 +10,8 @@ import ItemImage, { type GalleryItem } from "@/app/shared/media/ItemImage";
 import ViewToggle from "@/app/shared/view/ViewToggle";
 import { useViewMode } from "@/app/shared/view/useViewMode";
 import Modal, { CountdownConsent } from "@/app/shared/modal/Modal";
+import VerificationGate from "@/app/shared/verification/VerificationGate";
+import { isVerified, useCurrentUser } from "@/app/utils/system";
 
 const CATEGORIES = ["Bags & Luggage", "Electronics", "Accessories", "Personal Effects", "Documents & Cards", "Clothing", "Keys", "Valuables", "Others"];
 const FOUND_LOCATIONS = ["Main Building Lobby", "Student Center", "Library", "ICT Building", "Faculty Hall", "Cafeteria", "Gym", "Other"];
@@ -38,6 +40,7 @@ type MatchSummary = {
 
 export default function FoundItem({ focused = false, onBack }: { focused?: boolean; onBack?: (page: Page) => void }) {
   const { createFoundItem, getFoundItems, getFoundMatchSummaries, isLoading, user } = useAuth();
+  const verified = isVerified(useCurrentUser());
   const [activeTab, setActiveTab] = useState<"intake" | "reports">("intake");
   const [title, setTitle] = useState("");
   const [location, setLocation] = useState(FOUND_LOCATIONS[0]);
@@ -115,6 +118,10 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
+    if (!verified) {
+      setError("Verify your account first. Open My Profile and upload an ID.");
+      return;
+    }
     setCountdown(5);
     setAgreed(false);
     setConfirmationOpen(true);
@@ -201,6 +208,8 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
 
         {error && <div role="alert" className={`${CX.alertError} mb-5`}>{error}</div>}
 
+        {(focused || activeTab === "intake") && onBack && <VerificationGate action="report a found item" onNavigate={onBack} className="mb-5" />}
+
         {focused || activeTab === "intake" ? (
           <form onSubmit={handleSubmit} className="space-y-5">
             <section className={`${CX.card} overflow-hidden`} aria-labelledby="found-photo-heading">
@@ -222,7 +231,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
                 >
                   {imagePreview ? (
                     <>
-                      <img src={imagePreview} alt="Found item preview" className="max-h-[260px] rounded-2xl object-contain shadow-card" />
+                      <img decoding="async" src={imagePreview} alt="Found item preview" className="max-h-[260px] rounded-2xl object-contain shadow-card" />
                       <span className="glass-dark absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold"><RefreshCw size={13} aria-hidden="true" />Change photo</span>
                     </>
                   ) : (
@@ -268,7 +277,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
                 <UserRound size={15} className="shrink-0 text-iris-600" aria-hidden="true" />
                 <span className="min-w-0 truncate">Reporting as <span className="font-semibold text-ink">{user?.email}</span>{user?.campus_id ? ` · ${user.campus_id}` : ""}</span>
               </p>
-              <button type="submit" disabled={isLoading} className={`${CX.btnGold} shrink-0 px-6`}>
+              <button type="submit" disabled={isLoading || !verified} className={`${CX.btnGold} shrink-0 px-6`}>
                 <BadgeCheck size={17} aria-hidden="true" />{isLoading ? "Saving…" : "Publish found report"}
               </button>
             </div>

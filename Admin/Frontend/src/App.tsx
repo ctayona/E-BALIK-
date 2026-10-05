@@ -21,8 +21,9 @@ const ReportsAnalytics = lazy(() => import("./pages/reports-analytics/ReportsAna
 const Notifications = lazy(() => import("./pages/notifications/Notifications"));
 const ActivityLogs = lazy(() => import("./pages/activity-logs/ActivityLogs"));
 const AdminProfile = lazy(() => import("./pages/admin-profile/AdminProfile"));
+const SystemControl = lazy(() => import("./pages/system-control/SystemControl"));
 
-type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "auctions" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "admin-profile";
+type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "auctions" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "admin-profile";
 
 const PAGE_META: Record<Page, StringKey> = {
   "dashboard": "nav.dashboard",
@@ -36,6 +37,7 @@ const PAGE_META: Record<Page, StringKey> = {
   "reports": "nav.reports",
   "notifications": "nav.notifications",
   "activity-logs": "nav.activityLogs",
+  "system-control": "nav.systemControl",
   "admin-profile": "nav.profile",
 };
 
@@ -110,6 +112,7 @@ export default function App() {
       case "reports": return <ReportsAnalytics />;
       case "notifications": return <Notifications />;
       case "activity-logs": return <ActivityLogs />;
+      case "system-control": return user.access_level === "super_admin" ? <SystemControl /> : <Dashboard onNavigate={(target) => navigate(target)} />;
       case "admin-profile": return <AdminProfile />;
       default: return <Dashboard onNavigate={(target) => navigate(target)} />;
     }

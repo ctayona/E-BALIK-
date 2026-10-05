@@ -44,7 +44,7 @@ export default function Gallery({ images, alt, aspect = "aspect-[4/3]", classNam
       >
         {images.map((src, i) => (
           <button key={src} type="button" onClick={() => onOpen?.(i)} disabled={!onOpen} aria-label={`${alt}, photo ${i + 1} of ${count}`} className="size-full shrink-0 snap-center disabled:cursor-default">
-            <img src={src} alt="" loading={i === 0 ? "eager" : "lazy"} draggable={false} className="size-full object-cover" />
+            <img decoding="async" src={src} alt="" loading={i === 0 ? "eager" : "lazy"} draggable={false} className="size-full object-cover" />
           </button>
         ))}
       </div>
@@ -53,7 +53,7 @@ export default function Gallery({ images, alt, aspect = "aspect-[4/3]", classNam
           <button type="button" onClick={() => go(index - 1)} aria-label="Previous photo" className="glass-dark absolute left-3 top-1/2 hidden size-10 -translate-y-1/2 items-center justify-center rounded-full opacity-0 transition-opacity focus-visible:opacity-100 group-hover/gallery:opacity-100 md:flex"><ChevronLeft size={19} aria-hidden="true" /></button>
           <button type="button" onClick={() => go(index + 1)} aria-label="Next photo" className="glass-dark absolute right-3 top-1/2 hidden size-10 -translate-y-1/2 items-center justify-center rounded-full opacity-0 transition-opacity focus-visible:opacity-100 group-hover/gallery:opacity-100 md:flex"><ChevronRight size={19} aria-hidden="true" /></button>
           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center gap-1.5" aria-hidden="true">
-            {images.map((src, i) => <span key={src} className={`h-1.5 rounded-full transition-all ${i === index ? "w-5 bg-gold-400" : "w-1.5 bg-white/60"}`} />)}
+            {images.map((src, i) => <span key={src} className={`h-1.5 rounded-full transition-[color,background-color,border-color,box-shadow,opacity,transform] ${i === index ? "w-5 bg-gold-400" : "w-1.5 bg-white/60"}`} />)}
           </div>
         </>
       )}

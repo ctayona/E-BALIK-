@@ -155,7 +155,7 @@ export default function Dashboard({ user, onNavigate }: {
         </section>
 
         {/* Live auctions (own component so its countdown ticks don't re-render the whole dashboard) */}
-        <AuctionShelf onViewAll={() => onNavigate("auction-hall")} />
+        <AuctionShelf onViewAll={() => onNavigate("auction-hall")} onVerify={() => onNavigate("profile")} />
 
         {/* Recent found items */}
         <DashboardSection

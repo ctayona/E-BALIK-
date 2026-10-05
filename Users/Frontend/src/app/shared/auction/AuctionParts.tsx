@@ -19,6 +19,7 @@ export function AuctionClock({ auction, now, offset, className = "" }: { auction
     return <span className={`${base} bg-iris-600 text-white`}>{opens > 0 ? `Opens in ${formatRemaining(opens)}` : "Opening"}</span>;
   }
   if (auction.status === "cancelled") return <span className={`${base} bg-rose-600 text-white`}>Cancelled</span>;
+  if (auction.status === "awaiting") return <span className={`${base} bg-iris-600 text-white`}>Awaiting result</span>;
   return <span className={`${base} bg-navy-950/75 text-white backdrop-blur`}>{auction.status === "live" ? "Closing" : "Ended"}</span>;
 }
 
@@ -40,7 +41,7 @@ export function AuctionTile({ auction, now, offset, onOpen, tone = "surface" }: 
     >
       <div className="relative aspect-[4/3] overflow-hidden bg-navy-900">
         {auction.image_url ? (
-          <img src={auction.image_url} alt="" loading="lazy" className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
+          <img decoding="async" src={auction.image_url} alt="" loading="lazy" className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
         ) : (
           <div className="flex size-full items-center justify-center bg-[radial-gradient(120%_90%_at_20%_0%,#33497f_0%,#1f3160_45%,#0e1830_100%)] text-gold-300"><Gavel size={30} aria-hidden="true" /></div>
         )}
@@ -66,11 +67,11 @@ export function AuctionTile({ auction, now, offset, onOpen, tone = "surface" }: 
 /** Past auction tile with the hatched SOLD overlay. */
 export function SoldTile({ auction, onOpen }: { auction: Auction; onOpen: (auction: Auction) => void }) {
   return (
-    <button type="button" onClick={() => onOpen(auction)} aria-label={`${auction.title}, ${auction.sold ? `sold for ${pesoShort(auction.winning_amount)}` : "ended without bids"}`} className="group relative aspect-square overflow-hidden rounded-[18px] bg-navy-900 text-left outline-offset-2">
-      {auction.image_url && <img src={auction.image_url} alt="" loading="lazy" className="size-full object-cover opacity-60 grayscale-[35%] transition-opacity group-hover:opacity-80" />}
+    <button type="button" onClick={() => onOpen(auction)} aria-label={`${auction.title}, ${auction.status === "awaiting" ? "result pending" : auction.sold ? `sold for ${pesoShort(auction.winning_amount)}` : "ended without bids"}`} className="group relative aspect-square overflow-hidden rounded-[18px] bg-navy-900 text-left outline-offset-2">
+      {auction.image_url && <img decoding="async" src={auction.image_url} alt="" loading="lazy" className="size-full object-cover opacity-60 grayscale-[35%] transition-opacity group-hover:opacity-80" />}
       <span className="absolute inset-0 bg-[repeating-linear-gradient(135deg,rgba(14,24,48,0.55)_0,rgba(14,24,48,0.55)_6px,rgba(14,24,48,0.2)_6px,rgba(14,24,48,0.2)_12px)]" aria-hidden="true" />
       <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-center">
-        <span className="font-[family-name:var(--font-heading)] text-[24px] font-bold text-white drop-shadow sm:text-[28px]">{auction.sold ? "SOLD" : "ENDED"}</span>
+        <span className="font-[family-name:var(--font-heading)] text-[24px] font-bold text-white drop-shadow sm:text-[28px]">{auction.status === "awaiting" ? "PENDING" : auction.sold ? "SOLD" : "ENDED"}</span>
         {auction.sold && <span className="rounded-full bg-gold-500 px-2.5 py-0.5 text-[12.5px] font-bold tabular-nums text-navy-950">{pesoShort(auction.winning_amount)}</span>}
       </span>
       <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-navy-950/90 to-transparent p-3 pt-8">

@@ -99,6 +99,9 @@ export interface AdminUserRow {
   status: "Active" | "Suspended" | "Inactive";
   accessLevel: "user" | "admin" | "super_admin";
   lastActivity: string;
+  verification?: "pending" | "verified" | "rejected";
+  category?: string | null;
+  suspendedUntil?: string | null;
 }
 
 export interface AdminAccountVerificationRequest {
@@ -316,24 +319,24 @@ export async function fetchAdminAccountVerifications(): Promise<AdminAccountVeri
 export async function reviewAdminAccountVerification(
   accountId: string,
   status: "verified" | "rejected",
-  userRole: string,
+  userCategory: string,
   reviewNote: string,
 ) {
   const response = await adminMutationRequest(`${API_URL}/api/admin/account-verifications/${encodeURIComponent(accountId)}`, {
     method: "PATCH",
     headers: getAuthHeaders(),
-    body: JSON.stringify({ status, user_role: userRole, review_note: reviewNote }),
+    body: JSON.stringify({ status, user_category: userCategory, review_note: reviewNote }),
   }, status === "verified" ? "Verify account identity" : "Reject account verification");
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Unable to review account verification");
   return payload as { success: boolean; user: { account_id: string; verification_status: "verified" | "rejected"; user_role: string } };
 }
 
-export async function updateAdminUserStatus(accountId: string, status: "active" | "suspended") {
+export async function updateAdminUserStatus(accountId: string, status: "active" | "suspended", options: { days?: number | null; reason?: string } = {}) {
   const response = await adminMutationRequest(`${API_URL}/api/admin/users/${accountId}/status`, {
     method: "PATCH",
     headers: getAuthHeaders(),
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, ...(options.days ? { days: options.days } : {}), ...(options.reason ? { reason: options.reason } : {}) }),
   }, status === "active" ? "Reactivate account" : "Suspend account");
 
   if (!response.ok) {

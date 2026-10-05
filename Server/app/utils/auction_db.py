@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 MIN_CUSTODY_DAYS = 30
 LIVE_STATUSES = ('scheduled', 'active')
+# Live plus the state after the timer ends while an admin decides: the item is still committed to this auction.
+OPEN_STATUSES = ('scheduled', 'active', 'awaiting_admin')
 OPEN_CLAIM_STATUSES = ('pending', 'approved_for_pickup')
 MAX_PRICE = Decimal('10000000')
 MAX_COMMENT_LENGTH = 500
@@ -31,7 +33,7 @@ _last_settle = [0.0]
 BID_ERRORS = {
     'account_inactive': ("Your account can't place bids right now.", 403),
     'not_found': ('Auction not found.', 404),
-    'auction_closed': ('This auction has ended.', 409),
+    'auction_closed': ('Bidding has closed on this auction.', 409),
     'not_started': ('Bidding has not opened yet.', 409),
     'item_unavailable': ('This item is no longer available.', 409),
     'already_highest': ('You already have the highest bid.', 409),
@@ -154,10 +156,12 @@ class AuctionService:
     @staticmethod
     def _public_status(row: Dict[str, Any], now: datetime) -> str:
         status = row.get('status')
+        if status == 'awaiting_admin':
+            return 'awaiting'
         if status in LIVE_STATUSES:
             starts, ends = _parse(row.get('starts_at')), _parse(row.get('ends_at'))
             if ends and ends <= now:
-                return 'ended'
+                return 'awaiting' if int(row.get('bid_count') or 0) > 0 else 'ended'
             if starts and starts > now:
                 return 'scheduled'
             return 'live'
@@ -198,6 +202,7 @@ class AuctionService:
             'winner': mask_name(profiles.get(winner_id)) if winner_id and status == 'ended' else None,
             'winning_amount': _num(row.get('winning_amount')) if winner_id and status == 'ended' else None,
             'sold': bool(winner_id) and status == 'ended',
+            'awaiting_admin': status == 'awaiting',
             'cancel_reason': row.get('cancel_reason') if status == 'cancelled' else None,
         }
 
@@ -213,8 +218,30 @@ class AuctionService:
             self._guard(error)
         return self._notify_pending_winners()
 
+    def _notify_awaiting_leaders(self) -> None:
+        """Tell the top bidder bidding closed and an admin will confirm the result (once per auction)."""
+        try:
+            rows = self.client.table('auctions').select('auction_id').eq('status', 'awaiting_admin').not_.is_('winner_account_id', 'null').is_('leader_notified_at', 'null').limit(20).execute().data or []
+        except Exception as error:
+            logger.warning('Leader notices skipped: %s', error)
+            return
+        for row in rows:
+            claimed = self.client.table('auctions').update({'leader_notified_at': _iso(_now())}).eq('auction_id', row['auction_id']).is_('leader_notified_at', 'null').execute().data or []
+            if not claimed:
+                continue
+            auction = claimed[0]
+            try:
+                self.db.create_user_notification(
+                    str(auction['winner_account_id']), 'Bidding closed: you have the highest bid',
+                    f"Bidding on {auction.get('title')} ended and your {format_peso(auction.get('winning_amount'))} bid is the highest. An administrator will confirm the result soon.",
+                    notification_type='auction_awaiting', link_label='View auction', link_page='auction-hall',
+                )
+            except Exception as error:
+                logger.warning('Leader notification failed: %s', error)
+
     def _notify_pending_winners(self) -> int:
-        pending = self.client.table('auctions').select('auction_id').eq('status', 'ended').not_.is_('winner_account_id', 'null').is_('winner_notified_at', 'null').limit(20).execute().data or []
+        self._notify_awaiting_leaders()
+        pending = self.client.table('auctions').select('auction_id').eq('status', 'ended').in_('fulfillment_status', ['awaiting_pickup', 'collected']).not_.is_('winner_account_id', 'null').is_('winner_notified_at', 'null').limit(20).execute().data or []
         sent = 0
         for row in pending:
             # Claim the notice atomically: only the request whose update matches a still-null winner_notified_at sends it.
@@ -259,7 +286,7 @@ class AuctionService:
             self.settle_and_notify()
             live = self.client.table('auctions').select('*').in_('status', list(LIVE_STATUSES)).order('ends_at').limit(100).execute().data or []
             since = _iso(now - timedelta(days=PAST_AUCTION_DAYS))
-            past = self.client.table('auctions').select('*').eq('status', 'ended').gte('ended_at', since).order('ended_at', desc=True).limit(40).execute().data or []
+            past = self.client.table('auctions').select('*').in_('status', ['ended', 'awaiting_admin']).gte('ended_at', since).order('ended_at', desc=True).limit(40).execute().data or []
         except Exception as error:
             self._guard(error)
         rows = live + past
@@ -267,7 +294,7 @@ class AuctionService:
         cards = [self.card(r, profiles, now) for r in rows]
         return {
             'live': [c for c in cards if c['status'] in ('live', 'scheduled')],
-            'past': [c for c in cards if c['status'] == 'ended'],
+            'past': [c for c in cards if c['status'] in ('ended', 'awaiting')],
             'server_time': _iso(now),
         }
 
@@ -339,6 +366,8 @@ class AuctionService:
             leading = str(row.get('highest_bidder_id')) == str(account_id)
             if card['status'] in ('live', 'scheduled'):
                 state = 'leading' if leading else 'outbid'
+            elif card['status'] == 'awaiting':
+                state = 'awaiting' if leading else 'outbid'
             elif card['status'] == 'cancelled':
                 state = 'cancelled'
             else:
@@ -433,7 +462,7 @@ class AuctionService:
             ids = [str(i['item_id']) for i in items]
             blocked = set()
             for chunk in _chunks(ids):
-                live = self.client.table('auctions').select('found_item_id').in_('found_item_id', chunk).in_('status', list(LIVE_STATUSES)).execute().data or []
+                live = self.client.table('auctions').select('found_item_id').in_('found_item_id', chunk).in_('status', list(OPEN_STATUSES)).execute().data or []
                 claims = self.client.table('claims').select('found_item_id').in_('found_item_id', chunk).in_('status', list(OPEN_CLAIM_STATUSES)).execute().data or []
                 blocked.update(str(r['found_item_id']) for r in live + claims)
         except Exception as error:
@@ -468,7 +497,7 @@ class AuctionService:
                 raise AuctionError(f'An item must be in custody for at least {MIN_CUSTODY_DAYS} days before it can be auctioned.', 409)
             if self.client.table('claims').select('claim_id').eq('found_item_id', item['item_id']).in_('status', list(OPEN_CLAIM_STATUSES)).limit(1).execute().data:
                 raise AuctionError('This item has an open ownership claim. Resolve the claim first.', 409)
-            if self.client.table('auctions').select('auction_id').eq('found_item_id', item['item_id']).in_('status', list(LIVE_STATUSES)).limit(1).execute().data:
+            if self.client.table('auctions').select('auction_id').eq('found_item_id', item['item_id']).in_('status', list(OPEN_STATUSES)).limit(1).execute().data:
                 raise AuctionError('This item already has a live auction.', 409)
         except AuctionError:
             raise
@@ -523,6 +552,7 @@ class AuctionService:
                 'db_status': row.get('status'), 'fulfillment_status': row.get('fulfillment_status'),
                 'winner_notified_at': row.get('winner_notified_at'), 'winner_email_mode': row.get('winner_email_mode'),
                 'cancelled_at': row.get('cancelled_at'), 'ended_at': row.get('ended_at'), 'created_at': row.get('created_at'),
+                'finalized_at': row.get('finalized_at'), 'reauctioned_from': str(row['reauctioned_from']) if row.get('reauctioned_from') else None, 'reauction_reason': row.get('reauction_reason'),
                 'leader_detail': person(leader), 'winner_detail': person(winner) if card['status'] == 'ended' else None,
                 'winner': (person(winner) or {}).get('name') if card['status'] == 'ended' and winner else None}
 
@@ -539,6 +569,7 @@ class AuctionService:
         stats = {
             'live': sum(1 for c in cards if c['status'] == 'live'),
             'scheduled': sum(1 for c in cards if c['status'] == 'scheduled'),
+            'awaiting_admin': sum(1 for c in cards if c['status'] == 'awaiting'),
             'ended': sum(1 for c in cards if c['status'] == 'ended'),
             'awaiting_pickup': sum(1 for c in cards if c['fulfillment_status'] == 'awaiting_pickup'),
             'total_bids': sum(c['bid_count'] for c in cards),
@@ -667,11 +698,11 @@ class AuctionService:
         reason = str(reason or '').strip()[:300] or 'Cancelled by an administrator.'
         try:
             row = self._live_row(auction_id)
-            if row.get('status') not in LIVE_STATUSES:
-                raise AuctionError('Only scheduled or running auctions can be cancelled.', 409)
+            if row.get('status') not in OPEN_STATUSES:
+                raise AuctionError('Only an open auction can be cancelled.', 409)
             cancelled = self.client.table('auctions').update({
                 'status': 'cancelled', 'cancelled_at': _iso(now), 'ended_at': _iso(now), 'cancel_reason': reason, 'updated_at': _iso(now),
-            }).eq('auction_id', auction_id).in_('status', list(LIVE_STATUSES)).execute().data or []
+            }).eq('auction_id', auction_id).in_('status', list(OPEN_STATUSES)).execute().data or []
         except AuctionError:
             raise
         except Exception as error:
@@ -720,10 +751,104 @@ class AuctionService:
             self._guard(error)
         return bool(updated)
 
+    def finalize(self, auction_id: str, admin_id: str) -> Dict[str, Any]:
+        """An admin confirms the result of an auction awaiting_admin. Sends the winner notice on success."""
+        try:
+            response = self.client.rpc('auction_finalize', {'p_auction_id': auction_id, 'p_admin_id': admin_id}).execute()
+        except Exception as error:
+            self._guard(error)
+        result = response.data[0] if isinstance(response.data, list) and response.data else response.data
+        if not isinstance(result, dict):
+            raise AuctionError('The result could not be confirmed. Try again.', 500)
+        if not result.get('ok'):
+            message, status = {
+                'admin_required': ('Only an administrator can confirm a result.', 403),
+                'not_found': ('Auction not found.', 404),
+                'not_awaiting': ('This auction is not waiting for an administrator.', 409),
+            }.get(str(result.get('error')), ('The result could not be confirmed.', 400))
+            raise AuctionError(message, status)
+        auction = result['auction']
+        if result.get('outcome') == 'cancelled':
+            if auction.get('winner_account_id'):
+                try:
+                    self.db.create_user_notification(
+                        str(auction['winner_account_id']), 'Auction cancelled', f"The auction for {auction.get('title')} was cancelled. {auction.get('cancel_reason') or ''}".strip(),
+                        notification_type='auction_cancelled', link_label='View auction', link_page='auction-hall',
+                    )
+                except Exception as error:
+                    logger.warning('Cancel notification failed: %s', error)
+        else:
+            self._notify_pending_winners()
+        return {'outcome': result.get('outcome'), 'auction': auction}
+
+    def reauction(self, auction_id: str, payload: Dict[str, Any], admin_id: str) -> Dict[str, Any]:
+        """The winner did not complete the sale: forfeit it, put the item back in custody and list it again."""
+        now = _now()
+        reason = str(payload.get('reason') or '').strip()[:300] or 'The winning bidder did not complete the purchase.'
+        try:
+            row = self._live_row(auction_id)
+            status, fulfillment = row.get('status'), row.get('fulfillment_status')
+            if not (status == 'awaiting_admin' or (status == 'ended' and fulfillment == 'awaiting_pickup')):
+                raise AuctionError('Only an auction that is waiting for an admin or waiting for pickup can be re-auctioned.', 409)
+            original_minutes = 4320
+            starts_old, ends_old = _parse(row.get('starts_at')), _parse(row.get('original_ends_at'))
+            if starts_old and ends_old:
+                original_minutes = max(MIN_DURATION_MINUTES, min(MAX_DURATION_MINUTES, int((ends_old - starts_old).total_seconds() // 60)))
+            starting = parse_money(payload.get('starting_price', row.get('starting_price')), 'starting bid')
+            increment = parse_money(payload.get('bid_increment', row.get('bid_increment')), 'bid increment', maximum=Decimal('1000000'))
+            duration = parse_int(payload.get('duration_minutes', original_minutes), 'auction length in minutes', MIN_DURATION_MINUTES, MAX_DURATION_MINUTES)
+            window = parse_int(payload.get('anti_snipe_window_seconds', row.get('anti_snipe_window_seconds') or 300), 'anti-snipe window', 30, 3600)
+            extension = parse_int(payload.get('anti_snipe_extension_seconds', row.get('anti_snipe_extension_seconds') or 300), 'anti-snipe extension', 30, 3600)
+            max_extensions = parse_int(payload.get('max_extensions', row.get('max_extensions') if row.get('max_extensions') is not None else 10), 'maximum extensions', 0, 50)
+            if row.get('found_item_id'):
+                item = (self.client.table('found_items').select('status').eq('item_id', row['found_item_id']).limit(1).execute().data or [{}])[0]
+                if str(item.get('status') or '').lower() not in ('unclaimed', 'auctioned'):
+                    raise AuctionError('The item is no longer in custody, so it cannot be re-auctioned.', 409)
+                if self.client.table('claims').select('claim_id').eq('found_item_id', row['found_item_id']).in_('status', list(OPEN_CLAIM_STATUSES)).limit(1).execute().data:
+                    raise AuctionError('This item has an open ownership claim. Resolve the claim first.', 409)
+
+            forfeit = {'status': 'ended', 'fulfillment_status': 'forfeited', 'fulfillment_updated_at': _iso(now), 'reauction_reason': reason, 'updated_at': _iso(now)}
+            if not row.get('ended_at'):
+                forfeit['ended_at'] = _iso(now)
+            query = self.client.table('auctions').update(forfeit).eq('auction_id', auction_id).eq('status', status)
+            if status == 'ended':
+                query = query.eq('fulfillment_status', 'awaiting_pickup')
+            closed = query.execute().data or []
+            if not closed:
+                raise AuctionError('The auction changed while you were working. Reload and try again.', 409)
+            if row.get('found_item_id'):
+                self.client.table('found_items').update({'status': 'unclaimed', 'custody_status': 'turned_over', 'updated_at': _iso(now)}) \
+                    .eq('item_id', row['found_item_id']).eq('status', 'auctioned').execute()
+
+            ends = now + timedelta(minutes=duration)
+            fresh = {
+                'found_item_id': row.get('found_item_id'), 'item_reference': row.get('item_reference'), 'title': row.get('title'),
+                'description': row.get('description'), 'category': row.get('category'), 'found_location': row.get('found_location'),
+                'image_url': row.get('image_url'), 'gallery_urls': row.get('gallery_urls') or [],
+                'starting_price': float(starting), 'bid_increment': float(increment), 'current_price': float(starting),
+                'starts_at': _iso(now), 'ends_at': _iso(ends), 'original_ends_at': _iso(ends), 'anti_snipe_enabled': bool(row.get('anti_snipe_enabled')),
+                'anti_snipe_window_seconds': window, 'anti_snipe_extension_seconds': extension, 'max_extensions': max_extensions,
+                'status': 'active', 'created_by': admin_id, 'reauctioned_from': auction_id,
+            }
+            try:
+                created = self.client.table('auctions').insert(fresh).execute().data or []
+            except Exception:
+                # Put everything back so the admin can retry instead of being left with a half-finished re-auction.
+                revert = {'status': status, 'fulfillment_status': fulfillment, 'reauction_reason': None, 'updated_at': _iso(now)}
+                self.client.table('auctions').update(revert).eq('auction_id', auction_id).execute()
+                if row.get('found_item_id') and status == 'ended':
+                    self.client.table('found_items').update({'status': 'auctioned', 'custody_status': 'auctioned'}).eq('item_id', row['found_item_id']).execute()
+                raise
+        except AuctionError:
+            raise
+        except Exception as error:
+            self._guard(error)
+        return {'old': closed[0], 'new': created[0], 'previous_winner_id': row.get('winner_account_id')}
+
     def delete_auction(self, auction_id: str) -> Dict[str, Any]:
         try:
             row = self._live_row(auction_id)
-            if row.get('status') in LIVE_STATUSES:
+            if row.get('status') in OPEN_STATUSES:
                 raise AuctionError('Cancel the auction before deleting it.', 409)
             if row.get('fulfillment_status') == 'awaiting_pickup':
                 raise AuctionError('The winner has not collected this item yet. Mark it collected or forfeited first.', 409)

@@ -280,7 +280,7 @@ export default function Register({
       {/* UMak branding — clay chip */}
       <div className="flex items-center gap-3 w-full">
         <div className="flex items-center justify-center rounded-xl size-[52px] border border-[#e8edf5] bg-white">
-          <img alt="University of Makati" className="size-[38px] object-contain" src={umakLogo} />
+          <img decoding="async" alt="University of Makati" className="size-[38px] object-contain" src={umakLogo} />
         </div>
         <div>
           <p className="font-semibold text-navy-800 text-[13px] leading-tight" style={{ fontFamily: 'var(--font-heading)' }}>University of Makati</p>

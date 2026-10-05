@@ -176,7 +176,7 @@ export default function AdminProfile() {
         ) : setup ? (
           <div className="mt-5 grid gap-5 md:grid-cols-[220px_1fr]">
             <div className="flex flex-col items-center gap-3 rounded-xl border border-line bg-slate-50 p-4">
-              <img src={setup.qr_data_url} alt={tr("Authenticator enrollment QR code")} className="size-48 rounded-lg bg-white p-2" />
+              <img decoding="async" src={setup.qr_data_url} alt={tr("Authenticator enrollment QR code")} className="size-48 rounded-lg bg-white p-2" />
               <div className="flex items-center gap-1 text-xs text-slate-500"><Smartphone size={14} /> {tr("Scan with Google Authenticator")}</div>
             </div>
             <form onSubmit={(event) => { event.preventDefault(); setPendingMfaAction("verify"); }} className="space-y-3">

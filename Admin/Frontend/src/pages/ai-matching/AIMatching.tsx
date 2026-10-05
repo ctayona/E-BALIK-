@@ -47,7 +47,7 @@ function ItemVisual({ image, label, onClick }: { image?: string; label: string; 
 
   return (
     <button type="button" onClick={onClick} className="block h-28 w-full overflow-hidden rounded-xl border border-line bg-slate-50 shadow-sm transition hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-violet-300">
-      <img src={image} alt={label} className="h-full w-full object-contain p-2" />
+      <img decoding="async" src={image} alt={label} className="h-full w-full object-contain p-2" />
     </button>
   );
 }
@@ -129,7 +129,7 @@ export default function AIMatching() {
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-[color,background-color,border-color,box-shadow,opacity,transform]"
             style={activeTab === tab ? { background: "#1f3160", color: "white" } : { color: "#6b7280" }}
           >
             {tr(tab)} <span className="ml-1 opacity-70">{counts[tab]}</span>
@@ -143,7 +143,7 @@ export default function AIMatching() {
             <button type="button" onClick={() => setZoomedImage(null)} className="absolute right-4 top-4 z-10 rounded-full bg-white/90 p-2 text-slate-700 shadow-sm hover:bg-white">
               <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
             </button>
-            <img src={zoomedImage.src} alt={zoomedImage.label} className="max-h-[80vh] max-w-[80vw] rounded-xl object-contain" />
+            <img decoding="async" src={zoomedImage.src} alt={zoomedImage.label} className="max-h-[80vh] max-w-[80vw] rounded-xl object-contain" />
             <div className="mt-3 text-center text-sm font-medium text-slate-700">{zoomedImage.label}</div>
           </div>
         </div>

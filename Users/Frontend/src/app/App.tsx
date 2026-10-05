@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { NavigationOptions, Page } from "@/app/types";
 import { PanelSkeleton, ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 const Landing = lazy(() => import("@/app/pages/home/Landing"));
@@ -19,6 +19,8 @@ import InfoModalHost from "@/app/shared/info-modal/InfoModalHost";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { useAuth } from "@/app/utils/useAuth";
 import { authUtils } from "@/app/utils/api";
+import MaintenanceScreen from "@/app/shared/system/MaintenanceScreen";
+import { SYSTEM_EVENT, isStaff, useSystemStatus, type SystemEventDetail } from "@/app/utils/system";
 
 const USER_PAGE_STORAGE_KEY = "ebalik_user_last_page";
 const USER_NAVIGATION_OPTIONS_KEY = "ebalik_user_navigation_options";
@@ -39,6 +41,8 @@ export default function App() {
     }
   });
   const currentUser = user ?? authUtils.getUserData();
+  const system = useSystemStatus();
+  const lastSystemEvent = useRef({ code: "", at: 0 });
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -75,6 +79,40 @@ export default function App() {
     };
   }, [isAuthenticated, refreshProfile]);
 
+  // Server-side blocks (revoked session, suspension, unverified account) are handled once, here, for every page.
+  useEffect(() => {
+    const onSystemEvent = (event: Event) => {
+      const detail = (event as CustomEvent<SystemEventDetail>).detail;
+      if (!detail || detail.code === "maintenance") return;
+      const now = Date.now();
+      if (lastSystemEvent.current.code === detail.code && now - lastSystemEvent.current.at < 4000) return;
+      lastSystemEvent.current = { code: detail.code, at: now };
+
+      if (detail.code === "verification_required") {
+        showInfoModal({
+          variant: "warning",
+          title: "Verify your account first",
+          message: detail.message || "Only verified accounts can report items, file claims or bid.",
+          details: ["Open My Profile and upload a school or government ID.", "An administrator reviews it and assigns your role."],
+        });
+        void refreshProfile();
+        return;
+      }
+      logout();
+      localStorage.removeItem(USER_PAGE_STORAGE_KEY);
+      sessionStorage.removeItem(USER_NAVIGATION_OPTIONS_KEY);
+      setNavigationOptions({});
+      setPage("home");
+      if (detail.code === "suspended") {
+        showInfoModal({ variant: "error", title: "Account suspended", message: detail.message || "Your account is suspended. Contact the Lost and Found Office for help.", autoCloseMs: null });
+      } else {
+        showInfoModal({ variant: "info", title: "You were signed out", message: "An administrator ended all sessions for security. Sign in again to continue." });
+      }
+    };
+    window.addEventListener(SYSTEM_EVENT, onSystemEvent);
+    return () => window.removeEventListener(SYSTEM_EVENT, onSystemEvent);
+  }, [logout, refreshProfile]);
+
   function handleLoginSuccess() {
     setPage("dashboard");
   }
@@ -91,6 +129,15 @@ export default function App() {
     setNavigationOptions({});
     setPage("home");
     showInfoModal({ variant: "info", title: "Signed out", message: "You have been signed out of E-Balik. Sign in again any time to continue." });
+  }
+
+  if (system.maintenance && !isStaff(currentUser)) {
+    return (
+      <>
+        <MaintenanceScreen status={system} onRefresh={system.refresh} onStaffSignedIn={handleLoginSuccess} />
+        <InfoModalHost />
+      </>
+    );
   }
 
   if (!isAuthenticated && page === "home") {
@@ -120,7 +167,7 @@ export default function App() {
         {page === "matches"      && <Matches initialReportId={navigationOptions.reportId} onNavigate={handleNavigate} />}
         {page === "browse-items" && <BrowseItems onNavigate={handleNavigate} />}
         {page === "claim"        && <Claim foundItemId={navigationOptions.foundItemId} onNavigate={handleNavigate} />}
-        {page === "auction-hall" && <AuctionHall />}
+        {page === "auction-hall" && <AuctionHall onNavigate={handleNavigate} />}
         {page === "notifications" && <Notifications onNavigate={handleNavigate} />}
         {page === "profile"      && <Profile user={currentUser} onNavigate={handleNavigate} />}
       </Suspense>

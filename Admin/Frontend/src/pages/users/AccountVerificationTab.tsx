@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, ExternalLink, FileCheck2, RefreshCw, X } from "lucide-react";
+import { BadgeCheck, Briefcase, Check, ExternalLink, FileCheck2, GraduationCap, RefreshCw, UserRound, X } from "lucide-react";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import AdminModal from "../../components/ui/AdminModal";
 import { BTN, Field, SelectInput, TextArea } from "../../components/ui/primitives";
@@ -7,6 +7,13 @@ import { StatusPill } from "../../components/ui/management";
 import { reviewAdminAccountVerification, type AdminAccountVerificationRequest } from "../../utils/api";
 
 import { tr } from "../../utils/preferences";
+export const VERIFICATION_ROLES = [
+  { value: "Student", icon: GraduationCap, hint: "Enrolled UMak student" },
+  { value: "Faculty", icon: BadgeCheck, hint: "Teaching staff" },
+  { value: "Staff", icon: Briefcase, hint: "Non-teaching personnel" },
+  { value: "Visitor", icon: UserRound, hint: "Guest or alumni" },
+] as const;
+
 interface AccountVerificationTabProps {
   requests: AdminAccountVerificationRequest[];
   loading: boolean;
@@ -18,7 +25,7 @@ interface AccountVerificationTabProps {
 export default function AccountVerificationTab({ requests, loading, error, onRefresh, onReviewed }: AccountVerificationTabProps) {
   const [reviewTarget, setReviewTarget] = useState<AdminAccountVerificationRequest | null>(null);
   const [decision, setDecision] = useState<"verified" | "rejected">("verified");
-  const [identityRole, setIdentityRole] = useState("Student");
+  const [identityRole, setIdentityRole] = useState("");
   const [reviewNote, setReviewNote] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -27,7 +34,7 @@ export default function AccountVerificationTab({ requests, loading, error, onRef
   const beginReview = (request: AdminAccountVerificationRequest, nextDecision: "verified" | "rejected") => {
     setReviewTarget(request);
     setDecision(nextDecision);
-    setIdentityRole(["Student", "Faculty", "Others"].includes(request.user_role) ? request.user_role : "Student");
+    setIdentityRole(VERIFICATION_ROLES.some((role) => role.value === request.user_role) ? request.user_role : "");
     setReviewNote("");
     setReviewError("");
   };
@@ -54,7 +61,7 @@ export default function AccountVerificationTab({ requests, loading, error, onRef
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="font-[family-name:var(--font-heading)] text-[18px] font-semibold text-ink">{tr("Account verification")}</h2>
-          <p className="text-sm text-slate-500">{tr("Review submitted identity documents and confirm the account category.")}</p>
+          <p className="text-sm text-slate-500">{tr("Review identity documents. Verifying an account means assigning it a role.")}</p>
         </div>
         <button type="button" onClick={onRefresh} disabled={loading} className={BTN.ghost}>
           <RefreshCw size={15} className={loading ? "animate-spin" : ""} /> Refresh requests
@@ -84,7 +91,7 @@ export default function AccountVerificationTab({ requests, loading, error, onRef
                 <p className="mt-1 break-all text-sm text-slate-600">{request.email}</p>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                   <span>{tr("Campus ID: {0}", { "0": request.campus_id || "N/A" })}</span>
-                  <span>{tr("Current category: {0}", { "0": tr(request.user_role || "Others") })}</span>
+                  <span>{tr("Signed up as: {0}", { "0": tr(request.user_role || "Others") })}</span>
                   <span>{tr("Access:")} {request.access_level === "super_admin" ? tr("Superadmin") : request.access_level === "admin" ? tr("Admin") : tr("User")}</span>
                 </div>
                 <p className="mt-2 text-xs text-slate-600">{request.document_type}: <span className="font-semibold">{request.document_name}</span></p>
@@ -110,17 +117,28 @@ export default function AccountVerificationTab({ requests, loading, error, onRef
           onClose={() => setReviewTarget(null)}
           footer={<>
             <button type="button" onClick={() => setReviewTarget(null)} className={BTN.ghost}>{tr("Cancel")}</button>
-            <button type="button" onClick={() => { if (decision === "rejected" && !reviewNote.trim()) { setReviewError(tr("A reason is required when rejecting a document.")); return; } setReviewError(""); setConfirmOpen(true); }} className={decision === "rejected" ? BTN.danger : BTN.success}>{tr("Continue")}</button>
+            <button type="button" onClick={() => { if (decision === "rejected" && !reviewNote.trim()) { setReviewError(tr("A reason is required when rejecting a document.")); return; } if (decision === "verified" && !identityRole) { setReviewError(tr("Choose a role before verifying this account.")); return; } setReviewError(""); setConfirmOpen(true); }} className={decision === "rejected" ? BTN.danger : BTN.success}>{tr("Continue")}</button>
           </>}
         >
           {decision === "verified" ? (
-            <Field label={tr("Identity category")} hint={tr("This changes the account's identity category only, not admin access.")}>{(id) => (
-              <SelectInput id={id} value={identityRole} onChange={(event) => setIdentityRole(event.target.value)} data-autofocus>
-                <option value="Student">{tr("Student")}</option>
-                <option value="Faculty">{tr("Faculty")}</option>
-                <option value="Others">{tr("Others")}</option>
-              </SelectInput>
-            )}</Field>
+            <fieldset>
+              <legend className="mb-1 text-[14px] font-semibold text-ink-soft">{tr("Assign a role")}<span className="text-rose-600"> *</span></legend>
+              <p className="mb-3 text-[13px] leading-5 text-ink-muted">{tr("Every verified account needs a role. It shows on the user's profile and does not change admin access.")}</p>
+              <div className="grid grid-cols-2 gap-2.5">
+                {VERIFICATION_ROLES.map(({ value, icon: Icon, hint }, index) => {
+                  const active = identityRole === value;
+                  return (
+                    <label key={value} className={`relative flex cursor-pointer flex-col gap-1 rounded-2xl border p-3.5 transition focus-within:ring-4 focus-within:ring-iris-500/20 ${active ? "border-gold-500 bg-gold-50 shadow-[0_8px_22px_-14px_rgba(185,135,58,0.9)] dark:bg-gold-500/10" : "border-line-strong bg-[var(--surface)] hover:border-iris-300"}`}>
+                      <input type="radio" name="verification-role" value={value} checked={active} onChange={() => setIdentityRole(value)} data-autofocus={index === 0 ? true : undefined} className="sr-only" />
+                      <span className={`flex size-9 items-center justify-center rounded-xl ${active ? "bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950" : "bg-frost-100 text-ink-soft"}`}><Icon size={18} aria-hidden="true" /></span>
+                      <span className="text-[15px] font-semibold text-ink">{tr(value)}</span>
+                      <span className="text-[12.5px] leading-4 text-ink-muted">{tr(hint)}</span>
+                      {active && <Check size={16} className="absolute right-3 top-3 text-gold-700" aria-hidden="true" />}
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
           ) : (
             <Field label={tr("Reason for rejection")} required hint={tr("The user sees this note.")}>{(id) => (
               <TextArea id={id} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={3} maxLength={500} placeholder={tr("The ID photo is blurry. Upload a clear photo of the front.")} data-autofocus />

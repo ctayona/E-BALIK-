@@ -66,6 +66,10 @@ def create_app(config_name: str = None):
     except Exception as e:
         logger.error(f"✗ Failed to initialize database: {e}")
     
+    # Maintenance lock, revoked sessions, suspension and the verification gate run before every API route
+    from app.utils.system_control import enforce_request
+    app.before_request(enforce_request)
+
     # Register routes/blueprints
     from app.blueprints import register_blueprints
     register_blueprints(app)

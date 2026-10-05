@@ -3,6 +3,8 @@
  * Handles all HTTP requests to the backend server
  */
 
+import { emitSystemEvent, type SystemCode } from './system';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const API_TIMEOUT = import.meta.env.VITE_API_TIMEOUT || 30000;
 
@@ -18,6 +20,8 @@ interface ApiResponse<T = unknown> {
   error?: string;
   message?: string;
   status: number;
+  /** Set when the server blocked the request for a system reason (maintenance, suspension, revoked session, unverified account). */
+  code?: SystemCode;
 }
 
 /**
@@ -105,10 +109,18 @@ async function rawApiCall<T = unknown>(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
+      const code: SystemCode | undefined = data.verification_required ? 'verification_required'
+        : data.maintenance ? 'maintenance'
+        : data.suspended ? 'suspended'
+        : data.session_revoked ? 'session_revoked'
+        : undefined;
+      // Sign-in attempts get their message inline; everything else is handled once by the app shell.
+      if (code && (requiresAuth || code === 'maintenance')) emitSystemEvent({ code, message: data.error, until: data.suspended_until });
       return {
         error: data.error || `Request failed with status ${response.status}`,
         message: data.message,
         status: response.status,
+        code,
       };
     }
 
@@ -434,6 +446,7 @@ export const authUtils = {
    */
   setUserData(userData: Record<string, unknown>): void {
     localStorage.setItem('ebalik_user', JSON.stringify(userData));
+    window.dispatchEvent(new Event('ebalik:user-updated'));
   },
 
   /**

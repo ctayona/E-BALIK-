@@ -98,6 +98,27 @@ SELECT proname FROM pg_proc WHERE proname IN ('auction_place_bid', 'auction_sett
 
 Optional env var: `AUCTION_EMAIL_MODE` (`mock` logs the winner email, `sendgrid` sends it).
 
+### System control, verification roles and suspensions
+
+Run `manual_migrations/20261006_system_control_verification.sql` in the Supabase
+SQL Editor **after** `20261005_auction_hall.sql` (it changes the auction status
+rules). It adds `user_profiles.user_category`, `suspended_until`,
+`suspension_reason` and `suspended_by`, the `system_settings` table, the
+"awaiting admin" auction status and the `auction_finalize` function. It is
+additive and safe to rerun, and it backfills `user_category` for accounts that
+were already verified. Verify with:
+
+```sql
+SELECT column_name FROM information_schema.columns
+ WHERE table_name = 'user_profiles' AND column_name IN ('user_category', 'suspended_until', 'suspension_reason', 'suspended_by');
+SELECT to_regclass('public.system_settings');
+SELECT setting_key FROM system_settings;
+SELECT proname FROM pg_proc WHERE proname = 'auction_finalize';
+```
+
+Note: once the gate is live, every existing account that is not verified can no
+longer report items, file claims or bid until an admin verifies it.
+
 ### Method 2: Using Python Script
 ```bash
 cd backend

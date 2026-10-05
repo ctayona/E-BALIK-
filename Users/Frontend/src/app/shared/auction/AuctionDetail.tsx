@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, CheckCircle2, Clock3, Gavel, MapPin, MessageCircle, ShieldCheck, Trash2, Trophy, TrendingDown } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, Gavel, Hourglass, MapPin, MessageCircle, ShieldAlert, ShieldCheck, Trash2, Trophy, TrendingDown } from "lucide-react";
+import Modal from "@/app/shared/modal/Modal";
+import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
+import { isVerified, useCurrentUser } from "@/app/utils/system";
 import Gallery from "@/app/shared/auction/Gallery";
 import { AuctionClock } from "@/app/shared/auction/AuctionParts";
 import {
@@ -26,7 +29,7 @@ function initials(name: string) {
   return `${parts[0]?.[0] ?? "?"}${parts[1]?.[0] ?? ""}`.toUpperCase();
 }
 
-export default function AuctionDetail({ auction: summary, signedIn, focus, onClose, onChanged, onSignIn }: {
+export default function AuctionDetail({ auction: summary, signedIn, focus, onClose, onChanged, onSignIn, onVerify }: {
   auction: Auction;
   signedIn: boolean;
   focus?: "comments";
@@ -34,6 +37,8 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
   onChanged: () => void;
   /** Signed-out visitors (landing page) get a "Log in to bid" button that calls this. */
   onSignIn?: () => void;
+  /** Opens the Profile so an unverified user can upload an ID. Shown instead of the bid box. */
+  onVerify?: () => void;
 }) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -44,7 +49,8 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
   const [offset, setOffset] = useState(0);
   const [loadError, setLoadError] = useState("");
   const [amount, setAmount] = useState(String(summary.min_next_bid));
-  const [armed, setArmed] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const verified = isVerified(useCurrentUser());
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [showAllBids, setShowAllBids] = useState(false);
@@ -102,35 +108,43 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
   // If another bidder raises the price, lift the amount field to the new minimum.
   useEffect(() => {
     setAmount((current) => (Number(current) < minBid ? String(minBid) : current));
-    setArmed(false);
   }, [minBid]);
-
-  useEffect(() => {
-    if (!armed) return;
-    const timer = window.setTimeout(() => setArmed(false), 5000);
-    return () => window.clearTimeout(timer);
-  }, [armed]);
 
   const value = Number(amount);
   const validAmount = Number.isFinite(value) && value >= minBid && value <= 10_000_000;
 
-  const placeBid = async () => {
+  /** Step 1: validate, then ask for confirmation. Bids are binding, so nothing is sent until the user confirms. */
+  const requestBid = () => {
     if (!validAmount) { setNotice({ type: "error", text: `Your bid must be at least ${peso(minBid)}.` }); return; }
-    if (!armed) { setArmed(true); setNotice(null); return; }
+    setNotice(null);
+    setConfirmOpen(true);
+  };
+
+  /** Step 2: send the bid and report the result in a message box. */
+  const placeBid = async () => {
+    if (busy) return;
     setBusy(true);
-    setArmed(false);
     try {
       const result = await auctionsApi.bid(a.id, Math.round(value * 100) / 100);
-      setNotice({ type: "ok", text: result.message });
+      setConfirmOpen(false);
+      showInfoModal({
+        variant: "success",
+        title: "Bid placed",
+        message: result.message,
+        details: [`Your bid: ${peso(value)}`, result.extended ? "The closing time was extended because your bid came in at the last moment." : "You will be notified if someone outbids you."],
+      });
       await load();
       onChanged();
     } catch (reason) {
+      setConfirmOpen(false);
       if (reason instanceof AuctionRequestError) {
-        setNotice({ type: "error", text: reason.message });
         if (reason.minBid) setAmount(String(reason.minBid));
+        showInfoModal(reason.verificationRequired
+          ? { variant: "warning", title: "Verify your account first", message: reason.message, details: ["Open My Profile and upload a school or government ID."] }
+          : { variant: "error", title: reason.minBid ? "Someone bid first" : "Bid not placed", message: reason.message, details: reason.minBid ? [`The new minimum bid is ${peso(reason.minBid)}.`] : undefined });
         await load();
       } else {
-        setNotice({ type: "error", text: "The bid could not be placed. Try again." });
+        showInfoModal({ variant: "error", title: "Bid not placed", message: "The bid could not be placed. Try again." });
       }
     } finally {
       setBusy(false);
@@ -171,7 +185,8 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
     ? `Bids in the last ${Math.round(a.anti_snipe_window_seconds / 60)} min add ${Math.round(a.anti_snipe_extension_seconds / 60)} min, up to ${a.max_extensions} times.`
     : "This auction closes exactly on time.";
 
-  return createPortal(
+  return (<>
+    {createPortal(
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-navy-950/70 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="ui-modal-panel relative flex h-[94dvh] w-full max-w-[1120px] flex-col overflow-hidden rounded-t-[28px] border border-white/70 bg-white shadow-overlay sm:h-[min(90dvh,840px)] sm:rounded-[28px] lg:flex-row">
         <div className="relative shrink-0 bg-navy-950 lg:w-[52%]">
@@ -210,6 +225,12 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
               <div className="rounded-2xl border border-tide-200 bg-tide-50 px-4 py-4 text-tide-700" role="status">
                 <p className="flex items-center gap-2 font-semibold"><Trophy size={17} aria-hidden="true" /> You won this auction at {peso(a.winning_amount)}.</p>
                 <p className="mt-1 text-[14px] leading-6">Bring your original ID to the Lost and Found Office to pay and collect the item. We also sent you a notice.</p>
+              </div>
+            )}
+            {a.status === "awaiting" && (
+              <div className="rounded-2xl border border-iris-200 bg-iris-50 px-4 py-4 text-ink-soft" role="status">
+                <p className="flex items-center gap-2 font-semibold text-navy-800"><Hourglass size={17} aria-hidden="true" /> Bidding has closed. Waiting for an administrator.</p>
+                <p className="mt-1 text-[14px] leading-6">{viewer?.is_leading ? "You had the highest bid. An administrator will confirm the result and you will be notified." : "An administrator will confirm the final result shortly."}</p>
               </div>
             )}
             {a.status === "ended" && !viewer?.is_winner && (
@@ -283,24 +304,27 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
           <footer className="shrink-0 border-t border-line bg-white/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur sm:px-7">
             {open && signedIn && viewer?.is_leading ? (
               <p className="flex items-center gap-2 text-[14.5px] font-semibold text-tide-700" role="status"><CheckCircle2 size={18} aria-hidden="true" /> You're the highest bidder at {peso(a.current_price)}.</p>
+            ) : open && signedIn && !verified ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="flex items-center gap-2.5 text-[14.5px] text-ink-soft"><ShieldAlert size={18} className="shrink-0 text-gold-700" aria-hidden="true" /> Only verified accounts can bid. Upload an ID in your profile.</p>
+                {onVerify && <button type="button" onClick={onVerify} className={`${CX.btnNavy} min-h-[44px] px-6`}>Verify my account</button>}
+              </div>
             ) : open && signedIn ? (
               <div className="space-y-2.5">
                 <div className="flex flex-wrap gap-1.5" role="group" aria-label="Quick amounts">
                   {chips.map((chip) => (
-                    <button key={chip} type="button" onClick={() => { setAmount(String(chip)); setArmed(false); }} className={`rounded-full border px-3 py-1 text-[12.5px] font-semibold tabular-nums transition-colors ${Number(amount) === chip ? "border-gold-500 bg-gold-50 text-gold-800" : "border-line text-ink-soft hover:border-gold-400"}`}>{pesoShort(chip)}</button>
+                    <button key={chip} type="button" onClick={() => setAmount(String(chip))} className={`rounded-full border px-3 py-1 text-[12.5px] font-semibold tabular-nums transition-colors ${Number(amount) === chip ? "border-gold-500 bg-gold-50 text-gold-800" : "border-line text-ink-soft hover:border-gold-400"}`}>{pesoShort(chip)}</button>
                   ))}
                 </div>
                 <div className="flex gap-2.5">
                   <label className="relative min-w-0 flex-1">
                     <span className="sr-only">Your bid in pesos</span>
                     <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 font-semibold text-ink-muted" aria-hidden="true">₱</span>
-                    <input inputMode="decimal" value={amount} onChange={(e) => { setAmount(e.target.value.replace(/[^0-9.]/g, "")); setArmed(false); }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void placeBid(); } }} className={`${CX.input} w-full pl-8 font-semibold tabular-nums`} />
+                    <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); requestBid(); } }} className={`${CX.input} w-full pl-8 font-semibold tabular-nums`} />
                   </label>
-                  <button type="button" onClick={() => void placeBid()} disabled={busy || !validAmount} className={`${armed ? CX.btnNavy : CX.btnGold} min-h-[44px] shrink-0 px-5`}>
-                    {busy ? "Placing…" : armed ? `Confirm ${pesoShort(value)}` : "Place bid"}
-                  </button>
+                  <button type="button" onClick={requestBid} disabled={busy || !validAmount} className={`${CX.btnGold} min-h-[44px] shrink-0 px-5`}>Place bid</button>
                 </div>
-                <p className="text-[12.5px] text-ink-muted">Minimum {peso(minBid)}. Bids are binding. {armed ? "Tap again to confirm." : ""}</p>
+                <p className="text-[12.5px] text-ink-muted">Minimum {peso(minBid)}. Bids are binding.</p>
               </div>
             ) : open ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -309,6 +333,8 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
               </div>
             ) : a.status === "scheduled" ? (
               <p className="text-[14.5px] text-ink-soft">Bidding opens {formatWhen(a.starts_at)}. Starting bid {peso(a.starting_price)}.</p>
+            ) : a.status === "awaiting" ? (
+              <p className="text-[14.5px] font-medium text-ink-soft">Bidding is closed. The result is waiting for an administrator.</p>
             ) : (
               <p className="text-[14.5px] font-medium text-ink-soft">Bidding is closed.</p>
             )}
@@ -318,5 +344,33 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
       </div>
     </div>,
     document.body,
-  );
+    )}
+
+    <Modal
+      open={confirmOpen}
+      onClose={() => setConfirmOpen(false)}
+      dismissible={!busy}
+      size="sm"
+      tone="gold"
+      icon={<Gavel size={21} />}
+      eyebrow="Confirm your bid"
+      title={`Bid ${peso(value)} on this item?`}
+      description="Bids are binding. You cannot take a bid back."
+      footer={<>
+        <button type="button" onClick={() => setConfirmOpen(false)} disabled={busy} className={CX.btnGhost}>Cancel</button>
+        <button type="button" onClick={() => void placeBid()} disabled={busy} data-autofocus className={CX.btnGold}>{busy ? "Placing…" : `Confirm ${pesoShort(value)}`}</button>
+      </>}
+    >
+      <div className="rounded-2xl border border-gold-200 bg-gold-50 px-4 py-3.5">
+        <p className="text-[13px] font-medium text-ink-muted">{a.title}</p>
+        <p className="mt-0.5 font-[family-name:var(--font-heading)] text-[28px] font-semibold tabular-nums text-navy-800">{peso(value)}</p>
+        <p className="text-[13px] text-ink-muted">{a.bid_count === 0 ? "Opening bid" : `Current bid ${peso(a.current_price)}`}</p>
+      </div>
+      <ul className="mt-4 space-y-1.5 text-[14px] leading-6 text-ink-soft">
+        <li>If you win, you pay and collect the item at the Lost and Found Office.</li>
+        <li>Winners who do not collect can be suspended from E-Balik.</li>
+        <li>An administrator confirms the result after bidding closes.</li>
+      </ul>
+    </Modal>
+  </>);
 }

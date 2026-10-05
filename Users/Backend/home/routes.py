@@ -10,6 +10,7 @@ from email_validator import EmailNotValidError, validate_email
 from app.utils import EmailService, get_db, JWTService, OTPGenerator, PasswordService
 from app.utils.admin_mfa import hash_recovery_code, matched_totp_step
 from app.utils.crypto_service import CryptoService
+from app.utils.system_control import login_block, public_status
 from Users.Backend.shared.account import _ensure_email_normalized, _infer_user_role_and_campus, _verification_profile_metadata
 
 logger = logging.getLogger(__name__)
@@ -397,6 +398,10 @@ def login():
 
             return jsonify({'error': 'Invalid email or password'}), 401
 
+        blocked = login_block(db, user)
+        if blocked is not None:
+            return blocked
+
         access_level = _access_level(user)
         if data.get('admin_only') and not _is_admin_profile(user):
             return jsonify({'error': 'Admin access is required'}), 403
@@ -507,8 +512,9 @@ def google_login():
         # Allow a registered local user to sign in with the same email via Google.
         # The account should not be forced to be an admin just because it is using
         # Google authentication.
-        if user.get('is_active') is False:
-            return jsonify({'error': 'This account is inactive'}), 403
+        blocked = login_block(db, user)
+        if blocked is not None:
+            return blocked
 
         if getattr(db, 'supports_profile_auth_fields', False):
             if (user.get('auth_provider') in (None, 'local', 'google')) and idinfo.get('sub'):
@@ -834,3 +840,14 @@ def public_board():
     except Exception as error:
         current_app.logger.exception(f'Public board error: {error}')
         return jsonify({'error': 'Unable to load recent reports'}), 500
+
+
+@home_bp.route('/system/status', methods=['GET'])
+def system_status():
+    """Public flag the apps poll to show the maintenance screen. Never exposes anything else."""
+    try:
+        db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        return jsonify(public_status(db)), 200
+    except Exception as error:
+        current_app.logger.warning(f'System status unavailable: {error}')
+        return jsonify({'maintenance': False, 'message': '', 'since': None}), 200

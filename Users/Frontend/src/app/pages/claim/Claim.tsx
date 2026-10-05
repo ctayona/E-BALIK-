@@ -7,6 +7,8 @@ import { CX, SPRING } from "@/app/utils/clay";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import Modal, { CountdownConsent } from "@/app/shared/modal/Modal";
+import VerificationGate from "@/app/shared/verification/VerificationGate";
+import { isVerified, useCurrentUser } from "@/app/utils/system";
 
 type ClaimRecord = {
   claim_id: string; claim_reference?: string; fpost_id?: string; claim_reason?: string;
@@ -18,6 +20,7 @@ type ClaimRecord = {
 export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: string; onNavigate?: (page: Page) => void }) {
   // All state & logic preserved exactly
   const { cancelClaim, createClaim, getClaims, isLoading } = useAuth();
+  const verified = isVerified(useCurrentUser());
   const [reference,    setReference]    = useState(foundItemId);
   const [reason,       setReason]       = useState("");
   const [proof,        setProof]        = useState<File | null>(null);
@@ -79,6 +82,10 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
+    if (!verified) {
+      setError("Verify your account first. Open My Profile and upload an ID.");
+      return;
+    }
     if (!reference.trim() || !reason.trim() || !proof || !identityDocument) {
       setError("Found item reference, claim reason, ownership proof, and a valid ID are required."); return;
     }
@@ -196,6 +203,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.3 }}
             >
+              {onNavigate && <VerificationGate action="file a claim" onNavigate={onNavigate} className="mb-5" />}
               <form onSubmit={submit} className={`${CX.card} flex flex-col gap-5 p-6 md:p-8`}>
                 {error   && <div className={CX.alertError}>{error}</div>}
 
@@ -232,7 +240,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
                     className="cursor-pointer min-h-[160px] flex items-center justify-center rounded-[20px] border border-dashed border-gold-400/70 bg-[#fffbeb] hover:bg-[#fffdf0] hover:border-gold-400 transition-colors"
                   >
                     {proofPreview ? (
-                      <img src={proofPreview} alt="Ownership proof preview" className="max-h-[180px] rounded-xl object-contain" />
+                      <img decoding="async" src={proofPreview} alt="Ownership proof preview" className="max-h-[180px] rounded-xl object-contain" />
                     ) : (
                       <div className="text-center flex flex-col items-center gap-3 py-6">
                         <div className="size-[52px] flex items-center justify-center rounded-[16px] bg-gold-500 hover:bg-gold-400 text-navy-800 border border-[#e8c070]/50">
@@ -264,7 +272,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
                 {/* Submit */}
                 <motion.button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isLoading || !verified}
                   whileHover={{ y: -2, scale: 1.01 }}
                   whileTap={{ scale: 0.98 }}
                   transition={SPRING}
@@ -331,7 +339,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
                         {/* Proof thumb */}
                         <div className="flex size-[72px] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 border border-white/60">
                           {claim.proof_image_url
-                            ? <img src={claim.proof_image_url} alt="Submitted ownership proof" className="size-full object-contain" />
+                            ? <img decoding="async" src={claim.proof_image_url} alt="Submitted ownership proof" className="size-full object-contain" />
                             : <ImagePlus size={20} className="text-[#cbd5e1]" />}
                         </div>
                         <div className="min-w-0 flex-1">

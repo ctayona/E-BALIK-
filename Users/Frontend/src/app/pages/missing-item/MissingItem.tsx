@@ -11,6 +11,8 @@ import ItemViewer from "@/app/shared/media/ItemViewer";
 import ViewToggle from "@/app/shared/view/ViewToggle";
 import { useViewMode } from "@/app/shared/view/useViewMode";
 import Modal, { CountdownConsent } from "@/app/shared/modal/Modal";
+import VerificationGate from "@/app/shared/verification/VerificationGate";
+import { isVerified, useCurrentUser } from "@/app/utils/system";
 
 const CATEGORIES = ["Bags & Luggage", "Electronics", "Accessories", "Personal Effects", "Documents & Cards", "Clothing", "Keys", "Valuables", "Others"];
 const CAMPUS_LOCATIONS = ["Main Building Lobby", "Student Center", "Library", "ICT Building", "Faculty Hall", "Cafeteria", "Gym", "HPSB Building", "Other"];
@@ -49,6 +51,7 @@ type MatchSummary = {
 
 export default function MissingItem({ initialSearchTerm = "", focused = false, onBack }: { initialSearchTerm?: string; focused?: boolean; onBack?: (page: Page, options?: NavigationOptions) => void }) {
   const { createMissingItem, getMissingItems, getMissingMatchSummaries, searchFoundItems, isLoading, user } = useAuth();
+  const verified = isVerified(useCurrentUser());
   const [activeTab, setActiveTab] = useState<"intake" | "reports" | "search">("intake");
   const [itemName, setItemName] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0]);
@@ -148,6 +151,10 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
+    if (!verified) {
+      setError("Verify your account first. Open My Profile and upload an ID.");
+      return;
+    }
     if (!authorized) {
       setError("Please authorize matching and notifications before continuing.");
       return;
@@ -277,6 +284,8 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
 
         {error && <div role="alert" className={`${CX.alertError} mb-5`}>{error}</div>}
 
+        {(focused || activeTab === "intake") && onBack && <VerificationGate action="report a missing item" onNavigate={onBack} className="mb-5" />}
+
         {focused || activeTab === "intake" ? (
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -299,7 +308,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
                   >
                     {imagePreview ? (
                       <>
-                        <img src={imagePreview} alt="Missing item preview" className="max-h-[250px] rounded-2xl object-contain shadow-card" />
+                        <img decoding="async" src={imagePreview} alt="Missing item preview" className="max-h-[250px] rounded-2xl object-contain shadow-card" />
                         <span className="glass-dark absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold"><RefreshCw size={13} aria-hidden="true" />Change photo</span>
                       </>
                     ) : (
@@ -335,7 +344,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
                   <UserRound size={15} className="shrink-0 text-iris-600" aria-hidden="true" />
                   <span className="min-w-0 truncate">Reporting as <span className="font-semibold text-ink">{user?.email}</span>{user?.campus_id ? ` · ${user.campus_id}` : ""}</span>
                 </p>
-                <button type="submit" disabled={isLoading} className={`${CX.btnNavy} shrink-0 px-6`}>
+                <button type="submit" disabled={isLoading || !verified} className={`${CX.btnNavy} shrink-0 px-6`}>
                   <BadgeCheck size={17} aria-hidden="true" />{isLoading ? "Saving…" : "Submit missing report"}
                 </button>
               </div>

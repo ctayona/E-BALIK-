@@ -40,10 +40,11 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
   const [activityFilter, setActivityFilter] = useState<string>("All");
   // Auction pickups join the work queue once the Auction Hall tables exist; any failure just hides the row.
   const [auctionPickups, setAuctionPickups] = useState<number | null>(null);
+  const [auctionDecisions, setAuctionDecisions] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
-    fetchAdminAuctions().then((data) => { if (active) setAuctionPickups(data.stats.awaiting_pickup); }).catch(() => { if (active) setAuctionPickups(null); });
+    fetchAdminAuctions().then((data) => { if (active) { setAuctionPickups(data.stats.awaiting_pickup); setAuctionDecisions(data.stats.awaiting_admin ?? 0); } }).catch(() => { if (active) { setAuctionPickups(null); setAuctionDecisions(null); } });
     return () => { active = false; };
   }, []);
 
@@ -174,6 +175,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
     { label: tr("Claims waiting for review"), hint: tr("Check proof and ID, then approve or reject"), value: summary?.pending_claims ?? 0, page: "claims", edge: "before:bg-gold-500", icon: <Clock3 size={18} aria-hidden="true" /> },
     { label: tr("AI matches to confirm"), hint: tr("Possible owner and item pairs found automatically"), value: summary?.potential_ai_matches ?? 0, page: "ai-matching", edge: "before:bg-iris-500", icon: <Sparkles size={18} aria-hidden="true" /> },
     { label: tr("Unresolved items"), hint: tr("Reports still open without a match or claim"), value: summary?.unresolved_items ?? 0, page: "lost-items", edge: "before:bg-rose-400", icon: <AlertTriangle size={18} aria-hidden="true" /> },
+    ...(auctionDecisions ? [{ label: tr("Auctions awaiting your decision"), hint: tr("Bidding closed. Confirm the winner or re-auction"), value: auctionDecisions, page: "auctions" as DeskPage, edge: "before:bg-iris-400", icon: <Gavel size={18} aria-hidden="true" /> }] : []),
     ...(auctionPickups ? [{ label: tr("Auction pickups waiting"), hint: tr("Winners who still need to pay and collect"), value: auctionPickups, page: "auctions" as DeskPage, edge: "before:bg-gold-300", icon: <Gavel size={18} aria-hidden="true" /> }] : []),
   ];
   const openItems = queue.reduce((total, item) => total + item.value, 0);

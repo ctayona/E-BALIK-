@@ -53,12 +53,12 @@ def review_account_verification(account_id):
         admin = _require_admin()
         payload = request.get_json(silent=True) or {}
         status = str(payload.get('status') or '').strip().lower()
-        role = str(payload.get('user_role') or '').strip()
+        role = str(payload.get('user_category') or payload.get('user_role') or '').strip().title()
         review_note = str(payload.get('review_note') or '').strip()
         if status not in {'verified', 'rejected'}:
             return jsonify({'error': 'Choose verified or rejected'}), 400
-        if status == 'verified' and role not in {'Student', 'Faculty', 'Others'}:
-            return jsonify({'error': 'Choose a valid identity category'}), 400
+        if status == 'verified' and role not in VERIFIED_CATEGORIES:
+            return jsonify({'error': 'Choose a role for this user: Student, Faculty, Staff or Visitor'}), 400
         if status == 'rejected' and not review_note:
             return jsonify({'error': 'Provide a review note when rejecting a document'}), 400
 
@@ -70,7 +70,7 @@ def review_account_verification(account_id):
             account_id=account_id,
             status=status,
             reviewed_by=admin['account_id'],
-            user_role=role if status == 'verified' else None,
+            user_category=role if status == 'verified' else None,
             review_note=review_note,
         )
         display_name = reviewed.get('email') or account_id
@@ -80,7 +80,7 @@ def review_account_verification(account_id):
         try:
             if status == 'verified':
                 notification_title = 'Account verification approved'
-                notification_message = f"Your identity document was approved. Your profile category is now {role}."
+                notification_message = f"Your account is verified as {role}. You can now report items, file claims and bid in the Auction Hall."
                 notification_type = 'account_verification_approved'
             else:
                 notification_title = 'Verification document needs changes'
@@ -197,6 +197,17 @@ def update_user_status(account_id):
         status = str(payload.get('status') or '').strip().lower()
         if status not in {'active', 'suspended'}:
             return jsonify({'error': 'Status must be active or suspended'}), 400
+        days = payload.get('days')
+        if status == 'suspended' and days not in (None, ''):
+            try:
+                days = int(days)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'Enter the suspension length in whole days'}), 400
+            if days < 1 or days > 365:
+                return jsonify({'error': 'A suspension must last between 1 and 365 days'}), 400
+        else:
+            days = None
+        reason = str(payload.get('reason') or '').strip()[:300]
 
         db = get_db(
             url=current_app.config['SUPABASE_URL'],
@@ -210,13 +221,19 @@ def update_user_status(account_id):
         target_level = str(target.get('access_level') or '').lower()
         if target_level == 'super_admin' and actor.get('access_level') != 'super_admin':
             return jsonify({'error': 'Only a super administrator can change a super administrator account'}), 403
-        updated = db.update_user_status(account_id, status)
-        _log_admin_action(db, actor, 'Suspend User' if status == 'suspended' else 'Reactivate User', 'Users', target.get('email') or account_id, account_id)
-        return jsonify({'user': updated}), 200
+        if target_level in {'admin', 'super_admin'} and status == 'suspended' and actor.get('access_level') != 'super_admin':
+            return jsonify({'error': 'Only a super administrator can suspend an administrator'}), 403
+        updated = db.update_user_status(account_id, status, days=days, reason=reason, actor_id=actor.get('account_id'))
+        action = 'Reactivate User' if status == 'active' else ('Suspend User for %d Days' % days if days else 'Suspend User')
+        _log_admin_action(db, actor, action, 'Users', target.get('email') or account_id, account_id)
+        message = 'The account was reactivated.' if status == 'active' else (f'The account is suspended for {days} days.' if days else 'The account is suspended until an admin reactivates it.')
+        return jsonify({'user': updated, 'message': message}), 200
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except PermissionError as error:
         return jsonify({'error': str(error)}), 403
+    except RuntimeError as error:
+        return jsonify({'error': str(error)}), 409
     except Exception as error:
         current_app.logger.exception('Admin user status error: %s', error)
         return jsonify({'error': 'Unable to update user status', 'details': str(error)}), 500
@@ -256,6 +273,7 @@ def update_user_access_level(account_id):
         return jsonify({'error': 'Unable to update user access level'}), 500
 
 
+VERIFIED_CATEGORIES = {'Student', 'Faculty', 'Staff', 'Visitor'}
 USER_ROLES = {'student': 'Student', 'faculty': 'Faculty', 'staff': 'Staff', 'others': 'Others'}
 MIN_PASSWORD_LENGTH = 16
 FIELD_LIMITS = {'fname': 100, 'mname': 100, 'lname': 100, 'campus_id': 50, 'email': 255}
@@ -273,6 +291,9 @@ def _map_admin_user(row):
         'program': row.get('user_role') or 'Student',
         'accessLevel': row.get('access_level') or 'user',
         'status': 'Active' if row.get('is_active') is not False else 'Suspended',
+        'verification': str(row.get('verification_status') or 'pending').lower(),
+        'category': row.get('user_category'),
+        'suspendedUntil': row.get('suspended_until') if row.get('is_active') is False else None,
         'lastActivity': row.get('last_login_at') or row.get('created_at') or 'Unknown',
     }
 

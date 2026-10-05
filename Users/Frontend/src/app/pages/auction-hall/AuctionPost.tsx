@@ -21,7 +21,7 @@ export default function AuctionPost({ auction, now, offset, watching, onToggleWa
   return (
     <article className={`${CX.card} overflow-hidden`} aria-label={auction.title}>
       <header className="flex items-center gap-3 px-4 py-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-navy-800 ring-2 ring-gold-400/40"><img src={headerUmSeal} alt="" className="size-7 object-contain" /></span>
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-navy-800 ring-2 ring-gold-400/40"><img decoding="async" src={headerUmSeal} alt="" className="size-7 object-contain" /></span>
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1 text-[14.5px] font-semibold text-navy-800">UMak Lost &amp; Found <BadgeCheck size={15} className="text-iris-600" aria-label="Official" /></p>
           <p className="truncate text-[12.5px] text-ink-muted">Lot {auction.reference || "—"}{auction.category ? ` · ${auction.category}` : ""}</p>

@@ -261,7 +261,7 @@ export default function ChainOfCustody() {
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-4">
                 {trackedItem.photo ? (
-                  <img src={trackedItem.photo} alt={tr("{0} photo", { "0": trackedItem.item })} className="h-14 w-14 rounded-xl object-cover" />
+                  <img decoding="async" src={trackedItem.photo} alt={tr("{0} photo", { "0": trackedItem.item })} className="h-14 w-14 rounded-xl object-cover" />
                 ) : (
                   <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100">
                     <svg width="28" height="28" fill="none" viewBox="0 0 24 24" className="text-slate-400"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/><path d="m21 15-5-5L5 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>

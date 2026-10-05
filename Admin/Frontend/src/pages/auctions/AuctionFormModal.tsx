@@ -34,7 +34,7 @@ function LotTicket({ photo, reference, title, price, closes, rule }: { photo: st
   return (
     <aside className="grid grid-cols-[112px_minmax(0,1fr)] overflow-hidden rounded-[22px] border border-gold-300/60 bg-[linear-gradient(160deg,#22366a_0%,#162448_60%,#0e1830_100%)] text-white shadow-raised lg:sticky lg:top-0 lg:block" aria-label={tr("Lot preview")}>
       <div className="relative aspect-square bg-navy-900 lg:aspect-[4/3]">
-        {photo ? <img src={photo} alt="" className="size-full object-cover" /> : <div className="flex size-full items-center justify-center p-2 text-center text-[12px] text-navy-200 lg:text-[13px]">{tr("Choose an item to preview the lot")}</div>}
+        {photo ? <img decoding="async" src={photo} alt="" className="size-full object-cover" /> : <div className="flex size-full items-center justify-center p-2 text-center text-[12px] text-navy-200 lg:text-[13px]">{tr("Choose an item to preview the lot")}</div>}
         {reference && <span className="absolute left-2 top-2 rounded-full bg-navy-950/70 px-2.5 py-0.5 text-[12px] font-semibold tabular-nums text-gold-200 backdrop-blur lg:left-3 lg:top-3 lg:px-3 lg:py-1 lg:text-[12.5px]">{reference}</span>}
       </div>
       <div className="min-w-0 space-y-3 p-4 lg:space-y-4 lg:p-5">
@@ -192,7 +192,7 @@ export default function AuctionFormModal(props: Props) {
               </div>
               {item ? (
                 <div className="flex items-center gap-3 rounded-2xl border border-gold-300/60 bg-gold-50 p-3">
-                  {item.photo ? <img src={item.photo} alt="" className="size-14 rounded-xl object-cover" /> : <span className="size-14 rounded-xl bg-frost-100" />}
+                  {item.photo ? <img decoding="async" src={item.photo} alt="" className="size-14 rounded-xl object-cover" /> : <span className="size-14 rounded-xl bg-frost-100" />}
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-ink">{item.name}</p>
                     <p className="text-[13px] text-ink-muted">{tr("{0}, in custody {1} days", { "0": item.reference, "1": item.days_in_custody })}</p>
@@ -215,7 +215,7 @@ export default function AuctionFormModal(props: Props) {
                     {visibleItems.map((entry) => (
                       <li key={entry.id}>
                         <button type="button" onClick={() => chooseItem(entry)} className="flex w-full items-center gap-3 rounded-xl border border-line p-2.5 text-left transition-colors hover:border-gold-400 hover:bg-gold-50">
-                          {entry.photo ? <img src={entry.photo} alt="" loading="lazy" className="size-12 rounded-lg object-cover" /> : <span className="size-12 rounded-lg bg-frost-100" />}
+                          {entry.photo ? <img decoding="async" src={entry.photo} alt="" loading="lazy" className="size-12 rounded-lg object-cover" /> : <span className="size-12 rounded-lg bg-frost-100" />}
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[14.5px] font-semibold text-ink">{entry.name}</span>
                             <span className="block truncate text-[12.5px] text-ink-muted">{entry.reference} · {entry.category || tr("Uncategorized")}</span>
@@ -306,7 +306,7 @@ export default function AuctionFormModal(props: Props) {
               <div className="flex flex-wrap gap-2.5">
                 {extraPhotos.map((url, index) => (
                   <div key={`${index}-${url.slice(-12)}`} className="group relative size-[72px] overflow-hidden rounded-xl ring-1 ring-line">
-                    <img src={url} alt={tr("Extra photo {0}", { "0": index + 1 })} className="size-full object-cover" />
+                    <img decoding="async" src={url} alt={tr("Extra photo {0}", { "0": index + 1 })} className="size-full object-cover" />
                     <button type="button" onClick={() => setExtraPhotos((current) => current.filter((_, i) => i !== index))} aria-label={tr("Remove photo {0}", { "0": index + 1 })} className="absolute right-1 top-1 flex size-6 items-center justify-center rounded-full bg-navy-950/75 text-white"><X size={13} aria-hidden="true" /></button>
                   </div>
                 ))}

@@ -107,11 +107,12 @@ export default function UserHeader({
       </a>
 
       <header className="app-chrome sticky top-0 z-30 w-full shrink-0 border-b border-white/10 pt-[env(safe-area-inset-top)] bg-navy-900/80 text-white shadow-[0_10px_30px_-18px_rgba(5,10,30,0.8)] backdrop-blur-xl backdrop-saturate-150">
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,transparent,rgba(209,161,83,0.6),transparent)]" aria-hidden="true" />
         <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center gap-4 px-4 sm:px-6">
           {/* Brand */}
           <button type="button" onClick={() => navigate("dashboard")} className="flex shrink-0 items-center gap-2.5 rounded-lg py-1 pr-2" aria-label="E-Balik home">
             <span className="flex size-10 items-center justify-center rounded-[10px] bg-white/10 ring-1 ring-white/15">
-              <img alt="" className="size-8 object-contain" src={headerUmSeal} />
+              <img decoding="async" alt="" className="size-8 object-contain" src={headerUmSeal} />
             </span>
             <span className="hidden text-left leading-tight sm:block lg:hidden xl:block">
               <span className="block font-[family-name:var(--font-heading)] text-[15px] font-semibold tracking-[-0.01em]">E-Balik</span>
@@ -131,14 +132,16 @@ export default function UserHeader({
                   aria-current={active ? "page" : undefined}
                   aria-label={link.label}
                   title={link.label}
-                  className={`relative flex items-center gap-1.5 whitespace-nowrap px-3 text-[14px] font-medium transition-colors duration-150 ${
+                  className={`group relative flex items-center whitespace-nowrap px-1 text-[14px] font-medium transition-colors duration-150 ${
                     active ? "text-white" : "text-navy-200 hover:text-white"
                   }`}
                 >
-                  <span className={active ? "text-gold-400" : "text-navy-300"}>{link.icon}</span>
-                  {/* Icons only between lg and xl so the bar never overflows into the actions. */}
-                  <span className="hidden xl:inline">{link.label}</span>
-                  <span className={`absolute inset-x-2 bottom-0 h-[3px] rounded-t-full transition-colors ${active ? "bg-gold-500" : "bg-transparent"}`} aria-hidden="true" />
+                  <span className={`flex items-center gap-1.5 rounded-lg px-2.5 py-2 transition-colors duration-150 ${active ? "bg-white/[0.09]" : "group-hover:bg-white/[0.06]"}`}>
+                    <span className={active ? "text-gold-400" : "text-navy-300"}>{link.icon}</span>
+                    {/* Icons only between lg and xl so the bar never overflows into the actions. */}
+                    <span className="hidden xl:inline">{link.label}</span>
+                  </span>
+                  <span className={`absolute inset-x-3 bottom-0 h-[3px] rounded-t-full transition-colors ${active ? "bg-gold-500" : "bg-transparent"}`} aria-hidden="true" />
                 </button>
               );
             })}
@@ -246,7 +249,7 @@ export default function UserHeader({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="fixed inset-0 z-40 flex lg:hidden"
+            className="fixed inset-0 z-[55] flex lg:hidden"
           >
             <div className="absolute inset-0 bg-navy-950/55 backdrop-blur-[3px]" onClick={() => setSidebarOpen(false)} />
             <motion.div
@@ -257,12 +260,12 @@ export default function UserHeader({
               animate={{ x: 0 }}
               exit={{ x: -320 }}
               transition={{ type: "spring", stiffness: 420, damping: 38 }}
-              className="relative z-50 flex h-full w-[300px] max-w-[85vw] flex-col bg-navy-900 text-white shadow-overlay dark:bg-[linear-gradient(180deg,#0e162e,#070c19)]"
+              className="relative z-50 flex h-[100dvh] w-[300px] max-w-[85vw] flex-col overflow-hidden border-r border-white/10 bg-[linear-gradient(180deg,#1b2c58_0%,#121f42_100%)] text-white shadow-overlay dark:bg-[linear-gradient(180deg,#0e162e,#070c19)]"
             >
-              <div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
+              <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))]">
                 <div className="flex items-center gap-2.5">
                   <span className="flex size-10 items-center justify-center rounded-[10px] bg-white/10 ring-1 ring-white/15">
-                    <img alt="" className="size-8 object-contain" src={headerUmSeal} />
+                    <img decoding="async" alt="" className="size-8 object-contain" src={headerUmSeal} />
                   </span>
                   <span className="leading-tight">
                     <span className="block font-[family-name:var(--font-heading)] text-[15px] font-semibold">E-Balik</span>
@@ -274,13 +277,14 @@ export default function UserHeader({
                 </button>
               </div>
 
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
               <div className="px-4 pt-4">
                 <button type="button" onClick={() => navigate("report-item")} className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-gold-500 px-4 py-3 text-[15px] font-semibold text-navy-950 hover:bg-gold-400">
                   <PackagePlus size={17} aria-hidden="true" /> Report an item
                 </button>
               </div>
 
-              <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-3" aria-label="Main navigation">
+              <nav className="flex flex-col gap-0.5 p-3" aria-label="Main navigation">
                 {[...NAV_LINKS, { label: "Notifications", page: "notifications" as Page, icon: <Bell size={16} aria-hidden="true" /> }].map((link) => {
                   const active = currentPage === link.page;
                   return (
@@ -303,8 +307,8 @@ export default function UserHeader({
                 })}
               </nav>
 
-              <div className="border-t border-white/10 p-3">
-                <button type="button" onClick={() => navigate("profile")} className="flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-left hover:bg-white/[0.06]">
+              <div className="mt-auto border-t border-white/10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                <button type="button" onClick={() => navigate("profile")} className="flex w-full items-center gap-3 rounded-xl bg-white/[0.05] px-3 py-2.5 text-left ring-1 ring-white/10 transition-colors hover:bg-white/[0.09]">
                   <span className="flex size-9 items-center justify-center rounded-lg bg-gold-500 text-[13px] font-bold text-navy-950">{initials(user)}</span>
                   <span className="min-w-0 leading-tight">
                     <span className="block truncate text-[14px] font-medium">{profileLabel}</span>
@@ -317,6 +321,7 @@ export default function UserHeader({
                 <button type="button" onClick={onLogout} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-rose-300 hover:bg-rose-500/10">
                   <LogOut size={16} aria-hidden="true" /> Log out
                 </button>
+              </div>
               </div>
             </motion.div>
           </motion.div>

@@ -4,7 +4,8 @@ Supabase Database Connection Handler
 from supabase import create_client, Client
 from typing import Optional, List, Dict, Any
 import logging
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote
 from uuid import UUID
 
@@ -46,6 +47,24 @@ class SupabaseDB:
             return True
         except Exception:
             return False
+
+    VERIFIED_CATEGORIES = ('Student', 'Faculty', 'Staff', 'Visitor')
+    CATEGORY_TO_LEGACY_ROLE = {'Student': 'Student', 'Faculty': 'Faculty', 'Staff': 'Staff', 'Visitor': 'Others'}
+    _governance_state = {'ok': None, 'at': 0.0}
+
+    @property
+    def supports_governance_fields(self) -> bool:
+        """True once 20261006_system_control_verification.sql has added user_category and the suspension columns."""
+        state = self._governance_state
+        ttl = 300 if state['ok'] else 20
+        if state['ok'] is None or time.monotonic() - state['at'] > ttl:
+            try:
+                self.client.table('user_profiles').select('user_category,suspended_until,suspension_reason,suspended_by').limit(1).execute()
+                state['ok'] = True
+            except Exception:
+                state['ok'] = False
+            state['at'] = time.monotonic()
+        return bool(state['ok'])
 
     def _filter_supported_fields(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Drop unsupported keys so writes still work on older schema versions."""
@@ -406,7 +425,7 @@ class SupabaseDB:
         account_id: str,
         status: str,
         reviewed_by: str,
-        user_role: Optional[str] = None,
+        user_category: Optional[str] = None,
         review_note: Optional[str] = None,
     ) -> Dict[str, Any]:
         profile = self.get_user_by_account_id(account_id)
@@ -427,9 +446,13 @@ class SupabaseDB:
             'updated_at': self._utc_now_iso(),
         }
         if status == 'verified':
-            if user_role not in {'Student', 'Faculty', 'Others'}:
-                raise ValueError('Choose a valid identity category')
-            update['user_role'] = user_role
+            if user_category not in self.VERIFIED_CATEGORIES:
+                raise ValueError('Choose a role: Student, Faculty, Staff or Visitor')
+            if not self.supports_governance_fields:
+                raise RuntimeError('Verification roles need the 20261006_system_control_verification.sql migration. Run it in Supabase, then try again.')
+            update['user_category'] = user_category
+            # Keep the older user_role column in step so existing screens still show a sensible role.
+            update['user_role'] = self.CATEGORY_TO_LEGACY_ROLE[user_category]
 
         response = self.client.table('user_profiles').update(update).eq('account_id', account_id).eq(
             'verification_status', 'pending'
@@ -925,9 +948,10 @@ class SupabaseDB:
     def list_admin_users(self) -> list[Dict[str, Any]]:
         """Return a user list in the shape the admin UI expects."""
         try:
-            response = self.client.table('user_profiles').select(
-                'account_id, campus_id, fname, mname, lname, email, user_role, access_level, is_active, created_at, last_login_at'
-            ).order('created_at', desc=True).execute()
+            columns = 'account_id, campus_id, fname, mname, lname, email, user_role, access_level, is_active, created_at, last_login_at, verification_status'
+            if self.supports_governance_fields:
+                columns += ', user_category, suspended_until'
+            response = self.client.table('user_profiles').select(columns).order('created_at', desc=True).execute()
             users = response.data or []
 
             def count_by_account(table_name: str, account_column: str) -> Dict[str, int]:
@@ -957,7 +981,10 @@ class SupabaseDB:
                     'initials': (user.get('fname') or 'U')[0].upper() + (user.get('lname') or 'U')[0].upper(),
                     'studentId': user.get('campus_id') or 'N/A',
                     'email': user.get('email') or '',
-                    'program': user.get('user_role') or 'Student',
+                    'program': user.get('user_category') or user.get('user_role') or 'Student',
+                    'category': user.get('user_category'),
+                    'verification': str(user.get('verification_status') or 'pending').lower(),
+                    'suspendedUntil': user.get('suspended_until') if status == 'Suspended' else None,
                     'accessLevel': user.get('access_level') or ('admin' if str(user.get('user_role') or '').lower() == 'admin' else 'user'),
                     'reports': report_counts.get(account_id, 0),
                     'claims': claim_counts.get(account_id, 0),
@@ -1375,14 +1402,30 @@ class SupabaseDB:
         self._remove_public_item_image('found-item-images', item.get('image_url'))
         return True
 
-    def update_user_status(self, account_id: str, status: str) -> Dict[str, Any]:
+    def update_user_status(self, account_id: str, status: str, days: Optional[int] = None, reason: Optional[str] = None, actor_id: Optional[str] = None) -> Dict[str, Any]:
+        """Activate or suspend an account. `days` makes a suspension expire on its own; None means until reactivated."""
         try:
             normalized = str(status or '').strip().lower()
             if normalized not in {'active', 'suspended'}:
                 raise ValueError(f"Invalid user status: {status}")
+            if days is not None and (not isinstance(days, int) or days < 1 or days > 365):
+                raise ValueError('A suspension must last between 1 and 365 days')
             active_value = normalized == 'active'
-            updated_at = self._utc_now_iso()
-            response = self.client.table('user_profiles').update({'is_active': active_value, 'updated_at': updated_at}).eq('account_id', account_id).execute()
+            payload: Dict[str, Any] = {'is_active': active_value, 'updated_at': self._utc_now_iso()}
+            if self.supports_governance_fields:
+                if active_value:
+                    payload.update({'suspended_until': None, 'suspension_reason': None, 'suspended_by': None})
+                else:
+                    payload.update({
+                        'suspended_until': (datetime.now(timezone.utc) + timedelta(days=days)).isoformat() if days else None,
+                        'suspension_reason': (reason or '').strip()[:300] or None,
+                        'suspended_by': actor_id,
+                    })
+            elif days:
+                raise RuntimeError('Timed suspensions need the 20261006_system_control_verification.sql migration. Run it in Supabase, or suspend without a time limit.')
+            response = self.client.table('user_profiles').update(payload).eq('account_id', account_id).execute()
+            from app.utils.system_control import forget_account  # the new status must apply to the very next request
+            forget_account(account_id)
             return response.data[0] if response.data else {}
         except Exception as e:
             logger.exception("✗ Error updating user status for account_id=%s status=%s: %s", account_id, status, repr(e))

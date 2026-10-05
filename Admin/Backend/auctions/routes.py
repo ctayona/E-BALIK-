@@ -129,6 +129,73 @@ def end_auction(auction_id):
     return jsonify({'success': True, 'message': message}), 200
 
 
+@auctions_bp.route('/auctions/<auction_id>/finalize', methods=['POST'])
+@_handled('confirm the result')
+def finalize_auction(auction_id):
+    admin = _require_admin()
+    db, service = _service()
+    result = service.finalize(auction_id, admin['account_id'])
+    auction = result['auction']
+    finalized = result['outcome'] == 'finalized'
+    _log_admin_action(db, admin, 'Finalize Auction' if finalized else 'Auction Cancelled At Finalize', 'Auctions', auction.get('title'), auction.get('item_reference') or auction_id)
+    message = 'The result is confirmed. The winner was notified and the item is waiting for pickup.' if finalized else f"The auction was cancelled instead: {auction.get('cancel_reason')}"
+    return jsonify({'success': True, 'outcome': result['outcome'], 'message': message}), 200
+
+
+@auctions_bp.route('/auctions/<auction_id>/reauction', methods=['POST'])
+@_handled('re-auction the item')
+def reauction_auction(auction_id):
+    admin = _require_admin()
+    db, service = _service()
+    payload = request.get_json(silent=True) or {}
+    suspend_days = payload.get('suspend_days')
+    if suspend_days not in (None, '', 0, '0'):
+        try:
+            suspend_days = int(suspend_days)
+        except (TypeError, ValueError):
+            raise AuctionError('Enter the suspension length in whole days.')
+        if suspend_days < 1 or suspend_days > 365:
+            raise AuctionError('A suspension must last between 1 and 365 days.')
+    else:
+        suspend_days = None
+
+    result = service.reauction(auction_id, payload, admin['account_id'])
+    old, new, winner_id = result['old'], result['new'], result.get('previous_winner_id')
+    reference = old.get('item_reference') or auction_id
+    _log_admin_action(db, admin, 'Re-Auction Item', 'Auctions', old.get('title'), reference)
+
+    suspension = None
+    if winner_id:
+        try:
+            target = db.get_user_by_account_id(str(winner_id)) or {}
+            staff = str(target.get('access_level') or '').lower() in ('admin', 'super_admin')
+            if suspend_days and (staff or str(winner_id) == admin['account_id']):
+                suspension = {'applied': False, 'error': 'Admin accounts cannot be suspended from here.'}
+            elif suspend_days:
+                db.update_user_status(str(winner_id), 'suspended', days=suspend_days, reason=f'Did not complete an auction purchase ({reference}).', actor_id=admin['account_id'])
+                _log_admin_action(db, admin, 'Suspend User for %d Days' % suspend_days, 'Users', target.get('email') or str(winner_id), str(winner_id))
+                suspension = {'applied': True, 'days': suspend_days}
+        except Exception as error:
+            current_app.logger.warning('Re-auction suspension failed: %s', error)
+            suspension = {'applied': False, 'error': str(error)}
+        try:
+            extra = f' Your account is suspended for {suspend_days} days.' if suspension and suspension.get('applied') else ''
+            db.create_user_notification(
+                str(winner_id), 'Auction purchase not completed',
+                f"Your winning bid on {old.get('title')} was not completed, so the item was listed again.{extra}",
+                notification_type='auction_forfeited', link_label='View auctions', link_page='auction-hall',
+            )
+        except Exception as error:
+            current_app.logger.warning('Re-auction notification failed: %s', error)
+
+    message = 'The item was listed again as a new auction.'
+    if suspension and suspension.get('applied'):
+        message += f" The previous winner is suspended for {suspension['days']} days."
+    elif suspension and suspension.get('error'):
+        message += f" The suspension could not be applied: {suspension['error']}"
+    return jsonify({'success': True, 'message': message, 'auction_id': new.get('auction_id'), 'suspension': suspension}), 201
+
+
 @auctions_bp.route('/auctions/<auction_id>/fulfillment', methods=['POST'])
 @_handled('update pickup status')
 def update_fulfillment(auction_id):

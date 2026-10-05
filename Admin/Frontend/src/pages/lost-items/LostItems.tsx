@@ -277,7 +277,7 @@ export default function LostItems() {
         >
           <div className="grid gap-5 sm:grid-cols-[200px_minmax(0,1fr)]">
             {viewItem.photo ? (
-              <img src={viewItem.photo} alt={tr("{0} photo", { "0": viewItem.item })} className="aspect-square w-full rounded-2xl object-cover ring-1 ring-line" />
+              <img decoding="async" src={viewItem.photo} alt={tr("{0} photo", { "0": viewItem.item })} className="aspect-square w-full rounded-2xl object-cover ring-1 ring-line" />
             ) : (
               <div className="flex aspect-square w-full items-center justify-center rounded-2xl bg-frost-100 text-[13px] text-ink-muted ring-1 ring-line">{tr("No photo")}</div>
             )}

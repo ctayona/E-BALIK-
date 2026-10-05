@@ -160,7 +160,7 @@ export default function ActivityLogs() {
         <div className="flex gap-1 flex-wrap">
           {FILTER_TABS.map(tab => (
             <button key={tab} onClick={() => setActiveFilter(tab)}
-              className="px-3 py-2 rounded-lg text-xs font-semibold transition-all"
+              className="px-3 py-2 rounded-lg text-xs font-semibold transition-[color,background-color,border-color,box-shadow,opacity,transform]"
               style={activeFilter === tab ? { background: "#1f3160", color: "white" } : { background: "#f8fafc", color: "#64748b" }}>
               {tr(tab)}
             </button>
