@@ -142,6 +142,7 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
               ["Current bid", peso(auction.current_price)],
               ["Starting bid", peso(auction.starting_price)],
               ["Bid increment", peso(auction.bid_increment)],
+              ["Buy Now price", auction.buyout_price ? peso(auction.buyout_price) : "—"],
               ["Bids placed", String(auction.bid_count)],
               [auction.status === "live" ? "Time left" : auction.status === "scheduled" ? "Opens" : "Closed", timeText],
               ["Closes at", formatDateTime(auction.ends_at)],
@@ -150,7 +151,7 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
             ]} />
             {awaiting && (
               <div className="rounded-2xl border border-iris-300/70 bg-iris-50 px-4 py-3.5 text-[14px] leading-6 text-ink-soft dark:bg-iris-500/10" role="status">
-                <p className="font-semibold text-ink">{tr("Bidding is closed. The result needs your decision.")}</p>
+                <p className="font-semibold text-ink">{auction.bought_out ? tr("A bidder used Buy Now and the auction ended at once. Confirm the purchase.") : tr("Bidding is closed. The result needs your decision.")}</p>
                 <p className="mt-1">{tr("Confirm the winner to notify them for pickup. If they do not collect, you can re-auction the item afterwards.")}</p>
               </div>
             )}

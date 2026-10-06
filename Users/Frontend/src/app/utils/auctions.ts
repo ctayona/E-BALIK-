@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { emitSystemEvent } from "./system";
 
 /** Auction Hall client: typed API, live countdown helpers and a polling feed hook. */
@@ -18,6 +18,9 @@ export interface Auction {
   gallery: string[];
   starting_price: number;
   bid_increment: number;
+  /** "Buy Now" price. A bid at or above it ends the auction at once. Null when the auction has none. */
+  buyout_price?: number | null;
+  bought_out?: boolean;
   current_price: number;
   min_next_bid: number;
   bid_count: number;
@@ -101,7 +104,7 @@ export const auctionsApi = {
   watching: () => request<{ ids: string[] }>("/watching"),
   react: (id: string, on: boolean) => request<{ success: boolean; reacted: boolean; reaction_count: number }>(`/${encodeURIComponent(id)}/reaction`, { method: on ? "PUT" : "DELETE" }),
   mine: () => request<{ auctions: Auction[]; server_time: string }>("/mine"),
-  bid: (id: string, amount: number) => request<{ success: boolean; message: string; auction: Auction; extended: boolean }>(`/${encodeURIComponent(id)}/bids`, { method: "POST", body: { amount } }),
+  bid: (id: string, amount: number) => request<{ success: boolean; message: string; auction: Auction; extended: boolean; bought_out?: boolean }>(`/${encodeURIComponent(id)}/bids`, { method: "POST", body: { amount } }),
   comment: (id: string, body: string) => request<{ comment: AuctionComment }>(`/${encodeURIComponent(id)}/comments`, { method: "POST", body: { body } }),
   removeComment: (id: string, commentId: string) => request<{ success: boolean }>(`/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, { method: "DELETE" }),
 };
@@ -115,14 +118,68 @@ export const pesoShort = (value: number | null | undefined) => {
   return `₱${amount.toLocaleString("en-PH", { minimumFractionDigits: Number.isInteger(amount) ? 0 : 2, maximumFractionDigits: 2 })}`;
 };
 
-/** Ticks once a second; every countdown on screen shares it. */
+interface Ticker { now: number; listeners: Set<() => void>; timer: number | null; subscribe: (listener: () => void) => () => void; snapshot: () => number }
+const tickers = new Map<number, Ticker>();
+
+/** One timer per interval length for the whole app, paused while the tab is hidden. */
+function tickerFor(intervalMs: number): Ticker {
+  const existing = tickers.get(intervalMs);
+  if (existing) return existing;
+  const ticker: Ticker = {
+    now: Date.now(),
+    listeners: new Set(),
+    timer: null,
+    snapshot: () => {
+      // With nobody listening the stored time goes stale; refresh it once so a new subscriber never paints an old clock.
+      if (ticker.listeners.size === 0 && Date.now() - ticker.now > intervalMs) ticker.now = Date.now();
+      return ticker.now;
+    },
+    subscribe: (listener) => {
+      ticker.listeners.add(listener);
+      if (ticker.timer === null) {
+        ticker.now = Date.now();
+        ticker.timer = window.setInterval(() => {
+          if (document.hidden) return;
+          ticker.now = Date.now();
+          ticker.listeners.forEach((notify) => notify());
+        }, intervalMs);
+      }
+      return () => {
+        ticker.listeners.delete(listener);
+        if (ticker.listeners.size === 0 && ticker.timer !== null) { window.clearInterval(ticker.timer); ticker.timer = null; }
+      };
+    },
+  };
+  tickers.set(intervalMs, ticker);
+  return ticker;
+}
+
+/**
+ * The current time, refreshed every `intervalMs`. Every countdown shares one timer, so call this in the small
+ * component that shows the time and not in a page: a page that ticks re-renders everything under it each second.
+ */
 export function useNow(intervalMs = 1000) {
-  const [now, setNow] = useState(() => Date.now());
+  const ticker = tickerFor(intervalMs);
+  return useSyncExternalStore(ticker.subscribe, ticker.snapshot, ticker.snapshot);
+}
+
+/**
+ * Re-renders the caller once, just after the next live auction closes, so lists can drop it without a clock
+ * ticking every second. Compare against `Date.now() + offset` while this value is a dependency.
+ */
+export function useClosingTick(auctions: Pick<Auction, "status" | "ends_at">[], offset: number) {
+  const [tick, setTick] = useState(0);
+  // Keyed by content, so a new array with the same closing times does not restart the timer.
+  const key = auctions.filter((a) => a.status === "live").map((a) => a.ends_at).join("|");
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
-    return () => window.clearInterval(timer);
-  }, [intervalMs]);
-  return now;
+    const current = Date.now() + offset;
+    const closing = key.split("|").filter(Boolean).map((value) => Date.parse(value)).filter((time) => time > current);
+    if (closing.length === 0) return undefined;
+    const wait = Math.min(Math.min(...closing) - current + 250, 2_147_000_000);
+    const timer = window.setTimeout(() => setTick((value) => value + 1), wait);
+    return () => window.clearTimeout(timer);
+  }, [key, offset, tick]);
+  return tick;
 }
 
 export function serverOffset(serverTime?: string) {

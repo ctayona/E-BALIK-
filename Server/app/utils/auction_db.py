@@ -103,6 +103,16 @@ def parse_money(value: Any, field: str, minimum: Decimal = Decimal('0.01'), maxi
     return amount
 
 
+def parse_buyout(value: Any, starting: Decimal) -> Optional[Decimal]:
+    """The optional Buy Now price. It must be higher than the starting bid, or nobody could ever bid."""
+    if value is None or str(value).strip() == '':
+        return None
+    amount = parse_money(value, 'Buy Now price')
+    if amount <= starting:
+        raise AuctionError('The Buy Now price must be higher than the starting bid.')
+    return amount
+
+
 def parse_int(value: Any, field: str, minimum: int, maximum: int) -> int:
     try:
         number = int(value)
@@ -150,7 +160,7 @@ class AuctionService:
     # ------------------------------------------------------------------ helpers
     def _guard(self, error: Exception):
         if _is_missing_schema(error):
-            raise AuctionsUnavailable('The Auction Hall is not set up yet. Run the 20261005_auction_hall.sql migration in Supabase.') from error
+            raise AuctionsUnavailable('The Auction Hall is not set up yet. Run the 20261005_auction_hall.sql and 20261009_tag_expiry_and_auction_buyout.sql migrations in Supabase.') from error
         raise error
 
     def _profiles(self, ids: Iterable[Optional[str]]) -> Dict[str, Dict[str, Any]]:
@@ -215,6 +225,8 @@ class AuctionService:
             'max_extensions': int(row.get('max_extensions') or 0),
             'status': status,
             'is_open': status == 'live',
+            'buyout_price': _num(row.get('buyout_price')) if row.get('buyout_price') is not None else None,
+            'bought_out': bool(row.get('bought_out')),
             'leader': (bidder_alias(row['auction_id'], leader_id) if anonymous else mask_name(profiles.get(leader_id))) if leader_id else None,
             'winner': (bidder_alias(row['auction_id'], winner_id) if anonymous else mask_name(profiles.get(winner_id))) if winner_id and status == 'ended' else None,
             'reaction_count': int((reactions or {}).get(str(row['auction_id']), 0)),
@@ -407,7 +419,10 @@ class AuctionService:
         closed_at = row.get('ended_at') or row.get('ends_at')
         if status in ('awaiting', 'ended', 'cancelled'):
             count = int(row.get('bid_count') or 0)
-            events.append({'type': 'closed', 'at': closed_at, 'text': f"Bidding closed with {count} bid{'s' if count != 1 else ''}" if status != 'cancelled' else 'Auction cancelled'})
+            if row.get('bought_out'):
+                events.append({'type': 'buyout', 'at': closed_at, 'text': f"{bidder_alias(auction_id, row.get('winner_account_id'))} used Buy Now at {format_peso(row.get('winning_amount'))}. Bidding ended at once"})
+            else:
+                events.append({'type': 'closed', 'at': closed_at, 'text': f"Bidding closed with {count} bid{'s' if count != 1 else ''}" if status != 'cancelled' else 'Auction cancelled'})
         if row.get('status') == 'awaiting_admin':
             events.append({'type': 'pending', 'at': None, 'text': 'Waiting for an administrator to confirm the result'})
         if row.get('finalized_at') and row.get('winner_account_id'):
@@ -514,11 +529,23 @@ class AuctionService:
 
         auction = result['auction']
         previous = result.get('previous_bidder_id')
+        bought_out = bool(result.get('bought_out'))
+        if bought_out:
+            # Buy Now ended the auction at once. The buyer waits for the admin to confirm pickup; the rest are told it is over.
+            try:
+                self.db.create_user_notification(
+                    str(account_id), 'You used Buy Now',
+                    f"You bought {auction.get('title')} for {format_peso(auction.get('winning_amount'))}. An administrator will confirm your purchase, then you can pay and collect it at the Lost and Found Office.",
+                    notification_type='auction_awaiting', link_label='View auction', link_page='auction-hall',
+                )
+            except Exception as error:
+                logger.warning('Buy Now notification failed: %s', error)
         if previous and str(previous) != str(account_id):
             try:
                 self.db.create_user_notification(
-                    str(previous), 'You have been outbid',
-                    f"Another bidder is now leading {auction.get('title')} at {format_peso(auction.get('current_price'))}. Bid again to take the lead.",
+                    str(previous), 'Auction ended: Buy Now' if bought_out else 'You have been outbid',
+                    (f"{auction.get('title')} was bought at the Buy Now price of {format_peso(auction.get('winning_amount'))}, so the auction has ended."
+                     if bought_out else f"Another bidder is now leading {auction.get('title')} at {format_peso(auction.get('current_price'))}. Bid again to take the lead."),
                     notification_type='auction_outbid', link_label='View auction', link_page='auction-hall',
                 )
             except Exception as error:
@@ -526,13 +553,13 @@ class AuctionService:
         profile = self._profiles([account_id]).get(str(account_id))
         try:
             self.db.log_user_activity(
-                account_id=account_id, user_name=(profile or {}).get('email') or 'User', action='Place Auction Bid',
+                account_id=account_id, user_name=(profile or {}).get('email') or 'User', action='Buy Now (Auction)' if bought_out else 'Place Auction Bid',
                 module='Auction Hall', target_name=auction.get('title'), target_id=auction.get('item_reference') or str(auction_id),
             )
         except Exception as error:
             logger.warning('Bid activity log failed: %s', error)
         profiles = self._profiles([auction.get('highest_bidder_id')])
-        return {'auction': self.card(auction, profiles), 'extended': bool(result.get('extended')), 'bid_id': result.get('bid_id')}
+        return {'auction': self.card(auction, profiles), 'extended': bool(result.get('extended')), 'bought_out': bought_out, 'bid_id': result.get('bid_id')}
 
     def add_comment(self, auction_id: str, account_id: str, body: Any) -> Dict[str, Any]:
         text = str(body or '').strip()
@@ -629,6 +656,7 @@ class AuctionService:
         if starts > now + timedelta(days=90):
             raise AuctionError('The start time can be at most 90 days away.')
         ends = starts + timedelta(minutes=duration)
+        buyout = parse_buyout(payload.get('buyout_price'), starting)
         snipe = bool(payload.get('anti_snipe_enabled', True))
         window = parse_int(payload.get('anti_snipe_window_seconds', 300), 'anti-snipe window', 30, 3600)
         extension = parse_int(payload.get('anti_snipe_extension_seconds', 300), 'anti-snipe extension', 30, 3600)
@@ -645,6 +673,8 @@ class AuctionService:
             'anti_snipe_enabled': snipe, 'anti_snipe_window_seconds': window, 'anti_snipe_extension_seconds': extension,
             'max_extensions': max_extensions, 'status': 'scheduled' if starts > now else 'active', 'created_by': admin_id,
         }
+        if buyout is not None:
+            row['buyout_price'] = float(buyout)
         try:
             created = self.client.table('auctions').insert(row).execute().data or []
         except Exception as error:
@@ -756,6 +786,15 @@ class AuctionService:
                     update[field] = float(amount)
                     if field == 'starting_price':
                         update['current_price'] = float(amount)
+            if 'buyout_price' in payload:
+                if has_bids:
+                    raise AuctionError('The Buy Now price is locked once bidding has started.', 409)
+                raw = payload['buyout_price']
+                update['buyout_price'] = None if raw is None or str(raw).strip() == '' else float(parse_money(raw, 'Buy Now price'))
+            final_start = Decimal(str(update.get('starting_price', row.get('starting_price') or 0)))
+            final_buyout = update['buyout_price'] if 'buyout_price' in update else row.get('buyout_price')
+            if final_buyout is not None and final_start >= Decimal(str(final_buyout)):
+                raise AuctionError('The Buy Now price must be higher than the starting bid.')
             if 'starts_at' in payload:
                 if has_bids or row.get('status') != 'scheduled':
                     raise AuctionError('The start time can only change before the auction opens.', 409)

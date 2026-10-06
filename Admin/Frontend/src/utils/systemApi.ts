@@ -1,4 +1,5 @@
 import { API_URL, adminMutationRequest, getAuthHeaders } from "./api";
+import type { Announcement, AnnouncementTone } from "./missionApi";
 
 /** Super Admin Control Panel API (maintenance mode, force logout, health scan, data cleanup). */
 
@@ -11,6 +12,7 @@ export interface SystemOverview {
   last_cleanup: CleanupSummary | null;
   setup_required: boolean;
   min_cleanup_days: number;
+  announcement: Announcement;
 }
 
 export type HealthStatus = "ok" | "warn" | "fail";
@@ -51,7 +53,7 @@ export const runDatabaseCleanup = (days: number, includeUnread: boolean, targets
   mutate<{ success: boolean; summary: CleanupSummary; message: string }>("cleanup", "POST", "Database cleanup", { days, include_unread: includeUnread, targets });
 
 /** Public maintenance flag. No sign-in needed, so the admin header can show it without extra permissions. */
-export async function fetchPublicSystemStatus(): Promise<{ maintenance: boolean; message: string; since: string | null }> {
+export async function fetchPublicSystemStatus(): Promise<{ maintenance: boolean; message: string; since: string | null; announcement?: { id: string; tone: AnnouncementTone; title: string; message: string } | null }> {
   const response = await fetch(`${API_URL}/api/system/status`);
   if (!response.ok) throw new Error("status unavailable");
   return response.json();

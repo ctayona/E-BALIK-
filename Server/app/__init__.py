@@ -48,7 +48,11 @@ def create_app(config_name: str = None):
     })
     
     logger.info(f"✓ Flask app created with config: {config_name}")
-    
+
+    # Gzip large JSON responses (auction feed, admin lists) to cut load time on slow connections
+    from app.utils.compression import install_compression
+    install_compression(app)
+
     # Initialize database
     try:
         from app.utils.supabase_db import get_db

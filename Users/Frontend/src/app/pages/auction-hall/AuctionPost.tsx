@@ -1,22 +1,20 @@
-import { BadgeCheck, Heart, MapPin, MessageCircle, TrendingUp } from "lucide-react";
+import { memo } from "react";
+import { BadgeCheck, Heart, MapPin, MessageCircle, TrendingUp, Zap } from "lucide-react";
 import headerUmSeal from "@/imports/Header/9aefa1789ba406d6291f8aa816f84df70a02953b.webp";
 import Gallery from "@/app/shared/auction/Gallery";
-import { AuctionClock } from "@/app/shared/auction/AuctionParts";
-import { formatRemaining, msLeft, peso, type Auction } from "@/app/utils/auctions";
+import { AuctionClock, ClosesIn } from "@/app/shared/auction/AuctionParts";
+import { peso, type Auction } from "@/app/utils/auctions";
 import { CX } from "@/app/utils/clay";
 
-/** One auction as a feed post: header, swipeable photos, quick actions, price bar. */
-export default function AuctionPost({ auction, now, offset, watching, hearts, onToggleWatch, onOpen }: {
+/** One auction as a feed post: header, swipeable photos, quick actions, price bar. Memoised: only its clocks tick. */
+function AuctionPost({ auction, offset, watching, hearts, onToggleWatch, onOpen }: {
   auction: Auction;
-  now: number;
   offset: number;
   watching: boolean;
   hearts: number;
   onToggleWatch: (id: string) => void;
   onOpen: (auction: Auction, focus?: "comments") => void;
 }) {
-  const left = msLeft(auction, now, offset);
-  const urgent = auction.status === "live" && left > 0 && left < 5 * 60000;
   const noBids = auction.bid_count === 0;
 
   return (
@@ -27,7 +25,7 @@ export default function AuctionPost({ auction, now, offset, watching, hearts, on
           <p className="flex items-center gap-1 text-[14.5px] font-semibold text-navy-800">UMak Lost &amp; Found <BadgeCheck size={15} className="text-iris-600" aria-label="Official" /></p>
           <p className="truncate text-[12.5px] text-ink-muted">Lot {auction.reference || "—"}{auction.category ? ` · ${auction.category}` : ""}</p>
         </div>
-        <AuctionClock auction={auction} now={now} offset={offset} className="shrink-0" />
+        <AuctionClock auction={auction} offset={offset} className="shrink-0" />
       </header>
 
       <Gallery images={auction.gallery} alt={auction.title} aspect="aspect-[4/3] sm:aspect-[16/11]" onOpen={() => onOpen(auction)} />
@@ -53,11 +51,14 @@ export default function AuctionPost({ auction, now, offset, watching, hearts, on
         <div className="mr-auto">
           <p className="text-[12.5px] font-medium text-ink-muted">{noBids ? "Starting bid" : "Current bid"}</p>
           <p className="font-[family-name:var(--font-heading)] text-[26px] font-semibold leading-none tabular-nums text-navy-800">{peso(auction.current_price)}</p>
-          {auction.status === "live" && left > 0 && <p className={`mt-1 text-[12.5px] font-medium tabular-nums ${urgent ? "text-rose-600" : "text-ink-muted"}`}>Closes in {formatRemaining(left)}</p>}
+          <ClosesIn auction={auction} offset={offset} />
+          {auction.buyout_price != null && auction.status === "live" && <p className="mt-1 flex items-center gap-1 text-[12.5px] font-semibold text-gold-700"><Zap size={13} fill="currentColor" aria-hidden="true" />Buy Now {peso(auction.buyout_price)}</p>}
         </div>
         <button type="button" onClick={() => onOpen(auction)} className={`${CX.btnGhost} min-h-[44px] px-5`}>Details</button>
-        {auction.status === "live" && left > 0 && <button type="button" onClick={() => onOpen(auction)} className={`${CX.btnGold} min-h-[44px] px-6`}>Place bid</button>}
+        {auction.status === "live" && <button type="button" onClick={() => onOpen(auction)} className={`${CX.btnGold} min-h-[44px] px-6`}>Place bid</button>}
       </footer>
     </article>
   );
 }
+
+export default memo(AuctionPost);

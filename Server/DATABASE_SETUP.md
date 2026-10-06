@@ -119,6 +119,51 @@ SELECT proname FROM pg_proc WHERE proname = 'auction_finalize';
 Note: once the gate is live, every existing account that is not verified can no
 longer report items, file claims or bid until an admin verifies it.
 
+### Smart Tag live photo and Mission Control storage tools
+
+Run `manual_migrations/20261010_tag_photo_and_mission_control.sql` after `20261009`. It is additive and
+safe to re-run: it adds `smart_tags.item_image_url`, creates the PRIVATE storage bucket `smart-tag-images`
+(5 MB, jpeg/png/webp) and two service-role-only read functions, `storage_bucket_stats()` and
+`storage_list_objects()`, used by the Storage card in System Control. Nothing is deleted or changed. Verify with:
+
+```sql
+SELECT column_name FROM information_schema.columns WHERE table_name = 'smart_tags' AND column_name = 'item_image_url';
+SELECT id, public FROM storage.buckets WHERE id = 'smart-tag-images';   -- public must be false
+SELECT proname FROM pg_proc WHERE proname IN ('storage_bucket_stats', 'storage_list_objects');
+```
+
+Expected: 1 row, `false`, 2 rows. Until it runs, registering a tag fails with a clear message (the photo cannot be
+stored) and the Storage card shows the setup notice.
+
+### Smart Tag expiry, tag types and auction Buy Now
+
+Run `manual_migrations/20261009_tag_expiry_and_auction_buyout.sql` after `20261008`. It is
+additive and safe to re-run: it adds `tag_type`, `validity_months`, `valid_until`, `batch_id`,
+`scan_count` and `last_scanned_at` to `smart_tags` (and allows the `expired` status), adds
+`buyout_price` and `bought_out` to `auctions`, and replaces the `auction_place_bid` function so a
+bid at or above the Buy Now price ends the auction. Existing tags are grouped into one batch per
+label so they can be deactivated as a batch. Verify with:
+
+```sql
+SELECT column_name FROM information_schema.columns
+ WHERE table_name = 'smart_tags' AND column_name IN ('tag_type','validity_months','valid_until','batch_id','scan_count','last_scanned_at');
+SELECT column_name FROM information_schema.columns
+ WHERE table_name = 'auctions' AND column_name IN ('buyout_price','bought_out');
+SELECT pg_get_functiondef('public.auction_place_bid(uuid,uuid,numeric)'::regprocedure) LIKE '%is_buyout%';
+```
+
+Expected: 6 rows, 2 rows, `true`.
+
+### Smart Tags
+
+Run `manual_migrations/20261008_smart_tags.sql` after the one below. It creates the
+`smart_tags` table (RLS on, backend-only) and changes nothing else. Verify with:
+
+```sql
+SELECT to_regclass('public.smart_tags');
+SELECT status, COUNT(*) FROM public.smart_tags GROUP BY status;
+```
+
 ### Duplicate-claim protection and auction hearts
 
 Run `manual_migrations/20261007_report_integrity_and_reactions.sql` after the one

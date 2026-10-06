@@ -1,4 +1,5 @@
 import { Files, GitCompareArrows, LayoutDashboard, LibraryBig, Plus } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import type { Page } from "@/app/types";
 
 const REPORT_PAGES: Page[] = ["report-item", "found-item", "missing-item"];
@@ -13,6 +14,7 @@ const TABS: { label: string; page: Page; Icon: typeof Files }[] = [
 /** Thumb-reach bottom navigation for phones (hidden from lg up). Respects the home-indicator safe area. */
 export default function MobileTabBar({ currentPage, onNavigate }: { currentPage: Page; onNavigate: (page: Page) => void }) {
   const reporting = REPORT_PAGES.includes(currentPage);
+  const reduced = useReducedMotion();
   const left = TABS.slice(0, 2);
   const right = TABS.slice(2);
 
@@ -26,8 +28,15 @@ export default function MobileTabBar({ currentPage, onNavigate }: { currentPage:
         aria-current={active ? "page" : undefined}
         className="group relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-semibold"
       >
-        <span className={`flex h-8 w-14 items-center justify-center rounded-full transition-[background-color,color] duration-200 ${active ? "bg-white/15 text-gold-300" : "text-navy-200 group-active:bg-white/10"}`}>
-          <Icon size={21} strokeWidth={active ? 2.3 : 1.9} aria-hidden="true" />
+        <span className={`relative flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-200 ${active ? "text-gold-300" : "text-navy-200 group-hover:text-white group-active:bg-white/10"}`}>
+          {active && (
+            <motion.span
+              layoutId="user-tabbar-pill"
+              className="absolute inset-0 rounded-full bg-white/[0.14] shadow-[inset_0_1px_0_rgba(255,255,255,0.14)] ring-1 ring-white/15"
+              transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 36 }}
+            />
+          )}
+          <Icon size={21} strokeWidth={active ? 2.3 : 1.9} className="relative transition-transform duration-200 group-active:scale-90" aria-hidden="true" />
         </span>
         <span className={active ? "text-white" : "text-navy-200"}>{label}</span>
       </button>
@@ -37,7 +46,7 @@ export default function MobileTabBar({ currentPage, onNavigate }: { currentPage:
   return (
     <nav
       aria-label="Primary"
-      className="app-chrome fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-navy-900/85 pb-[env(safe-area-inset-bottom)] text-white shadow-[0_-12px_30px_-16px_rgba(5,10,30,0.7)] backdrop-blur-xl backdrop-saturate-150 lg:hidden print:hidden"
+      className="app-chrome fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-navy-900/80 pb-[env(safe-area-inset-bottom)] text-white shadow-[0_-14px_34px_-16px_rgba(5,10,30,0.8)] backdrop-blur-2xl backdrop-saturate-150 lg:hidden print:hidden"
     >
       <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(209,161,83,0.55),transparent)]" aria-hidden="true" />
       <div className="mx-auto flex max-w-[560px] items-stretch px-2">

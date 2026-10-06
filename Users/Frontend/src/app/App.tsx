@@ -13,6 +13,8 @@ const BrowseItems = lazy(() => import("@/app/pages/browse-items/BrowseItems"));
 const ReportItem = lazy(() => import("@/app/pages/report-item/ReportItem"));
 const Notifications = lazy(() => import("@/app/pages/notifications/Notifications"));
 const AuctionHall = lazy(() => import("@/app/pages/auction-hall/AuctionHall"));
+const MyTagsPage = lazy(() => import("@/app/pages/my-tags/MyTagsPage"));
+const TagPage = lazy(() => import("@/app/pages/tag/TagPage"));
 import UserHeader from "@/app/shared/UserHeader";
 import MobileTabBar from "@/app/shared/MobileTabBar";
 import InfoModalHost from "@/app/shared/info-modal/InfoModalHost";
@@ -20,16 +22,36 @@ import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { useAuth } from "@/app/utils/useAuth";
 import { authUtils } from "@/app/utils/api";
 import MaintenanceScreen from "@/app/shared/system/MaintenanceScreen";
+import AnnouncementBanner from "@/app/shared/system/AnnouncementBanner";
 import { SYSTEM_EVENT, isStaff, useSystemStatus, type SystemEventDetail } from "@/app/utils/system";
 
 const USER_PAGE_STORAGE_KEY = "ebalik_user_last_page";
 const USER_NAVIGATION_OPTIONS_KEY = "ebalik_user_navigation_options";
 const AUTHENTICATED_PAGES: Page[] = [
   "dashboard", "report-item", "found-item", "missing-item", "my-reports",
-  "matches", "browse-items", "claim", "auction-hall", "profile", "notifications",
+  "matches", "browse-items", "claim", "auction-hall", "my-tags", "profile", "notifications",
 ];
 
+/** /tag/<code> is the address printed in every Smart Tag QR code. It is public, so it skips sign-in and the app shell. */
+const TAG_PATH = /^\/tag\/([^/]+)\/?$/i;
+
 export default function App() {
+  const tagMatch = window.location.pathname.match(TAG_PATH);
+  // The announcement banner is the first thing on every page: the landing page, the app, the maintenance screen and the tag page.
+  return (
+    <>
+      <AnnouncementBanner />
+      {tagMatch ? (
+        <>
+          <Suspense fallback={<LandingSkeleton />}><TagPage rawId={decodeURIComponent(tagMatch[1])} /></Suspense>
+          <InfoModalHost />
+        </>
+      ) : <MainApp />}
+    </>
+  );
+}
+
+function MainApp() {
   const { user, isAuthenticated, logout, refreshProfile } = useAuth();
   const [page, setPage] = useState<Page>("home");
   const [navigationOptions, setNavigationOptions] = useState<NavigationOptions>(() => {
@@ -185,6 +207,7 @@ export default function App() {
         {page === "browse-items" && <BrowseItems onNavigate={handleNavigate} />}
         {page === "claim"        && <Claim foundItemId={navigationOptions.foundItemId} onNavigate={handleNavigate} />}
         {page === "auction-hall" && <AuctionHall onNavigate={handleNavigate} />}
+        {page === "my-tags"      && <MyTagsPage />}
         {page === "notifications" && <Notifications onNavigate={handleNavigate} />}
         {page === "profile"      && <Profile user={currentUser} onNavigate={handleNavigate} />}
       </Suspense>

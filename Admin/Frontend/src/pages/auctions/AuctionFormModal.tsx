@@ -68,6 +68,7 @@ export default function AuctionFormModal(props: Props) {
   const [description, setDescription] = useState(auction?.description ?? "");
   const [startingPrice, setStartingPrice] = useState(auction ? String(auction.starting_price) : "");
   const [increment, setIncrement] = useState(auction ? String(auction.bid_increment) : "50");
+  const [buyout, setBuyout] = useState(auction?.buyout_price ? String(auction.buyout_price) : "");
   const [lengthMinutes, setLengthMinutes] = useState<number | "custom">(1440);
   const [customHours, setCustomHours] = useState("48");
   const [startMode, setStartMode] = useState<"now" | "later">(scheduled ? "later" : "now");
@@ -131,6 +132,8 @@ export default function AuctionFormModal(props: Props) {
     const price = Number(startingPrice);
     const step = Number(increment);
     if (!hasBids && (!(price > 0) || !(step > 0))) { setError(tr("Enter a starting bid and bid increment above zero.")); return; }
+    const buyoutAmount = buyout.trim() === "" ? null : Number(buyout);
+    if (!hasBids && buyoutAmount !== null && (!(buyoutAmount > price) || !Number.isFinite(buyoutAmount))) { setError(tr("The Buy Now price must be higher than the starting bid.")); return; }
     if (!editing && (!Number.isFinite(minutes) || minutes < 15)) { setError(tr("The auction must run at least 15 minutes.")); return; }
     if (startMode === "later" && !startsAt) { setError(tr("Pick when the auction opens.")); return; }
     if (editing && (!endsAt || previewEnd.getTime() <= Date.now() + 14 * 60000)) { setError(tr("The end time must be at least 15 minutes from now.")); return; }
@@ -145,12 +148,13 @@ export default function AuctionFormModal(props: Props) {
     try {
       if (props.mode === "edit" && auction) {
         const body: AuctionForm = { ...shared, ends_at: new Date(endsAt).toISOString() };
-        if (!hasBids) { body.starting_price = startingPrice; body.bid_increment = increment; }
+        if (!hasBids) { body.starting_price = startingPrice; body.bid_increment = increment; body.buyout_price = buyout.trim(); }
         if (scheduled && !hasBids && startsAt) body.starts_at = new Date(startsAt).toISOString();
         await updateAdminAuction(auction.id, body);
       } else if (item) {
         await createAdminAuction({
           ...shared, found_item_reference: item.reference, starting_price: startingPrice, bid_increment: increment, duration_minutes: minutes,
+          ...(buyout.trim() ? { buyout_price: buyout.trim() } : {}),
           ...(startMode === "later" ? { starts_at: new Date(startsAt).toISOString() } : {}),
         });
       }
@@ -245,6 +249,11 @@ export default function AuctionFormModal(props: Props) {
                 </>
               )}
             </Field>
+            <div className="sm:col-span-2">
+              <Field label="Buy Now price (₱), optional" hint={hasBids ? "Locked because bids have been placed." : "Leave empty for a normal auction. A bidder who pays this price wins at once and the auction ends."}>
+                {(id) => <TextInput id={id} inputMode="decimal" value={buyout} onChange={(e) => setBuyout(e.target.value)} disabled={hasBids} placeholder={tr("No Buy Now price")} />}
+              </Field>
+            </div>
           </section>
 
           <section className="space-y-4" aria-labelledby="auction-time-heading">

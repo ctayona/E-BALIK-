@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bell, ChevronDown, ClipboardCheck, Files, Gavel, GitCompareArrows, LayoutDashboard, LibraryBig, LogOut, Menu, Moon, PackagePlus, Sun, UserRound, X } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { Bell, ChevronDown, ClipboardCheck, Files, Gavel, GitCompareArrows, LayoutDashboard, LibraryBig, LogOut, Menu, Moon, PackagePlus, QrCode, Sun, UserRound, X } from "lucide-react";
+import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import headerUmSeal from "@/imports/Header/9aefa1789ba406d6291f8aa816f84df70a02953b.webp";
 import type { Page } from "@/app/types";
 import type { User } from "@/app/utils/useAuth";
@@ -14,6 +14,7 @@ const NAV_LINKS: { label: string; page: Page; icon: ReactNode }[] = [
   { label: "My Reports",   page: "my-reports",   icon: <Files size={16} aria-hidden="true" /> },
   { label: "Claims",       page: "claim",        icon: <ClipboardCheck size={16} aria-hidden="true" /> },
   { label: "Auction Hall", page: "auction-hall", icon: <Gavel size={16} aria-hidden="true" /> },
+  { label: "Smart Tags",   page: "my-tags",      icon: <QrCode size={16} aria-hidden="true" /> },
 ];
 
 const REPORT_PAGES: Page[] = ["report-item", "found-item", "missing-item"];
@@ -38,6 +39,8 @@ export default function UserHeader({
   const [accountOpen, setAccountOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const accountRef = useRef<HTMLDivElement>(null);
+  const [scrolled, setScrolled] = useState(false);
+  const reduced = useReducedMotion();
   const [theme, toggleTheme] = useTheme();
   const themeLabel = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
 
@@ -64,6 +67,14 @@ export default function UserHeader({
       document.removeEventListener("visibilitychange", refreshWhenVisible);
       window.clearInterval(refreshInterval);
     };
+  }, []);
+
+  // The bar gets a touch more opaque and casts a deeper shadow once content scrolls underneath it.
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   // Close the account menu on outside click / Escape; close the drawer on Escape.
@@ -106,45 +117,61 @@ export default function UserHeader({
         Skip to main content
       </a>
 
-      <header className="app-chrome sticky top-0 z-30 w-full shrink-0 border-b border-white/10 pt-[env(safe-area-inset-top)] bg-navy-900/80 text-white shadow-[0_10px_30px_-18px_rgba(5,10,30,0.8)] backdrop-blur-xl backdrop-saturate-150">
+      <header
+        className={`app-chrome sticky top-0 z-30 w-full shrink-0 border-b pt-[env(safe-area-inset-top)] text-white backdrop-blur-2xl backdrop-saturate-150 transition-[background-color,box-shadow,border-color] duration-300 ${
+          scrolled
+            ? "border-white/15 bg-navy-900/90 shadow-[0_16px_40px_-20px_rgba(5,10,30,0.95)]"
+            : "border-white/10 bg-navy-900/70 shadow-[0_10px_30px_-22px_rgba(5,10,30,0.8)]"
+        }`}
+      >
+        <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.22),transparent)]" aria-hidden="true" />
         <span className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,transparent,rgba(209,161,83,0.6),transparent)]" aria-hidden="true" />
-        <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center gap-4 px-4 sm:px-6">
+        <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center gap-3 px-4 sm:gap-4 sm:px-6">
           {/* Brand */}
-          <button type="button" onClick={() => navigate("dashboard")} className="flex shrink-0 items-center gap-2.5 rounded-lg py-1 pr-2" aria-label="E-Balik home">
-            <span className="flex size-10 items-center justify-center rounded-[10px] bg-white/10 ring-1 ring-white/15">
+          <button type="button" onClick={() => navigate("dashboard")} className="group flex shrink-0 items-center gap-2.5 rounded-xl py-1 pr-2" aria-label="E-Balik home">
+            <span className="flex size-10 items-center justify-center rounded-[11px] bg-white/10 ring-1 ring-white/15 transition-[box-shadow,transform] duration-300 group-hover:scale-105 group-hover:ring-gold-400/60 group-hover:shadow-[0_0_18px_-2px_rgba(209,161,83,0.55)]">
               <img decoding="async" alt="" className="size-8 object-contain" src={headerUmSeal} />
             </span>
-            <span className="hidden text-left leading-tight sm:block lg:hidden xl:block">
+            <span className="hidden text-left leading-tight sm:block lg:hidden 2xl:block">
               <span className="block font-[family-name:var(--font-heading)] text-[15px] font-semibold tracking-[-0.01em]">E-Balik</span>
-              <span className="block text-[11px] font-medium text-gold-300">University of Makati · Lost &amp; Found</span>
+              <span className="block whitespace-nowrap text-[11px] font-medium text-gold-300">University of Makati · Lost &amp; Found</span>
             </span>
           </button>
 
-          {/* Desktop nav */}
-          <nav className="hidden h-full min-w-0 flex-1 items-stretch gap-0.5 lg:flex" aria-label="Main navigation">
-            {NAV_LINKS.map((link) => {
-              const active = currentPage === link.page;
-              return (
-                <button
-                  key={link.page}
-                  type="button"
-                  onClick={() => navigate(link.page)}
-                  aria-current={active ? "page" : undefined}
-                  aria-label={link.label}
-                  title={link.label}
-                  className={`group relative flex items-center whitespace-nowrap px-1 text-[14px] font-medium transition-colors duration-150 ${
-                    active ? "text-white" : "text-navy-200 hover:text-white"
-                  }`}
-                >
-                  <span className={`flex items-center gap-1.5 rounded-lg px-2.5 py-2 transition-colors duration-150 ${active ? "bg-white/[0.09]" : "group-hover:bg-white/[0.06]"}`}>
-                    <span className={active ? "text-gold-400" : "text-navy-300"}>{link.icon}</span>
-                    {/* Icons only between lg and xl so the bar never overflows into the actions. */}
-                    <span className="hidden xl:inline">{link.label}</span>
-                  </span>
-                  <span className={`absolute inset-x-3 bottom-0 h-[3px] rounded-t-full transition-colors ${active ? "bg-gold-500" : "bg-transparent"}`} aria-hidden="true" />
-                </button>
-              );
-            })}
+          {/* Desktop nav: a glass capsule with one gold-lit active pill that glides between links. Icons only below xl so it never crowds the actions. */}
+          <nav className="hidden min-w-0 flex-1 justify-center lg:flex" aria-label="Main navigation">
+            <ul className="flex items-center gap-0.5 rounded-2xl border border-white/10 bg-white/[0.045] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] backdrop-blur-md">
+              {NAV_LINKS.map((link) => {
+                const active = currentPage === link.page;
+                return (
+                  <li key={link.page}>
+                    <button
+                      type="button"
+                      onClick={() => navigate(link.page)}
+                      aria-current={active ? "page" : undefined}
+                      aria-label={link.label}
+                      title={link.label}
+                      className={`group relative flex h-10 items-center whitespace-nowrap rounded-xl px-3 text-[14px] font-medium transition-[color,background-color] duration-200 ${
+                        active ? "text-white" : "text-navy-200 hover:bg-white/[0.07] hover:text-white"
+                      }`}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="user-nav-active"
+                          className="absolute inset-0 rounded-xl bg-white/[0.13] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_8px_18px_-10px_rgba(0,0,0,0.7)] ring-1 ring-white/15"
+                          transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 38 }}
+                        />
+                      )}
+                      {active && <span className="absolute inset-x-0 bottom-[3px] mx-auto h-[2px] w-5 rounded-full bg-gold-400 shadow-[0_0_8px_rgba(209,161,83,0.9)]" aria-hidden="true" />}
+                      <span className="relative flex items-center gap-1.5">
+                        <span className={`transition-[color,transform] duration-200 ${active ? "text-gold-400" : "text-navy-300 group-hover:-translate-y-px group-hover:text-gold-300"}`}>{link.icon}</span>
+                        <span className="hidden xl:inline">{link.label}</span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           </nav>
 
           <div className="ml-auto flex items-center gap-1.5 lg:ml-0">
@@ -152,8 +179,8 @@ export default function UserHeader({
               type="button"
               onClick={() => navigate("report-item")}
               aria-current={isReporting ? "page" : undefined}
-              className={`hidden items-center gap-2 rounded-[10px] px-4 py-2.5 text-[14px] font-semibold transition-colors duration-150 sm:inline-flex ${
-                isReporting ? "bg-[linear-gradient(180deg,#e6be76_0%,#d1a153_100%)] text-navy-950 ring-2 ring-gold-200/60" : "bg-[linear-gradient(180deg,#e6be76_0%,#d1a153_100%)] text-navy-950 shadow-[0_1px_0_rgba(255,255,255,0.45)_inset] hover:shadow-[0_1px_0_rgba(255,255,255,0.45)_inset,var(--shadow-glow-gold)]"
+              className={`hidden items-center gap-2 rounded-xl px-4 py-2.5 text-[14px] font-semibold transition-[transform,box-shadow] duration-200 sm:inline-flex ${
+                isReporting ? "bg-[linear-gradient(180deg,#e6be76_0%,#d1a153_100%)] text-navy-950 ring-2 ring-gold-200/60" : "bg-[linear-gradient(180deg,#e6be76_0%,#d1a153_100%)] text-navy-950 shadow-[0_1px_0_rgba(255,255,255,0.45)_inset] hover:-translate-y-px hover:shadow-[0_1px_0_rgba(255,255,255,0.45)_inset,var(--shadow-glow-gold)] active:translate-y-0 active:scale-[0.98]"
               }`}
             >
               <PackagePlus size={16} aria-hidden="true" /> Report item
@@ -164,7 +191,7 @@ export default function UserHeader({
               onClick={toggleTheme}
               aria-label={themeLabel}
               title={themeLabel}
-              className="flex size-11 items-center justify-center rounded-[10px] text-navy-100 transition-colors hover:bg-white/10 hover:text-gold-300"
+              className="flex size-11 items-center justify-center rounded-xl text-navy-100 transition-[background-color,color,transform] duration-200 hover:bg-white/10 hover:text-gold-300 active:scale-90"
             >
               {theme === "dark" ? <Sun size={19} aria-hidden="true" /> : <Moon size={19} aria-hidden="true" />}
             </button>
@@ -174,11 +201,11 @@ export default function UserHeader({
               onClick={() => navigate("notifications")}
               aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
               aria-current={currentPage === "notifications" ? "page" : undefined}
-              className={`relative flex size-11 items-center justify-center rounded-[10px] transition-colors ${
-                currentPage === "notifications" ? "bg-white/15" : "hover:bg-white/10"
+              className={`group relative flex size-11 items-center justify-center rounded-xl transition-[background-color,transform] duration-200 active:scale-90 ${
+                currentPage === "notifications" ? "bg-white/15 ring-1 ring-white/15" : "hover:bg-white/10"
               }`}
             >
-              <Bell size={19} className="text-navy-100" aria-hidden="true" />
+              <Bell size={19} className="text-navy-100 transition-colors group-hover:text-gold-300" aria-hidden="true" />
               {unreadCount > 0 && (
                 <span className="absolute right-1.5 top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[11px] font-bold leading-none text-white ring-2 ring-navy-800" aria-hidden="true">
                   {badge}
@@ -193,10 +220,10 @@ export default function UserHeader({
                 aria-haspopup="menu"
                 aria-expanded={accountOpen}
                 onClick={() => setAccountOpen((open) => !open)}
-                className={`flex items-center gap-2 rounded-[10px] py-1.5 pl-1.5 pr-2 transition-colors ${accountOpen || currentPage === "profile" ? "bg-white/15" : "hover:bg-white/10"}`}
+                className={`flex items-center gap-2 rounded-xl border py-1.5 pl-1.5 pr-2 transition-[background-color,border-color] duration-200 ${accountOpen || currentPage === "profile" ? "border-white/15 bg-white/15" : "border-transparent hover:border-white/10 hover:bg-white/10"}`}
               >
                 <span className="flex size-8 items-center justify-center rounded-lg bg-gold-500 text-[13px] font-bold text-navy-950">{initials(user)}</span>
-                <span className="hidden max-w-[140px] truncate text-[14px] font-medium xl:block">{user?.fname || "Account"}</span>
+                <span className="sr-only">{user?.fname || "Account"}</span>
                 <ChevronDown size={15} className={`text-navy-200 transition-transform ${accountOpen ? "rotate-180" : ""}`} aria-hidden="true" />
               </button>
               <AnimatePresence>
@@ -207,7 +234,7 @@ export default function UserHeader({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.12 }}
-                    className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 overflow-hidden rounded-xl border border-line bg-white text-ink shadow-raised"
+                    className="absolute right-0 top-[calc(100%+10px)] z-50 w-64 overflow-hidden rounded-2xl border border-line bg-white/95 text-ink shadow-raised backdrop-blur-xl"
                   >
                     <div className="border-b border-line px-4 py-3">
                       <p className="truncate text-[14px] font-semibold">{profileLabel}</p>
@@ -229,7 +256,7 @@ export default function UserHeader({
 
             <button
               type="button"
-              className="flex size-11 items-center justify-center rounded-[10px] text-white transition-colors hover:bg-white/10 lg:hidden"
+              className="flex size-11 items-center justify-center rounded-xl text-white transition-[background-color,transform] duration-200 hover:bg-white/10 active:scale-90 lg:hidden"
               onClick={() => setSidebarOpen(true)}
               aria-label="Open menu"
               aria-expanded={sidebarOpen}
@@ -260,7 +287,7 @@ export default function UserHeader({
               animate={{ x: 0 }}
               exit={{ x: -320 }}
               transition={{ type: "spring", stiffness: 420, damping: 38 }}
-              className="relative z-50 flex h-[100dvh] w-[300px] max-w-[85vw] flex-col overflow-hidden border-r border-white/10 bg-[linear-gradient(180deg,#1b2c58_0%,#121f42_100%)] text-white shadow-overlay dark:bg-[linear-gradient(180deg,#0e162e,#070c19)]"
+              className="relative z-50 flex h-[100dvh] w-[300px] max-w-[85vw] flex-col overflow-hidden border-r border-white/10 bg-[linear-gradient(180deg,#1b2c58_0%,#121f42_100%)] text-white shadow-overlay before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-40 before:bg-[radial-gradient(120%_100%_at_0%_0%,rgba(209,161,83,0.16),transparent_70%)] dark:bg-[linear-gradient(180deg,#0e162e,#070c19)]"
             >
               <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))]">
                 <div className="flex items-center gap-2.5">
@@ -293,11 +320,11 @@ export default function UserHeader({
                       type="button"
                       onClick={() => navigate(link.page)}
                       aria-current={active ? "page" : undefined}
-                      className={`flex min-h-[44px] items-center gap-3 rounded-[10px] px-3 text-left text-[15px] font-medium transition-colors ${
-                        active ? "bg-white/12 text-white shadow-[inset_3px_0_0_var(--color-gold-500)]" : "text-navy-200 hover:bg-white/[0.06] hover:text-white"
+                      className={`group flex min-h-[48px] items-center gap-3 rounded-xl px-2 text-left text-[15px] font-medium transition-[background-color,color,transform] duration-200 active:scale-[0.99] ${
+                        active ? "bg-white/[0.11] text-white ring-1 ring-white/10" : "text-navy-200 hover:translate-x-0.5 hover:bg-white/[0.06] hover:text-white"
                       }`}
                     >
-                      <span className={active ? "text-gold-400" : "text-navy-300"}>{link.icon}</span>
+                      <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg transition-colors duration-200 ${active ? "bg-[linear-gradient(180deg,#ecc787,#d1a153)] text-navy-950" : "bg-white/[0.06] text-navy-300 group-hover:text-gold-300"}`}>{link.icon}</span>
                       <span className="flex-1">{link.label}</span>
                       {link.page === "notifications" && unreadCount > 0 && (
                         <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[12px] font-bold">{badge}</span>
@@ -318,7 +345,7 @@ export default function UserHeader({
                 <button type="button" onClick={toggleTheme} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-navy-100 hover:bg-white/[0.06]">
                   {theme === "dark" ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />} {theme === "dark" ? "Light mode" : "Dark mode"}
                 </button>
-                <button type="button" onClick={onLogout} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-rose-300 hover:bg-rose-500/10">
+                <button type="button" onClick={onLogout} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-[#fda4af] hover:bg-rose-500/10">
                   <LogOut size={16} aria-hidden="true" /> Log out
                 </button>
               </div>

@@ -80,6 +80,9 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
     }
   };
 
+  // Smart Tag notices created before the My Smart Tags page existed point at the dashboard, so match them by type too.
+  const opensSmartTags = (notification: UserNotification) => notification.link_page === 'my-tags' || String(notification.notification_type || '').startsWith('smart_tag');
+
   const handleNotificationClick = (notification: UserNotification) => {
     if (!notification.is_read) handleMarkAsRead(notification.notification_id);
     if (notification.link_page === 'claim' && notification.found_item_id && onNavigate) {
@@ -88,6 +91,8 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
       onNavigate('profile');
     } else if (notification.link_page === 'auction-hall' && onNavigate) {
       onNavigate('auction-hall');
+    } else if (opensSmartTags(notification) && onNavigate) {
+      onNavigate('my-tags');
     }
   };
 
@@ -250,6 +255,14 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
                         className={`${CX.btnGold} mt-3 px-4 py-2 text-[12px]`}
                       >
                         {notification.link_label || 'View auction'}
+                      </button>
+                    )}
+                    {opensSmartTags(notification) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleNotificationClick(notification); }}
+                        className={`${CX.btnNavy} mt-3 px-4 py-2 text-[12px]`}
+                      >
+                        {notification.link_label || 'View my Smart Tags'}
                       </button>
                     )}
                     {notification.link_page === 'profile' && (

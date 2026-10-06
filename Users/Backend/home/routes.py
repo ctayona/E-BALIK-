@@ -850,4 +850,4 @@ def system_status():
         return jsonify(public_status(db)), 200
     except Exception as error:
         current_app.logger.warning(f'System status unavailable: {error}')
-        return jsonify({'maintenance': False, 'message': '', 'since': None}), 200
+        return jsonify({'maintenance': False, 'message': '', 'since': None, 'announcement': None}), 200

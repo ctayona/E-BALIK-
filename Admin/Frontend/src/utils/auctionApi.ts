@@ -17,6 +17,8 @@ export interface AdminAuction {
   gallery: string[];
   starting_price: number;
   bid_increment: number;
+  buyout_price?: number | null;
+  bought_out?: boolean;
   current_price: number;
   min_next_bid: number;
   bid_count: number;
@@ -75,6 +77,7 @@ export interface AuctionForm {
   description?: string;
   starting_price?: string | number;
   bid_increment?: string | number;
+  buyout_price?: string | number | null;
   duration_minutes?: number;
   starts_at?: string;
   ends_at?: string;

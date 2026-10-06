@@ -23,6 +23,7 @@ const LANGUAGES: { id: Language; short: string; name: string }[] = [
 
 export default function Header({ breadcrumb, title, notifCount, onNotifClick, onProfileClick, user, onLogout }: HeaderProps) {
   const [profileOpen, setProfileOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const [theme, setTheme] = useTheme();
   const [language, setLanguage] = useLanguage();
   const t = useT();
@@ -38,6 +39,14 @@ export default function Header({ breadcrumb, title, notifCount, onNotifClick, on
       document.head.appendChild(favicon);
     }
     favicon.href = umakLogo;
+  }, []);
+
+  // A little more depth under the bar once the page scrolls beneath it.
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   // Admins keep working during maintenance, so remind them the app is locked for everyone else.
@@ -62,10 +71,11 @@ export default function Header({ breadcrumb, title, notifCount, onNotifClick, on
     };
   }, [profileOpen]);
 
-  const iconButton = "relative flex size-11 items-center justify-center rounded-xl text-ink-muted transition-colors hover:bg-navy-50 hover:text-ink";
+  const iconButton = "relative flex size-11 items-center justify-center rounded-xl border border-transparent text-ink-muted transition-[background-color,border-color,color,transform] duration-200 hover:border-line hover:bg-navy-50 hover:text-ink active:scale-90";
 
   return (
-    <header className="print-hide sticky top-0 z-20 flex min-h-[68px] shrink-0 items-center justify-between gap-3 border-b border-line bg-[var(--chrome)] px-4 py-2.5 backdrop-blur-xl sm:px-6">
+    <header className={`print-hide sticky top-0 z-20 flex min-h-[68px] shrink-0 items-center justify-between gap-3 border-b border-line bg-[var(--chrome)] px-4 py-2.5 backdrop-blur-2xl backdrop-saturate-150 transition-shadow duration-300 sm:px-6 ${scrolled ? "shadow-[0_14px_32px_-22px_rgba(15,23,47,0.45)]" : ""}`}>
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.35),transparent)]" aria-hidden="true" />
       <span className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,transparent,rgba(209,161,83,0.5),transparent)]" aria-hidden="true" />
       <div className="min-w-0">
         <nav aria-label={tr("Breadcrumb")} className="hidden items-center gap-1 text-[12.5px] font-medium text-ink-muted sm:flex">
@@ -132,7 +142,7 @@ export default function Header({ breadcrumb, title, notifCount, onNotifClick, on
             aria-expanded={profileOpen}
             aria-haspopup="menu"
             onClick={(e) => { e.stopPropagation(); setProfileOpen(open => !open); }}
-            className="flex items-center gap-2 rounded-xl p-1.5 text-left transition-colors hover:bg-navy-50"
+            className={`flex items-center gap-2 rounded-xl border p-1.5 text-left transition-[background-color,border-color] duration-200 ${profileOpen ? "border-line bg-navy-50" : "border-transparent hover:border-line hover:bg-navy-50"}`}
           >
             <div className="flex size-9 items-center justify-center rounded-xl bg-navy-800 text-[13px] font-bold text-white dark:bg-[linear-gradient(180deg,#ecc787,#d1a153)] dark:text-navy-950">{user.fname[0]}{user.lname[0]}</div>
             <div className="hidden text-sm lg:block">
@@ -142,7 +152,7 @@ export default function Header({ breadcrumb, title, notifCount, onNotifClick, on
             <ChevronDown size={14} className={`ml-0.5 hidden text-slate-400 transition-transform lg:block ${profileOpen ? "rotate-180" : ""}`} aria-hidden="true" />
           </button>
           {profileOpen && (
-            <div className="absolute right-0 top-full z-30 mt-2 w-60 overflow-hidden rounded-2xl border border-line bg-[var(--sticky-bg)] shadow-raised" role="menu" onClick={(e) => e.stopPropagation()}>
+            <div className="admin-fade-in absolute right-0 top-full z-30 mt-2 w-60 overflow-hidden rounded-2xl border border-line bg-[var(--sticky-bg)] shadow-raised" role="menu" onClick={(e) => e.stopPropagation()}>
               <div className="border-b border-line px-4 py-3">
                 <div className="text-[14px] font-semibold text-ink">{user.fname} {user.lname}</div>
                 <div className="mt-0.5 text-[12px] text-ink-muted">{roleLabel}</div>

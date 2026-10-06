@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Database, HeartPulse, Loader2, LockKeyhole, LogOut, RefreshCw, ShieldCheck, Trash2, Wrench, XCircle } from "lucide-react";
+import { SegmentedFilter } from "../../components/ui/management";
+import AdminGovernance from "./AdminGovernance";
+import AnnouncementPanel from "./AnnouncementPanel";
+import CommsHub from "./CommsHub";
+import { AuditExport, EmailTester, StorageWidget } from "./DataTools";
+import { Card } from "./parts";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import { SkeletonBlock } from "../../components/LoadingSkeleton";
 import { BTN, INPUT, PageHeader, RolePill } from "../../components/ui/primitives";
@@ -17,35 +23,6 @@ const HEALTH_LOOK: Record<HealthStatus, { icon: typeof CheckCircle2; text: strin
   fail: { icon: XCircle, text: "text-rose-600 dark:text-rose-300", chip: "bg-rose-50 text-rose-800 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-200 dark:ring-rose-500/30", label: "Action required" },
 };
 
-function Card({ icon, tone = "navy", title, description, children, aside }: {
-  icon: React.ReactNode;
-  tone?: "navy" | "danger" | "gold" | "mint";
-  title: string;
-  description: string;
-  children: React.ReactNode;
-  aside?: React.ReactNode;
-}) {
-  const badge = {
-    navy: "bg-[linear-gradient(145deg,#2b4282,#1f3160)] text-gold-300",
-    danger: "bg-[linear-gradient(145deg,#fda4af,#e11d48)] text-white",
-    gold: "bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950",
-    mint: "bg-[linear-gradient(145deg,#9fe0ca,#3fbf9f)] text-white",
-  }[tone];
-  return (
-    <section className="glass-panel flex min-w-0 flex-col p-5 sm:p-6">
-      <header className="mb-4 flex items-start gap-3.5">
-        <span className={`flex size-11 shrink-0 items-center justify-center rounded-2xl ${badge}`} aria-hidden="true">{icon}</span>
-        <div className="min-w-0 flex-1">
-          <h2 className="font-[family-name:var(--font-heading)] text-[18px] font-semibold leading-tight text-ink">{title}</h2>
-          <p className="mt-1 text-[13.5px] leading-5 text-ink-muted">{description}</p>
-        </div>
-        {aside}
-      </header>
-      {children}
-    </section>
-  );
-}
-
 function SetupNotice() {
   return (
     <section className="glass-panel flex items-start gap-4 border-gold-300/60 p-5" role="alert">
@@ -59,9 +36,18 @@ function SetupNotice() {
 }
 
 type Pending = "maintenance" | "logout" | "cleanup" | null;
+type Tab = "controls" | "announcement" | "comms" | "access" | "data";
+const TABS: { value: Tab; label: string }[] = [
+  { value: "controls", label: "Controls and health" },
+  { value: "announcement", label: "Announcement" },
+  { value: "comms", label: "Communications" },
+  { value: "access", label: "Admin access" },
+  { value: "data", label: "Data and email" },
+];
 
 export default function SystemControl() {
   const [overview, setOverview] = useState<SystemOverview | null>(null);
+  const [tab, setTab] = useState<Tab>("controls");
   const [loadError, setLoadError] = useState("");
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState<Pending>(null);
@@ -150,13 +136,26 @@ export default function SystemControl() {
     <div className="space-y-5 p-4 sm:p-6">
       <PageHeader
         title={tr("System control")}
-        description={tr("Lock the app for maintenance, sign everyone out, check system health and clear old data. Only super admins can see this page.")}
+        description={tr("Mission Control: lock the app, sign everyone out, post announcements, message users, govern admin access, export data and keep storage and email healthy. Only super admins can see this page.")}
         meta={<RolePill superAdmin />}
       />
 
       {loadError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] text-rose-800">{loadError}</p>}
       {setupRequired && <SetupNotice />}
 
+      <SegmentedFilter label="System control sections" value={tab} onChange={setTab} options={TABS} />
+
+      {tab === "announcement" && <AnnouncementPanel current={overview?.announcement ?? null} onSaved={() => void loadOverview()} />}
+      {tab === "comms" && <CommsHub />}
+      {tab === "access" && <AdminGovernance />}
+      {tab === "data" && (
+        <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-2"><AuditExport /><EmailTester /></div>
+          <StorageWidget />
+        </div>
+      )}
+
+      {tab === "controls" && <div className="space-y-5">
       <div className="grid gap-4 lg:grid-cols-2">
         <Card
           icon={<Wrench size={21} />}
@@ -301,6 +300,8 @@ export default function SystemControl() {
           {lastCleanup && <p className="text-[13px] text-ink-muted">{tr("Last cleanup {0}: {1} records removed.", { "0": formatDateTime(lastCleanup.at), "1": Object.values(lastCleanup.deleted).reduce((sum, value) => sum + value, 0).toLocaleString() })}</p>}
         </div>
       </Card>
+
+      </div>}
 
       {pending === "maintenance" && (
         <ConfirmActionDialog

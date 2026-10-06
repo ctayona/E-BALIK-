@@ -78,7 +78,10 @@ def place_bid(auction_id):
     amount = (request.get_json(silent=True) or {}).get('amount')
     service = _service()
     result = service.place_bid(auction_id, account_id, amount)
-    message = 'Your bid was placed. The closing time was extended.' if result['extended'] else 'Your bid was placed. You are leading.'
+    if result.get('bought_out'):
+        message = 'You bought it with Buy Now. The auction has ended and an administrator will confirm your purchase.'
+    else:
+        message = 'Your bid was placed. The closing time was extended.' if result['extended'] else 'Your bid was placed. You are leading.'
     return jsonify({'success': True, 'message': message, **result}), 201
 
 

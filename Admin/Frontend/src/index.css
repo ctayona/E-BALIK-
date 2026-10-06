@@ -185,6 +185,26 @@ html {
   box-shadow: 0 0 0 1px rgba(233, 196, 124, 0.35), 0 10px 30px -8px rgba(209, 161, 83, 0.65);
 }
 
+/* ── Navigation: mobile drawer entrance and the sidebar's quiet details ── */
+@keyframes admin-drawer-in { from { transform: translateX(-24px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes admin-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.admin-drawer-in { animation: admin-drawer-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.admin-fade-in { animation: admin-fade-in 180ms ease-out; }
+/* A soft gold bloom at the top of the sidebar, so the brand block feels lit rather than flat. */
+.nav-bloom::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 9rem;
+  pointer-events: none;
+  background: radial-gradient(120% 100% at 0% 0%, rgba(209, 161, 83, 0.17), transparent 70%);
+}
+@keyframes admin-banner-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+.admin-banner-in { animation: admin-banner-in 280ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .admin-drawer-in, .admin-fade-in, .admin-banner-in { animation: none; }
+}
+
 /* ── Management table: horizontal scroll with a pinned actions column ── */
 .mgmt-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
 .mgmt-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.875rem; }

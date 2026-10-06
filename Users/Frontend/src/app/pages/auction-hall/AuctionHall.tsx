@@ -2,7 +2,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "rea
 import { BellRing, Clock3, Gavel, Heart, ListChecks, Search, ShieldCheck, Sparkles, Trophy } from "lucide-react";
 import { AuctionClock, AuctionTile, SoldTile } from "@/app/shared/auction/AuctionParts";
 import { useWatchlist } from "@/app/shared/auction/useWatchlist";
-import { auctionsApi, formatRemaining, msLeft, pesoShort, useAuctionFeed, useNow, type Auction } from "@/app/utils/auctions";
+import { auctionsApi, formatRemaining, msLeft, pesoShort, useAuctionFeed, useClosingTick, useNow, type Auction } from "@/app/utils/auctions";
 import { authUtils } from "@/app/utils/api";
 import { CX } from "@/app/utils/clay";
 import type { Page } from "@/app/types";
@@ -27,13 +27,19 @@ const MY_STATE_LABEL: Record<NonNullable<Auction["my_state"]>, { text: string; c
   cancelled: { text: "Cancelled", className: "bg-slate-600 text-white" },
 };
 
+/** "Next auction closes in ..." line. Owns its own clock so the whole hall does not re-render every second. */
+function NextClose({ auction, offset }: { auction?: Auction; offset: number }) {
+  const left = msLeft(auction ?? { ends_at: "" }, useNow(), offset);
+  return <>{auction && left > 0 ? `Next auction closes in ${formatRemaining(left)}` : "New auctions are announced here."}</>;
+}
+
 function monthLabel(value: string) {
   return new Date(value).toLocaleString([], { month: "long", year: "numeric" });
 }
 
 export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) => void }) {
   const { feed, error, setupRequired, loading, offset, refresh } = useAuctionFeed();
-  const now = useNow();
+  const closingTick = useClosingTick(feed?.live ?? [], offset);
   const watch = useWatchlist();
   const signedIn = Boolean(authUtils.getToken());
   const [tab, setTab] = useState<Tab>("live");
@@ -60,7 +66,8 @@ export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) 
 
   const matches = useCallback((a: Auction) => (!query || `${a.title} ${a.reference} ${a.category} ${a.location}`.toLowerCase().includes(query)) && (!onlyWatched || watch.watching(a.id)), [query, onlyWatched, watch]);
 
-  const liveAll = useMemo(() => (feed?.live ?? []).filter((a) => a.status === "live" && msLeft(a, now, offset) > 0), [feed, now, offset]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- closingTick re-runs this right after an auction closes
+  const liveAll = useMemo(() => (feed?.live ?? []).filter((a) => a.status === "live" && msLeft(a, Date.now(), offset) > 0), [feed, offset, closingTick]);
   const upcomingAll = useMemo(() => (feed?.live ?? []).filter((a) => a.status === "scheduled"), [feed]);
   const live = useMemo(() => {
     const list = liveAll.filter(matches);
@@ -74,9 +81,8 @@ export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) 
     return [...groups.entries()];
   }, [sold]);
   const endingSoon = useMemo(() => [...liveAll].sort((a, b) => Date.parse(a.ends_at) - Date.parse(b.ends_at)).slice(0, 3), [liveAll]);
-  const nextClose = endingSoon[0] ? msLeft(endingSoon[0], now, offset) : 0;
 
-  const openAuction = (auction: Auction, focus?: "comments") => setOpen({ auction, focus });
+  const openAuction = useCallback((auction: Auction, focus?: "comments") => setOpen({ auction, focus }), []);
   const closeAuction = useCallback(() => setOpen(null), []);
   const changed = useCallback(() => { void refresh(); if (tab === "mine") void loadMine(); }, [refresh, loadMine, tab]);
 
@@ -102,7 +108,7 @@ export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) 
             <dl className="grid grid-cols-2 gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
               <div><dt className="text-[12.5px] font-medium text-white/55">Live now</dt><dd className="mt-1 text-2xl font-semibold tabular-nums text-gold-300">{liveAll.length}</dd></div>
               <div><dt className="text-[12.5px] font-medium text-white/55">Sold so far</dt><dd className="mt-1 text-2xl font-semibold tabular-nums text-white">{(feed?.past ?? []).filter((a) => a.sold).length}</dd></div>
-              <div className="col-span-2 flex items-center gap-2 border-t border-white/10 pt-3 text-[13px] text-white/70"><Clock3 size={14} className="shrink-0 text-gold-300" aria-hidden="true" />{nextClose > 0 ? `Next auction closes in ${formatRemaining(nextClose)}` : "New auctions are announced here."}</div>
+              <div className="col-span-2 flex items-center gap-2 border-t border-white/10 pt-3 text-[13px] text-white/70"><Clock3 size={14} className="shrink-0 text-gold-300" aria-hidden="true" /><NextClose auction={endingSoon[0]} offset={offset} /></div>
             </dl>
           </div>
         </section>
@@ -163,13 +169,13 @@ export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) 
                     </div>
                   ) : (
                     <div className="mx-auto max-w-[680px] space-y-6 lg:mx-0">
-                      {live.map((a) => <AuctionPost key={a.id} auction={a} now={now} offset={offset} watching={watch.watching(a.id)} hearts={watch.countFor(a.id, a.reaction_count ?? 0)} onToggleWatch={watch.toggle} onOpen={openAuction} />)}
+                      {live.map((a) => <AuctionPost key={a.id} auction={a} offset={offset} watching={watch.watching(a.id)} hearts={watch.countFor(a.id, a.reaction_count ?? 0)} onToggleWatch={watch.toggle} onOpen={openAuction} />)}
                     </div>
                   )}
                 </>
               ) : tab === "upcoming" ? (
                 upcoming.length === 0 ? <div className={`${CX.card} p-10 text-center text-[14.5px] text-ink-muted`}>No upcoming auctions are scheduled.</div> : (
-                  <div className="grid gap-4 sm:grid-cols-2">{upcoming.map((a) => <AuctionTile key={a.id} auction={a} now={now} offset={offset} onOpen={(auction) => openAuction(auction)} />)}</div>
+                  <div className="grid gap-4 sm:grid-cols-2">{upcoming.map((a) => <AuctionTile key={a.id} auction={a} offset={offset} onOpen={(auction) => openAuction(auction)} />)}</div>
                 )
               ) : tab === "sold" ? (
                 soldGroups.length === 0 ? <div className={`${CX.card} p-10 text-center text-[14.5px] text-ink-muted`}>No results yet. Finished auctions appear here.</div> : (
@@ -189,7 +195,7 @@ export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) 
                   <div className="grid gap-4 sm:grid-cols-2">
                     {mine.map((a) => (
                       <div key={a.id} className="relative">
-                        <AuctionTile auction={a} now={now} offset={offset} onOpen={(auction) => openAuction(auction)} />
+                        <AuctionTile auction={a} offset={offset} onOpen={(auction) => openAuction(auction)} />
                         {a.my_state && <span className={`absolute right-3 top-3 rounded-full px-2.5 py-1 text-[12.5px] font-bold ${MY_STATE_LABEL[a.my_state].className}`}>{MY_STATE_LABEL[a.my_state].text}</span>}
                       </div>
                     ))}
@@ -211,7 +217,7 @@ export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) 
                             <span className="block truncate text-[14px] font-semibold text-navy-800">{a.title}</span>
                             <span className="block text-[13px] tabular-nums text-ink-muted">{pesoShort(a.current_price)}</span>
                           </span>
-                          <AuctionClock auction={a} now={now} offset={offset} />
+                          <AuctionClock auction={a} offset={offset} />
                         </button>
                       </li>
                     ))}

@@ -17,8 +17,39 @@ export function emitSystemEvent(detail: SystemEventDetail) {
   window.dispatchEvent(new CustomEvent<SystemEventDetail>(SYSTEM_EVENT, { detail }));
 }
 
-export interface SystemStatus { maintenance: boolean; message: string; since: string | null }
+export type AnnouncementTone = 'info' | 'success' | 'warning' | 'critical';
+/** The campus-wide banner. `id` changes whenever an admin edits it, so a visitor who closed it sees the new one. */
+export interface Announcement { id: string; tone: AnnouncementTone; title: string; message: string }
+export interface SystemStatus { maintenance: boolean; message: string; since: string | null; announcement?: Announcement | null }
 const OPEN: SystemStatus = { maintenance: false, message: '', since: null };
+
+const TONES: AnnouncementTone[] = ['info', 'success', 'warning', 'critical'];
+
+function readAnnouncement(value: unknown): Announcement | null {
+  const note = value as Partial<Announcement> | null;
+  if (!note || typeof note.message !== 'string' || !note.message.trim()) return null;
+  return { id: String(note.id || note.message), tone: TONES.includes(note.tone as AnnouncementTone) ? (note.tone as AnnouncementTone) : 'info', title: String(note.title || ''), message: note.message };
+}
+
+/** The live announcement banner, polled every 30 seconds. Returns null while no announcement is on. */
+export function useAnnouncement(): Announcement | null {
+  const [note, setNote] = useState<Announcement | null>(null);
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/system/status`);
+        if (!response.ok || !active) return;
+        const next = readAnnouncement((await response.json()).announcement);
+        setNote((current) => (current?.id === next?.id && current?.message === next?.message ? current : next));
+      } catch { /* offline: keep what is shown */ }
+    };
+    void load();
+    const timer = window.setInterval(() => { if (!document.hidden) void load(); }, 30000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+  return note;
+}
 
 export async function fetchSystemStatus(): Promise<SystemStatus | null> {
   try {

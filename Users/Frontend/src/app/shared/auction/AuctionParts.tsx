@@ -1,9 +1,10 @@
 import { Gavel, MapPin } from "lucide-react";
-import { formatRemaining, formatWhen, msLeft, pesoShort, type Auction } from "@/app/utils/auctions";
+import { formatRemaining, formatWhen, msLeft, pesoShort, useNow, type Auction } from "@/app/utils/auctions";
 
 /** Small building blocks shared by the Auction Hall, the dashboard panel and the landing showcase. */
 
-export function AuctionClock({ auction, now, offset, className = "" }: { auction: Auction; now: number; offset: number; className?: string }) {
+export function AuctionClock({ auction, offset, className = "" }: { auction: Auction; offset: number; className?: string }) {
+  const now = useNow();  // only this badge re-renders each second, not the card or page around it
   const left = msLeft(auction, now, offset);
   const base = `inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] font-semibold tabular-nums ${className}`;
   if (auction.status === "live" && left > 0) {
@@ -23,10 +24,16 @@ export function AuctionClock({ auction, now, offset, className = "" }: { auction
   return <span className={`${base} bg-navy-950/75 text-white backdrop-blur`}>{auction.status === "live" ? "Closing" : "Ended"}</span>;
 }
 
+/** "Closes in 2h 05m" line that ticks by itself. */
+export function ClosesIn({ auction, offset }: { auction: Auction; offset: number }) {
+  const left = msLeft(auction, useNow(), offset);
+  if (auction.status !== "live" || left <= 0) return null;
+  return <p className={`mt-1 text-[12.5px] font-medium tabular-nums ${left < 5 * 60000 ? "text-rose-600" : "text-ink-muted"}`}>Closes in {formatRemaining(left)}</p>;
+}
+
 /** Compact auction card: photo, closing clock, price and bid count. */
-export function AuctionTile({ auction, now, offset, onOpen, tone = "surface" }: {
+export function AuctionTile({ auction, offset, onOpen, tone = "surface" }: {
   auction: Auction;
-  now: number;
   offset: number;
   onOpen: (auction: Auction) => void;
   tone?: "surface" | "night";
@@ -45,7 +52,7 @@ export function AuctionTile({ auction, now, offset, onOpen, tone = "surface" }: 
         ) : (
           <div className="flex size-full items-center justify-center bg-[radial-gradient(120%_90%_at_20%_0%,#33497f_0%,#1f3160_45%,#0e1830_100%)] text-gold-300"><Gavel size={30} aria-hidden="true" /></div>
         )}
-        <AuctionClock auction={auction} now={now} offset={offset} className="absolute left-3 top-3" />
+        <AuctionClock auction={auction} offset={offset} className="absolute left-3 top-3" />
       </div>
       <div className="flex flex-1 flex-col gap-2 p-4">
         <h3 className={`line-clamp-1 font-[family-name:var(--font-heading)] text-[16.5px] font-semibold ${night ? "text-white" : "text-navy-800"}`}>{auction.title}</h3>

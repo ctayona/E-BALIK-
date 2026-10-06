@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
+import AnnouncementBanner from "./components/AnnouncementBanner";
 import { AdminCardGridSkeleton, AdminMetricSkeleton, AdminTableSkeleton, SkeletonBlock } from "./components/LoadingSkeleton";
 import { getUnreadNotificationCount } from "./utils/notificationsStore";
 import { AdminUser, clearAdminSession, getStoredAdmin } from "./utils/api";
@@ -14,6 +15,7 @@ const LostItems = lazy(() => import("./pages/lost-items/LostItems"));
 const FoundItems = lazy(() => import("./pages/found-items/FoundItems"));
 const AIMatching = lazy(() => import("./pages/ai-matching/AIMatching"));
 const Auctions = lazy(() => import("./pages/auctions/Auctions"));
+const SmartTags = lazy(() => import("./pages/smart-tags/SmartTags"));
 const ClaimsVerification = lazy(() => import("./pages/claims-verification/ClaimsVerification"));
 const ChainOfCustody = lazy(() => import("./pages/chain-of-custody/ChainOfCustody"));
 const Users = lazy(() => import("./pages/users/Users"));
@@ -23,7 +25,7 @@ const ActivityLogs = lazy(() => import("./pages/activity-logs/ActivityLogs"));
 const AdminProfile = lazy(() => import("./pages/admin-profile/AdminProfile"));
 const SystemControl = lazy(() => import("./pages/system-control/SystemControl"));
 
-type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "auctions" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "admin-profile";
+type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "admin-profile";
 
 const PAGE_META: Record<Page, StringKey> = {
   "dashboard": "nav.dashboard",
@@ -31,6 +33,7 @@ const PAGE_META: Record<Page, StringKey> = {
   "found-items": "nav.foundItems",
   "ai-matching": "nav.aiMatching",
   "auctions": "nav.auctions",
+  "smart-tags": "nav.smartTags",
   "claims": "nav.claims",
   "chain-of-custody": "nav.custody",
   "users": "nav.users",
@@ -106,6 +109,7 @@ export default function App() {
       case "found-items": return <FoundItems />;
       case "ai-matching": return <AIMatching />;
       case "auctions": return <Auctions />;
+      case "smart-tags": return <SmartTags />;
       case "claims": return <ClaimsVerification />;
       case "chain-of-custody": return <ChainOfCustody />;
       case "users": return <Users />;
@@ -128,6 +132,7 @@ export default function App() {
         onLogout={handleLogout}
       />
       <div className="min-w-0 flex-1 flex flex-col overflow-hidden">
+        <AnnouncementBanner />
         <Header
           breadcrumb={[t("nav.home"), pageTitle]}
           title={pageTitle}

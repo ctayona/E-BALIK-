@@ -2,18 +2,19 @@ import { useCallback, useMemo, useState } from "react";
 import { Gavel, Clock3, ShieldCheck, Trophy } from "lucide-react";
 import { AuctionTile, SoldTile } from "@/app/shared/auction/AuctionParts";
 import AuctionDetail from "@/app/shared/auction/AuctionDetail";
-import { msLeft, useAuctionFeed, useNow, type Auction } from "@/app/utils/auctions";
+import { msLeft, useAuctionFeed, useClosingTick, type Auction } from "@/app/utils/auctions";
 
 /** Landing-page showcase: live lots for signed-out visitors, or recent sales when nothing is live. Hidden until there is something to show. */
 export default function AuctionShowcase({ onLogin }: { onLogin: () => void }) {
   const { feed, setupRequired, loading, offset, refresh } = useAuctionFeed(30000);
-  const now = useNow();
+  const closingTick = useClosingTick(feed?.live ?? [], offset);
   const [open, setOpen] = useState<Auction | null>(null);
   const close = useCallback(() => setOpen(null), []);
 
   const live = useMemo(
-    () => (feed?.live ?? []).filter((a) => a.status === "live" && msLeft(a, now, offset) > 0).sort((a, b) => Date.parse(a.ends_at) - Date.parse(b.ends_at)),
-    [feed, now, offset],
+    () => (feed?.live ?? []).filter((a) => a.status === "live" && msLeft(a, Date.now(), offset) > 0).sort((a, b) => Date.parse(a.ends_at) - Date.parse(b.ends_at)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closingTick re-runs this right after an auction closes
+    [feed, offset, closingTick],
   );
   const sold = useMemo(() => (feed?.past ?? []).filter((a) => a.sold).slice(0, 4), [feed]);
 
@@ -42,7 +43,7 @@ export default function AuctionShowcase({ onLogin }: { onLogin: () => void }) {
 
         {showingLive ? (
           <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {live.slice(0, 4).map((auction) => <li key={auction.id}><AuctionTile auction={auction} now={now} offset={offset} onOpen={setOpen} tone="night" /></li>)}
+            {live.slice(0, 4).map((auction) => <li key={auction.id}><AuctionTile auction={auction} offset={offset} onOpen={setOpen} tone="night" /></li>)}
           </ul>
         ) : (
           <ul className="grid grid-cols-2 gap-4 lg:grid-cols-4">

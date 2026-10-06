@@ -1,7 +1,8 @@
-"""System control page (super admin only): maintenance mode, forced logout, health scan and data cleanup."""
+"""System control page (super admin only): maintenance mode, forced logout, health scan and data cleanup, plus the Mission Control tools."""
 from functools import wraps
-from flask import Blueprint, current_app, jsonify, request
-from app.utils import get_db
+from flask import Blueprint, Response, current_app, jsonify, request
+from app.utils import get_db, rate_limit
+from app.utils import mission_control as mission
 from app.utils import system_control as control
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
 
@@ -22,6 +23,10 @@ def _super_admin_only(label):
                 return view(admin, *args, **kwargs)
             except control.SystemSetupRequired as error:
                 return jsonify({'error': str(error), 'setup_required': True}), 503
+            except mission.StorageUnavailable as error:
+                return jsonify({'error': str(error), 'setup_required': True}), 503
+            except mission.ToolError as error:
+                return jsonify({'error': error.message, **error.extra}), error.status
             except PermissionError as error:
                 return jsonify({'error': str(error)}), 403
             except ValueError as error:
@@ -47,6 +52,7 @@ def overview(admin):
         'maintenance': settings['maintenance_mode'],
         'sessions_valid_after': settings['sessions_valid_after'].get('ts'),
         'last_cleanup': settings['last_cleanup'] or None,
+        'announcement': settings['announcement'],
         'setup_required': control.settings_table_missing(),
         'min_cleanup_days': control.MIN_CLEANUP_DAYS,
     }), 200
@@ -117,3 +123,123 @@ def cleanup(admin):
     total = sum(summary['deleted'].values())
     _log_admin_action(db, admin, 'Database Cleanup', 'System Control', f'{total} rows older than {days} days', 'cleanup')
     return jsonify({'success': True, 'summary': summary, 'message': f'Cleanup finished. {total:,} old record(s) were removed.'}), 200
+
+
+# ---------------------------------------------------------------------------------------------- Mission Control
+def _limit(admin, name, count, seconds):
+    if not rate_limit.allow(f"mission:{name}:{admin['account_id']}", count, seconds):
+        raise mission.ToolError('You are doing that too often. Wait a few minutes and try again.', 429)
+
+
+@system_control_bp.route('/system/announcement', methods=['PUT'])
+@_super_admin_only('update the announcement')
+def set_announcement(admin):
+    db = _database()
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload.get('live'), bool):
+        raise ValidationError('Choose whether the announcement is live.')
+    try:
+        value = control.set_announcement(db, payload['live'], payload.get('tone'), payload.get('title'), payload.get('message'), admin['account_id'])
+    except ValueError as error:
+        raise ValidationError(str(error))
+    _log_admin_action(db, admin, 'Show Announcement Banner' if value['live'] else 'Hide Announcement Banner', 'System Control', value['title'] or value['message'][:60], 'announcement')
+    return jsonify({'success': True, 'announcement': value, 'message': 'The announcement is LIVE on every page.' if value['live'] else 'The announcement was saved and is hidden.'}), 200
+
+
+@system_control_bp.route('/system/users/search', methods=['GET'])
+@_super_admin_only('search users')
+def search_users(admin):
+    return jsonify({'users': mission.search_users(_database(), request.args.get('q'))}), 200
+
+
+@system_control_bp.route('/system/messages', methods=['POST'])
+@_super_admin_only('send the message')
+def send_message(admin):
+    _limit(admin, 'message', 10, 3600)
+    db = _database()
+    payload = request.get_json(silent=True) or {}
+    result = mission.send_message(db, payload.get('audience'), payload.get('account_id'), payload.get('title'), payload.get('message'), payload.get('send_email'), payload.get('send_in_app'))
+    target = 'All users' if payload.get('audience') == 'all' else str(payload.get('account_id'))
+    _log_admin_action(db, admin, 'Send Message', 'System Control', f"{target} ({result['recipients']} recipient(s))", 'message')
+    parts = []
+    if result['in_app']:
+        parts.append(f"{result['in_app']:,} in-app notification(s)")
+    if result.get('email_sent') is not None:
+        parts.append(f"{result['email_sent']} email(s) sent" + (f", {result['email_failed']} failed" if result.get('email_failed') else ''))
+    if result['email_queued']:
+        parts.append(f"{result['email_queued']:,} email(s) are being sent in the background")
+    if result['email_unavailable']:
+        parts.append('email was skipped because the email service is not configured')
+    return jsonify({'success': True, **result, 'message': 'Message sent: ' + '; '.join(parts) + '.'}), 200
+
+
+@system_control_bp.route('/system/admins', methods=['GET'])
+@_super_admin_only('load the administrators')
+def list_admins(admin):
+    return jsonify({'admins': mission.list_admins(_database()), 'you': admin['account_id']}), 200
+
+
+@system_control_bp.route('/system/admins/<account_id>/revoke', methods=['POST'])
+@_super_admin_only('revoke the access')
+def revoke_admin(admin, account_id):
+    _limit(admin, 'revoke', 20, 3600)
+    db = _database()
+    result = mission.revoke_admin(db, admin['account_id'], account_id)
+    _log_admin_action(db, admin, 'Revoke Admin Access', 'System Control', f"{result['email'] or result['name']} ({result['previous_level']})", account_id)
+    return jsonify({'success': True, **result, 'message': f"{result['name'] or 'The account'} is now a standard user. Their admin access ended immediately."}), 200
+
+
+@system_control_bp.route('/system/export', methods=['GET'])
+@_super_admin_only('export the data')
+def export_data(admin):
+    _limit(admin, 'export', 20, 3600)
+    db = _database()
+    kind = str(request.args.get('format') or 'json').lower()
+    if kind not in ('json', 'csv'):
+        raise ValidationError('Choose JSON or CSV.')
+    export = mission.build_export(db, admin.get('email') or admin['account_id'])
+    stamp = export['meta']['generated_at'][:10]
+    _log_admin_action(db, admin, 'Export System Data', 'System Control', f"{kind.upper()} export ({export['summary']['users_total']} users)", 'export')
+    if kind == 'csv':
+        body, mimetype, name = mission.export_csv_zip(export), 'application/zip', f'ebalik-audit-export-{stamp}.zip'
+    else:
+        body, mimetype, name = mission.export_json(export), 'application/json', f'ebalik-audit-export-{stamp}.json'
+    response = Response(body, mimetype=mimetype)
+    response.headers['Content-Disposition'] = f'attachment; filename="{name}"'
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+@system_control_bp.route('/system/storage', methods=['GET'])
+@_super_admin_only('load the storage statistics')
+def storage(admin):
+    return jsonify(mission.storage_overview(_database())), 200
+
+
+@system_control_bp.route('/system/storage/scan', methods=['POST'])
+@_super_admin_only('scan for orphaned images')
+def storage_scan(admin):
+    _limit(admin, 'storage-scan', 30, 3600)
+    scan = mission.scan_orphans(_database())
+    scan.pop('_objects', None)
+    return jsonify(scan), 200
+
+
+@system_control_bp.route('/system/storage/clean', methods=['POST'])
+@_super_admin_only('clean the orphaned images')
+def storage_clean(admin):
+    _limit(admin, 'storage-clean', 10, 3600)
+    db = _database()
+    result = mission.clean_orphans(db)
+    _log_admin_action(db, admin, 'Clean Orphaned Images', 'System Control', f"{result['removed']} image(s), {mission.humanize_bytes(result['freed_bytes'])}", 'storage_cleanup')
+    return jsonify({'success': True, **result, 'message': f"Removed {result['removed']:,} orphaned image(s) and freed {mission.humanize_bytes(result['freed_bytes'])}." + (f" {result['failed']} could not be removed." if result['failed'] else '')}), 200
+
+
+@system_control_bp.route('/system/email-test', methods=['POST'])
+@_super_admin_only('send the test email')
+def email_test(admin):
+    _limit(admin, 'email-test', 10, 3600)
+    db = _database()
+    result = mission.send_test_email(db, admin['account_id'])
+    _log_admin_action(db, admin, 'Send Test Email', 'System Control', f"{'OK' if result['ok'] else 'Failed'}: {result['to']}", 'email_test', result='success' if result['ok'] else 'failed')
+    return jsonify(result), 200

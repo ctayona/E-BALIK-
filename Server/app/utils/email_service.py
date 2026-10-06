@@ -219,6 +219,54 @@ class EmailService:
             logger.exception('Failed to send reference email: %s', e)
             return False
 
+    @staticmethod
+    def _shell(inner: str) -> str:
+        return f"""
+        <html>
+          <body style="font-family:Arial,sans-serif;line-height:1.6;color:#1f3160;background:#f4f6fb;padding:24px;">
+            <div style="max-width:600px;margin:0 auto;padding:28px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">
+              <p style="margin:0;color:#b8893e;font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;">University of Makati</p>
+              <h1 style="margin:6px 0 24px;color:#1f3160;font-size:24px;">E-Balik Lost &amp; Found</h1>
+              {inner}
+              <hr style="margin:24px 0;border:0;border-top:1px solid #e2e8f0;" />
+              <p style="margin:0;color:#94a3b8;font-size:11px;text-align:center;">University of Makati · E-Balik Lost &amp; Found</p>
+            </div>
+          </body>
+        </html>"""
+
+    def send_announcement_email(self, to_email: str, first_name: str, subject: str, body: str) -> bool:
+        """A message written by an administrator. Everything is escaped, and no link or attachment is ever added."""
+        if not to_email:
+            return False
+        try:
+            paragraphs = ''.join(f'<p style="margin:0 0 12px;">{escape(line)}</p>' for line in str(body).split('\n') if line.strip())
+            html_content = self._shell(
+                f'<p>Hello {escape(first_name or "there")},</p><h2 style="margin:16px 0 12px;color:#1f3160;font-size:19px;">{escape(subject)}</h2>{paragraphs}'
+                '<p style="margin-top:20px;color:#64748b;font-size:13px;">This message was sent by the E-Balik administrators. We never ask for passwords or verification codes.</p>'
+            )
+            response = self.sg.send(Mail(from_email=self.from_email, to_emails=to_email, subject=subject, html_content=html_content))
+            return 200 <= int(response.status_code) < 300
+        except Exception as error:
+            logger.warning('Announcement email failed: %s', error)
+            return False
+
+    def send_test_email(self, to_email: str, first_name: str = '') -> tuple:
+        """(ok, plain-language detail, provider status code). Used by Mission Control to prove the email service works."""
+        try:
+            html_content = self._shell(
+                f'<p>Hello {escape(first_name or "there")},</p><p>This is a test message from E-Balik Mission Control. If you can read it, the email service is working.</p>'
+                f'<p style="color:#64748b;font-size:13px;">Sent {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}.</p>'
+            )
+            response = self.sg.send(Mail(from_email=self.from_email, to_emails=to_email, subject='E-Balik email test', html_content=html_content))
+            status = int(response.status_code)
+            if 200 <= status < 300:
+                return True, 'SendGrid accepted the message. Check your inbox (and spam) in a minute.', status
+            return False, f'SendGrid answered with status {status}.', status
+        except Exception as error:
+            status = getattr(error, 'status_code', None)
+            reason = {401: 'The API key was rejected (401). Check SENDGRID_API_KEY.', 403: 'SendGrid refused the sender (403). Verify SENDGRID_FROM_EMAIL in SendGrid.'}.get(status)
+            return False, reason or f'The email could not be sent: {str(error)[:160]}', status
+
 
 def send_reference_email_best_effort(**email_data) -> bool:
     """Send a reference email without allowing email configuration to undo saved app data."""

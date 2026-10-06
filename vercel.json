@@ -8,7 +8,8 @@
       "buildCommand": "npm run build:vercel",
       "outputDirectory": "Users/Frontend/dist",
       "rewrites": [
-        { "source": "/admin/:path*", "destination": "/admin/index.html" }
+        { "source": "/admin/:path*", "destination": "/admin/index.html" },
+        { "source": "/tag/:code", "destination": "/index.html" }
       ],
       "headers": [
         {

@@ -72,9 +72,12 @@ Server/manual_migrations/20261004_claim_report_closeout.sql
 Server/manual_migrations/20261005_auction_hall.sql
 Server/manual_migrations/20261006_system_control_verification.sql
 Server/manual_migrations/20261007_report_integrity_and_reactions.sql
+Server/manual_migrations/20261008_smart_tags.sql
+Server/manual_migrations/20261009_tag_expiry_and_auction_buyout.sql
+Server/manual_migrations/20261010_tag_photo_and_mission_control.sql
 ```
 
-The last three are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts and duplicate-claim protection. Run them in order (`20261005`, then `20261006`, then `20261007`). Then check them:
+The last six are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo and the Mission Control storage tools. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, then `20261010`). The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
 
 ```sql
 SELECT to_regclass('public.auctions') AS auctions,
@@ -121,6 +124,7 @@ UPDATE public.user_profiles SET access_level = 'super_admin' WHERE email = 'you@
 | `SUPABASE_SERVICE_KEY` | the service_role key |
 | `APP_ENCRYPTION_KEY` | your local value (see Phase 0) |
 | `CORS_ORIGINS` | `https://placeholder.vercel.app`. Temporary; you fix it in Phase 4. |
+| `PUBLIC_SITE_URL` | `https://placeholder.vercel.app`. Temporary; set it to your exact VERCEL URL in Phase 4, and **before printing any Smart Tag stickers**, because every QR code opens `<this>/tag/<code>`. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | your Google values, or leave blank if unused |
 | `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` | your SendGrid values, or leave blank if unused |
 
@@ -198,7 +202,7 @@ Do **not** add `VITE_ADMIN_URL`. Do not paste any secret here: everything that s
 ## Phase 4. Connect the API to your site
 
 1. In Render, open `ebalik-api`, then **Environment**.
-2. Edit `CORS_ORIGINS` and set it to your exact VERCEL URL, for example `https://ebalik.vercel.app`. No trailing slash. To allow a second address later, separate with a comma.
+2. Edit `CORS_ORIGINS` and `PUBLIC_SITE_URL` and set both to your exact VERCEL URL, for example `https://ebalik.vercel.app`. No trailing slash. To allow a second address later, separate with a comma.
 3. Click **Save, rebuild and deploy** and wait for Live (2 to 3 minutes).
 4. Reload your Vercel site. The landing page board should now show real data.
 
@@ -211,6 +215,8 @@ Preview deployments on Vercel have different addresses and are not trusted by de
 3. Save. It can take a few minutes to take effect.
 
 ---
+
+> **Using Smart Tags?** Read `SMART_TAGS_GUIDE.md` before you print any QR stickers. The address you set in `PUBLIC_SITE_URL` is baked into every printed sticker and cannot be changed afterwards.
 
 ## Phase 5. Test every feature
 

@@ -3,9 +3,9 @@ import umakLogo from "../imports/UMak Logo.png";
 import { AdminUser } from "../utils/api";
 import { useT, tr } from "../utils/preferences";
 import type { StringKey } from "../i18n/strings";
-import { Gavel, SlidersHorizontal } from "lucide-react";
+import { Gavel, QrCode, SlidersHorizontal } from "lucide-react";
 
-type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "auctions" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "admin-profile";
+type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "admin-profile";
 
 interface SidebarProps {
   currentPage: Page;
@@ -36,6 +36,7 @@ const navItems = [
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><rect x="2" y="6" width="8" height="12" rx="2" stroke="currentColor" strokeWidth="2"/><rect x="14" y="6" width="8" height="12" rx="2" stroke="currentColor" strokeWidth="2"/><path d="M10 12h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
   )},
   { id: "auctions" as Page, group: "Items", label: "nav.auctions" as StringKey, icon: <Gavel size={18} aria-hidden="true" /> },
+  { id: "smart-tags" as Page, group: "Items", label: "nav.smartTags" as StringKey, icon: <QrCode size={18} aria-hidden="true" /> },
   { id: "claims" as Page, group: "Claims & people", label: "nav.claims" as StringKey, icon: (
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/></svg>
   )},
@@ -77,10 +78,11 @@ export default function Sidebar({ currentPage, onNavigate, notifCount, user, onL
   const sidebarContent = (
     <>
       {/* Logo */}
-      <div className="shrink-0 border-b border-white/10 px-5 py-5">
-        <div className="flex items-center gap-3">
+      <div className="relative shrink-0 border-b border-white/10 px-5 py-5">
+        <span className="pointer-events-none absolute inset-x-5 bottom-0 h-px bg-[linear-gradient(90deg,transparent,rgba(209,161,83,0.55),transparent)]" aria-hidden="true" />
+        <div className="group flex items-center gap-3">
           <div className="relative shrink-0">
-            <img decoding="async" src={umakLogo} alt={tr("University of Makati logo")} className="h-10 w-10 rounded-xl object-cover ring-1 ring-white/10" />
+            <img decoding="async" src={umakLogo} alt={tr("University of Makati logo")} className="h-10 w-10 rounded-xl object-cover ring-1 ring-white/15 transition-[box-shadow,transform] duration-300 group-hover:scale-105 group-hover:shadow-[0_0_18px_-2px_rgba(209,161,83,0.55)]" />
             <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-gold-500 ring-2 ring-navy-900" />
           </div>
           <div className="min-w-0">
@@ -94,7 +96,7 @@ export default function Sidebar({ currentPage, onNavigate, notifCount, user, onL
       <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4" aria-label={t("nav.label")}>
         {GROUP_ORDER.map((group) => (
           <div key={group.id} className="mb-5 last:mb-0">
-            <div className="mb-1.5 px-3 text-[12.5px] font-medium text-navy-300/90">{t(group.label)}</div>
+            <div className="mb-1.5 flex items-center gap-2 px-3 text-[12.5px] font-medium text-navy-300/90">{t(group.label)}<span className="h-px flex-1 bg-[linear-gradient(90deg,rgba(255,255,255,0.12),transparent)]" aria-hidden="true" /></div>
             <ul className="space-y-1">
               {navItems.filter((item) => item.group === group.id && (!item.superOnly || user.access_level === "super_admin")).map((item) => {
                 const active = currentPage === item.id;
@@ -104,11 +106,11 @@ export default function Sidebar({ currentPage, onNavigate, notifCount, user, onL
                       type="button"
                       onClick={() => navigate(item.id)}
                       aria-current={active ? "page" : undefined}
-                      className={`group flex min-h-[42px] w-full items-center gap-3 rounded-xl px-3 text-[14px] font-medium transition-[background-color,color,box-shadow] duration-150 ${
-                        active ? "gold-glow bg-[linear-gradient(180deg,#ecc787_0%,#d1a153_100%)] font-semibold text-navy-950" : "text-navy-200 hover:bg-white/[0.07] hover:text-white"
+                      className={`group relative flex min-h-[42px] w-full items-center gap-3 rounded-xl px-3 text-[14px] font-medium transition-[background-color,color,box-shadow,transform] duration-200 active:scale-[0.985] ${
+                        active ? "gold-glow bg-[linear-gradient(180deg,#ecc787_0%,#d1a153_100%)] font-semibold text-navy-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]" : "text-navy-200 hover:translate-x-0.5 hover:bg-white/[0.07] hover:text-white hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]"
                       }`}
                     >
-                      <span className={`shrink-0 ${active ? "text-navy-950" : "text-navy-300 group-hover:text-gold-200"}`} aria-hidden="true">{item.icon}</span>
+                      <span className={`shrink-0 transition-[color,transform] duration-200 ${active ? "text-navy-950" : "text-navy-300 group-hover:scale-110 group-hover:text-gold-200"}`} aria-hidden="true">{item.icon}</span>
                       <span className="flex-1 truncate text-left">{t(item.label)}</span>
                       {item.notifBadge && notifCount > 0 && (
                         <span className="min-w-[22px] rounded-full bg-rose-500 px-1.5 py-0.5 text-center text-[12px] font-bold text-white" aria-label={tr("{0} unread", { "0": notifCount })}>{notifCount}</span>
@@ -128,7 +130,7 @@ export default function Sidebar({ currentPage, onNavigate, notifCount, user, onL
           type="button"
           onClick={() => navigate("admin-profile")}
           aria-current={currentPage === "admin-profile" ? "page" : undefined}
-          className={`mb-1 flex w-full items-center gap-2.5 rounded-lg p-2 text-left transition-colors ${currentPage === "admin-profile" ? "bg-white/[0.12]" : "hover:bg-white/[0.06]"}`}
+          className={`mb-1 flex w-full items-center gap-2.5 rounded-xl border p-2 text-left transition-[background-color,border-color] duration-200 ${currentPage === "admin-profile" ? "border-white/15 bg-white/[0.12]" : "border-transparent hover:border-white/10 hover:bg-white/[0.06]"}`}
         >
           <div className="flex size-9 items-center justify-center rounded-lg bg-gold-500 text-[13px] font-bold text-navy-950">
             {user.fname[0]}{user.lname[0]}
@@ -153,14 +155,14 @@ export default function Sidebar({ currentPage, onNavigate, notifCount, user, onL
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="print-hide sticky top-0 hidden h-screen w-[264px] shrink-0 flex-col border-r border-navy-950 bg-[linear-gradient(180deg,#1b2c58_0%,#121f42_100%)] md:flex dark:border-white/[0.06] dark:bg-[linear-gradient(180deg,rgba(14,22,46,0.82),rgba(7,12,25,0.88))] dark:backdrop-blur-xl">
+      <aside className="print-hide nav-bloom sticky top-0 hidden h-screen w-[264px] shrink-0 flex-col border-r border-navy-950 bg-[linear-gradient(180deg,#1b2c58_0%,#121f42_100%)] shadow-[inset_-1px_0_0_rgba(255,255,255,0.04)] md:flex dark:border-white/[0.06] dark:bg-[linear-gradient(180deg,rgba(14,22,46,0.82),rgba(7,12,25,0.88))] dark:backdrop-blur-xl">
         {sidebarContent}
       </aside>
 
       {/* Mobile hamburger button */}
       <button
         type="button"
-        className="print-hide gold-glow fixed bottom-5 right-5 z-40 flex size-12 items-center justify-center rounded-2xl bg-[linear-gradient(180deg,#ecc787_0%,#d1a153_100%)] text-navy-950 md:hidden"
+        className="print-hide gold-glow fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-40 flex size-12 items-center justify-center rounded-2xl bg-[linear-gradient(180deg,#ecc787_0%,#d1a153_100%)] text-navy-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] transition-transform duration-200 hover:-translate-y-0.5 active:scale-90 md:hidden"
         onClick={() => setMobileOpen(true)}
         aria-label={t("nav.open")}
       >
@@ -170,8 +172,8 @@ export default function Sidebar({ currentPage, onNavigate, notifCount, user, onL
       {/* Mobile overlay */}
       {mobileOpen && (
         <div className="print-hide fixed inset-0 z-50 flex md:hidden">
-          <div className="absolute inset-0 bg-navy-950/55 backdrop-blur-[3px]" onClick={() => setMobileOpen(false)} />
-          <aside role="dialog" aria-modal="true" aria-label={t("nav.label")} className="relative z-10 flex h-[100dvh] w-[284px] max-w-[85vw] flex-col overflow-hidden bg-[linear-gradient(180deg,#1b2c58_0%,#121f42_100%)] shadow-overlay dark:bg-[linear-gradient(180deg,#0e162e,#070c19)]">
+          <div className="admin-fade-in absolute inset-0 bg-navy-950/55 backdrop-blur-[3px]" onClick={() => setMobileOpen(false)} />
+          <aside role="dialog" aria-modal="true" aria-label={t("nav.label")} className="admin-drawer-in nav-bloom relative z-10 flex h-[100dvh] w-[284px] max-w-[85vw] flex-col overflow-hidden border-r border-white/10 bg-[linear-gradient(180deg,#1b2c58_0%,#121f42_100%)] shadow-overlay dark:bg-[linear-gradient(180deg,#0e162e,#070c19)]">
             <div className="flex justify-end p-3">
               <button type="button" onClick={() => setMobileOpen(false)} aria-label={t("nav.close")} className="flex size-11 items-center justify-center rounded-lg text-navy-200 transition-colors hover:bg-white/10 hover:text-white">
                 <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>

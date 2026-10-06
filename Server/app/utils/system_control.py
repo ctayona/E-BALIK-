@@ -23,11 +23,15 @@ CACHE_SECONDS = 5.0
 MIN_CLEANUP_DAYS = 30
 MAX_CLEANUP_DAYS = 3650
 MAX_MESSAGE_LENGTH = 280
+ANNOUNCEMENT_TONES = ('info', 'success', 'warning', 'critical')
+MAX_ANNOUNCEMENT_TITLE = 80
+MAX_ANNOUNCEMENT_MESSAGE = 400
 
 DEFAULT_SETTINGS: Dict[str, Dict[str, Any]] = {
     'maintenance_mode': {'enabled': False, 'message': '', 'since': None},
     'sessions_valid_after': {'ts': None},
     'last_cleanup': {},
+    'announcement': {'live': False, 'tone': 'info', 'title': '', 'message': '', 'updated_at': None},
 }
 
 # Reachable while maintenance mode is on: sign-in decides per account (staff pass), and password reset only sends a code.
@@ -128,14 +132,40 @@ def clear_caches() -> None:
     _state_cache.clear()
 
 
+def public_announcement(settings: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The banner every page may show, or None while it is off. `id` changes with each edit so a dismissed banner can return."""
+    note = settings.get('announcement') or {}
+    if not note.get('live') or not str(note.get('message') or '').strip():
+        return None
+    tone = note.get('tone') if note.get('tone') in ANNOUNCEMENT_TONES else 'info'
+    return {'id': str(note.get('updated_at') or ''), 'tone': tone, 'title': str(note.get('title') or ''), 'message': str(note['message'])}
+
+
 def public_status(db) -> Dict[str, Any]:
-    maintenance = load_settings(db)['maintenance_mode']
+    settings = load_settings(db)
+    maintenance = settings['maintenance_mode']
     enabled = bool(maintenance.get('enabled'))
     return {
         'maintenance': enabled,
         'message': (maintenance.get('message') or '') if enabled else '',
         'since': maintenance.get('since') if enabled else None,
+        'announcement': public_announcement(settings),
     }
+
+
+def set_announcement(db, live: bool, tone: str, title: str, message: str, actor_id: str) -> Dict[str, Any]:
+    """Write the campus-wide banner. Text is plain (angle brackets removed) and shown as text by both apps."""
+    def clean(value: Any, limit: int) -> str:
+        return re.sub(r'\s+', ' ', re.sub(r'[<>\x00-\x1f\x7f]', '', str(value or ''))).strip()[:limit]
+    text, heading = clean(message, MAX_ANNOUNCEMENT_MESSAGE), clean(title, MAX_ANNOUNCEMENT_TITLE)
+    tone = str(tone or 'info').lower()
+    if tone not in ANNOUNCEMENT_TONES:
+        raise ValueError('Choose a style for the banner.')
+    if live and len(text) < 3:
+        raise ValueError('Write the announcement before turning it on.')
+    value = {'live': bool(live), 'tone': tone, 'title': heading, 'message': text, 'updated_at': _iso(_now()), 'by': actor_id}
+    save_setting(db, 'announcement', value, actor_id)
+    return value
 
 
 def set_maintenance(db, enabled: bool, message: str, actor_id: str) -> Dict[str, Any]:

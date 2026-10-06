@@ -109,8 +109,8 @@ export default function Auctions() {
     }
   };
 
-  const exportCsv = () => downloadCsv("auctions", ["Lot", "Title", "Status", "Starting bid", "Current bid", "Bids", "Closes", "Winner", "Pickup"],
-    filtered.map((a) => [a.reference, a.title, statusLabel(a), a.starting_price, a.current_price, a.bid_count, a.ends_at, a.winner ?? "", a.fulfillment_status ?? ""]));
+  const exportCsv = () => downloadCsv("auctions", ["Lot", "Title", "Status", "Starting bid", "Buy Now price", "Current bid", "Bids", "Closes", "Winner", "Pickup"],
+    filtered.map((a) => [a.reference, a.title, statusLabel(a), a.starting_price, a.buyout_price ?? "", a.current_price, a.bid_count, a.ends_at, a.winner ?? "", a.fulfillment_status ?? ""]));
 
   if (loading) {
     return <div className="space-y-5 p-4 sm:p-6" aria-busy="true"><div><SkeletonBlock className="mb-2 h-8 w-48" /><SkeletonBlock className="h-4 w-80" /></div><SkeletonBlock className="h-24 w-full rounded-2xl" /><AdminTableSkeleton columns={7} rows={6} /></div>;
@@ -209,6 +209,7 @@ export default function Auctions() {
             <td>
               <div className="flex flex-wrap items-center gap-1.5">
                 <StatusPill tone={STATUS_TONE[auction.status] ?? "slate"}>{statusLabel(auction)}</StatusPill>
+                {auction.bought_out && <StatusPill tone="gold">{tr("Bought with Buy Now")}</StatusPill>}
                 {auction.fulfillment_status === "awaiting_pickup" && <StatusPill tone="gold">Awaiting pickup</StatusPill>}
               </div>
             </td>

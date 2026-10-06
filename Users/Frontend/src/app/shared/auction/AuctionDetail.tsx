@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, CheckCircle2, Clock3, Gavel, Heart, Hourglass, ListChecks, MapPin, MessageCircle, ShieldAlert, ShieldCheck, Trash2, Trophy, TrendingDown } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, Gavel, Heart, Hourglass, ListChecks, MapPin, MessageCircle, ShieldAlert, ShieldCheck, Trash2, Trophy, TrendingDown, Zap } from "lucide-react";
 import Modal from "@/app/shared/modal/Modal";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { isVerified, useCurrentUser } from "@/app/utils/system";
 import Gallery from "@/app/shared/auction/Gallery";
 import { AuctionClock } from "@/app/shared/auction/AuctionParts";
 import {
-  AuctionRequestError, auctionsApi, formatRemaining, formatWhen, msLeft, peso, pesoShort, serverOffset, timeAgo, useNow,
+  AuctionRequestError, auctionsApi, formatRemaining, formatWhen, msLeft, peso, pesoShort, serverOffset, timeAgo, useClosingTick, useNow,
   type Auction, type AuctionDetail as Detail,
 } from "@/app/utils/auctions";
 import { CX } from "@/app/utils/clay";
@@ -22,6 +22,14 @@ function Stat({ label, value, tone = "default" }: { label: string; value: string
       <dd className={`mt-0.5 font-[family-name:var(--font-heading)] text-[22px] font-semibold leading-tight tabular-nums ${tone === "gold" ? "text-gold-700" : tone === "urgent" ? "text-rose-600" : "text-navy-800"}`}>{value}</dd>
     </div>
   );
+}
+
+/** The Time left tile. It owns the one-second clock so the bids, log and comments below do not re-render each second. */
+function TimeTile({ auction, offset, open }: { auction: Auction; offset: number; open: boolean }) {
+  const left = msLeft(auction, useNow(), offset);
+  const label = open ? "Time left" : auction.status === "scheduled" ? "Opens" : "Closed";
+  const value = open ? (formatRemaining(left) || "Closing") : auction.status === "scheduled" ? formatWhen(auction.starts_at) : formatWhen(auction.ends_at) || "—";
+  return <Stat label={label} value={value} tone={open && left < 5 * 60000 ? "urgent" : "default"} />;
 }
 
 function initials(name: string) {
@@ -51,6 +59,7 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
   const [loadError, setLoadError] = useState("");
   const [amount, setAmount] = useState(String(summary.min_next_bid));
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [buyNowChosen, setBuyNowChosen] = useState(false);
   const verified = isVerified(useCurrentUser());
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ type: "ok" | "error"; text: string } | null>(null);
@@ -61,7 +70,8 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
   const [commentText, setCommentText] = useState("");
   const [commentBusy, setCommentBusy] = useState(false);
   const [commentError, setCommentError] = useState("");
-  const now = useNow();
+  const now = useNow(30000);  // only relative times ("5m ago") need this, so a slow clock is enough
+  useClosingTick(detail ? [detail.auction] : [summary], offset);  // re-renders once when the auction closes
 
   const load = useCallback(async () => {
     try {
@@ -105,8 +115,7 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
 
   const a = detail?.auction ?? summary;
   const viewer = detail?.viewer;
-  const left = msLeft(a, now, offset);
-  const open = a.status === "live" && left > 0;
+  const open = a.status === "live" && msLeft(a, Date.now(), offset) > 0;
   const minBid = a.min_next_bid;
 
   // If another bidder raises the price, lift the amount field to the new minimum.
@@ -116,11 +125,25 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
 
   const value = Number(amount);
   const validAmount = Number.isFinite(value) && value >= minBid && value <= 10_000_000;
+  const buyout = a.buyout_price ?? null;
+  const buyNowAvailable = open && buyout !== null && !a.bought_out;
+  /** Nobody can bid below the Buy Now price any more: the next bid would already reach it. */
+  const buyNowOnly = buyNowAvailable && buyout !== null && minBid >= buyout;
+  /** Typing the Buy Now price (or more) is the same as pressing Buy Now: it ends the auction. */
+  const isBuyNow = buyNowAvailable && buyout !== null && (buyNowChosen || (validAmount && value >= buyout));
+  const payAmount = isBuyNow && buyout !== null ? buyout : value;
 
   /** Step 1: validate, then ask for confirmation. Bids are binding, so nothing is sent until the user confirms. */
   const requestBid = () => {
     if (!validAmount) { setNotice({ type: "error", text: `Your bid must be at least ${peso(minBid)}.` }); return; }
     setNotice(null);
+    setBuyNowChosen(false);
+    setConfirmOpen(true);
+  };
+
+  const requestBuyNow = () => {
+    setNotice(null);
+    setBuyNowChosen(true);
     setConfirmOpen(true);
   };
 
@@ -129,18 +152,27 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
     if (busy) return;
     setBusy(true);
     try {
-      const result = await auctionsApi.bid(a.id, Math.round(value * 100) / 100);
+      const result = await auctionsApi.bid(a.id, Math.round(payAmount * 100) / 100);
       setConfirmOpen(false);
-      showInfoModal({
-        variant: "success",
-        title: "Bid placed",
-        message: result.message,
-        details: [`Your bid: ${peso(value)}`, result.extended ? "The closing time was extended because your bid came in at the last moment." : "You will be notified if someone outbids you."],
-      });
+      setBuyNowChosen(false);
+      showInfoModal(result.bought_out
+        ? {
+          variant: "success",
+          title: "You bought it!",
+          message: result.message,
+          details: [`You pay: ${peso(buyout)}`, "The auction has ended and no one else can bid.", "Bring your original ID to the Lost and Found Office once an administrator confirms your purchase."],
+        }
+        : {
+          variant: "success",
+          title: "Bid placed",
+          message: result.message,
+          details: [`Your bid: ${peso(value)}`, result.extended ? "The closing time was extended because your bid came in at the last moment." : "You will be notified if someone outbids you."],
+        });
       await load();
       onChanged();
     } catch (reason) {
       setConfirmOpen(false);
+      setBuyNowChosen(false);
       if (reason instanceof AuctionRequestError) {
         if (reason.minBid) setAmount(String(reason.minBid));
         showInfoModal(reason.verificationRequired
@@ -218,7 +250,13 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
   const bids = detail?.bids ?? [];
   const visibleBids = showAllBids ? bids : bids.slice(0, 5);
   const comments = detail?.comments ?? [];
-  const chips = [minBid, minBid + a.bid_increment, minBid + a.bid_increment * 2, minBid + a.bid_increment * 5];
+  const chips = [minBid, minBid + a.bid_increment, minBid + a.bid_increment * 2, minBid + a.bid_increment * 5].filter((chip) => buyout === null || chip < buyout);
+  const buyNowButton = buyNowAvailable && buyout !== null && (
+    <button type="button" onClick={requestBuyNow} disabled={busy} className={`${CX.btnNavy} group min-h-[56px] w-full gap-2.5 text-[17px] font-bold`}>
+      <Zap size={20} className="text-gold-300 transition-transform group-hover:scale-110" aria-hidden="true" fill="currentColor" />
+      Buy Now for {peso(buyout)}
+    </button>
+  );
   const snipeText = a.anti_snipe_enabled
     ? `Bids in the last ${Math.round(a.anti_snipe_window_seconds / 60)} min add ${Math.round(a.anti_snipe_extension_seconds / 60)} min, up to ${a.max_extensions} times.`
     : "This auction closes exactly on time.";
@@ -232,7 +270,7 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
           <button ref={closeRef} type="button" onClick={onClose} aria-label="Back to auctions" className="glass-dark absolute left-3 top-3 flex size-11 items-center justify-center rounded-full">
             <ArrowLeft size={20} aria-hidden="true" />
           </button>
-          <AuctionClock auction={a} now={now} offset={offset} className="absolute right-3 top-3" />
+          <AuctionClock auction={a} offset={offset} className="absolute right-3 top-3" />
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col">
@@ -248,7 +286,7 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
 
             <dl className="grid grid-cols-3 gap-2.5">
               <Stat label={a.bid_count === 0 ? "Starting bid" : "Current bid"} value={pesoShort(a.current_price)} tone="gold" />
-              <Stat label={open ? "Time left" : a.status === "scheduled" ? "Opens" : "Closed"} value={open ? (formatRemaining(left) || "Closing") : a.status === "scheduled" ? formatWhen(a.starts_at) : formatWhen(a.ends_at) || "—"} tone={open && left < 5 * 60000 ? "urgent" : "default"} />
+              <TimeTile auction={a} offset={offset} open={open} />
               <Stat label="Bids" value={String(a.bid_count)} />
             </dl>
 
@@ -274,6 +312,13 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
               </p>
             ) : null}
 
+            {buyout !== null && !a.bought_out && (a.status === "live" || a.status === "scheduled") && (
+              <p className="flex items-start gap-2.5 rounded-2xl border border-navy-200 bg-navy-50 px-4 py-3 text-[13.5px] leading-6 text-ink-soft">
+                <Zap size={17} className="mt-0.5 shrink-0 text-gold-700" aria-hidden="true" fill="currentColor" />
+                <span><strong className="text-navy-800">Buy Now price: {peso(buyout)}.</strong> Pay this and the auction ends right away with you as the winner. Any bid at or above it does the same.</span>
+              </p>
+            )}
+
             {viewer?.is_winner && (
               <div className="rounded-2xl border border-tide-200 bg-tide-50 px-4 py-4 text-tide-700" role="status">
                 <p className="flex items-center gap-2 font-semibold"><Trophy size={17} aria-hidden="true" /> You won this auction at {peso(a.winning_amount)}.</p>
@@ -282,8 +327,10 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
             )}
             {a.status === "awaiting" && (
               <div className="rounded-2xl border border-iris-200 bg-iris-50 px-4 py-4 text-ink-soft" role="status">
-                <p className="flex items-center gap-2 font-semibold text-navy-800"><Hourglass size={17} aria-hidden="true" /> Bidding has closed. Waiting for an administrator.</p>
-                <p className="mt-1 text-[14px] leading-6">{viewer?.is_leading ? "You had the highest bid. An administrator will confirm the result and you will be notified." : "An administrator will confirm the final result shortly."}</p>
+                <p className="flex items-center gap-2 font-semibold text-navy-800"><Hourglass size={17} aria-hidden="true" /> {a.bought_out ? "Bought with Buy Now. Waiting for an administrator." : "Bidding has closed. Waiting for an administrator."}</p>
+                <p className="mt-1 text-[14px] leading-6">{a.bought_out
+                  ? (viewer?.is_leading ? `You bought this item for ${peso(a.winning_amount)}. An administrator will confirm your purchase and you will be notified.` : `Someone bought this item at the Buy Now price of ${peso(a.winning_amount)}, so bidding ended at once. An administrator will confirm the result.`)
+                  : (viewer?.is_leading ? "You had the highest bid. An administrator will confirm the result and you will be notified." : "An administrator will confirm the final result shortly.")}</p>
               </div>
             )}
             {a.status === "ended" && !viewer?.is_winner && (
@@ -327,7 +374,7 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
                   {[...log].reverse().map((event, index) => (
                     <li key={`${event.type}-${index}`} className="relative flex gap-3 pb-3 last:pb-0">
                       <span className="relative flex flex-col items-center" aria-hidden="true">
-                        <span className={`mt-1.5 size-2.5 shrink-0 rounded-full ${event.type === "bid" ? "bg-gold-500" : event.type === "result" ? "bg-tide-500" : event.type === "forfeited" ? "bg-rose-500" : "bg-iris-400"}`} />
+                        <span className={`mt-1.5 size-2.5 shrink-0 rounded-full ${event.type === "bid" ? "bg-gold-500" : event.type === "result" ? "bg-tide-500" : event.type === "buyout" ? "bg-gold-600" : event.type === "forfeited" ? "bg-rose-500" : "bg-iris-400"}`} />
                         {index < log.length - 1 && <span className="mt-1 w-px flex-1 bg-line" />}
                       </span>
                       <span className="min-w-0 flex-1 text-[14px] leading-6 text-ink-soft">
@@ -376,7 +423,10 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
 
           <footer className="shrink-0 border-t border-line bg-white/95 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur sm:px-7">
             {open && signedIn && viewer?.is_leading ? (
-              <p className="flex items-center gap-2 text-[14.5px] font-semibold text-tide-700" role="status"><CheckCircle2 size={18} aria-hidden="true" /> You're the highest bidder at {peso(a.current_price)}.</p>
+              <div className="space-y-2.5">
+                <p className="flex items-center gap-2 text-[14.5px] font-semibold text-tide-700" role="status"><CheckCircle2 size={18} aria-hidden="true" /> You're the highest bidder at {peso(a.current_price)}.</p>
+                {viewer.is_winner ? null : buyNowButton}
+              </div>
             ) : open && signedIn && !verified ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="flex items-center gap-2.5 text-[14.5px] text-ink-soft"><ShieldAlert size={18} className="shrink-0 text-gold-700" aria-hidden="true" /> Only verified accounts can bid. Upload an ID in your profile.</p>
@@ -384,6 +434,8 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
               </div>
             ) : open && signedIn ? (
               <div className="space-y-2.5">
+                {buyNowButton}
+                {buyNowOnly ? <p className="text-[12.5px] text-ink-muted">The next bid would reach the Buy Now price, so Buy Now is the only way to win now. Purchases are binding.</p> : (<>
                 <div className="flex flex-wrap gap-1.5" role="group" aria-label="Quick amounts">
                   {chips.map((chip) => (
                     <button key={chip} type="button" onClick={() => setAmount(String(chip))} className={`rounded-full border px-3 py-1 text-[12.5px] font-semibold tabular-nums transition-colors ${Number(amount) === chip ? "border-gold-500 bg-gold-50 text-gold-800" : "border-line text-ink-soft hover:border-gold-400"}`}>{pesoShort(chip)}</button>
@@ -397,17 +449,18 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
                   </label>
                   <button type="button" onClick={requestBid} disabled={busy || !validAmount} className={`${CX.btnGold} min-h-[44px] shrink-0 px-5`}>Place bid</button>
                 </div>
-                <p className="text-[12.5px] text-ink-muted">Minimum {peso(minBid)}. Bids are binding.</p>
+                <p className="text-[12.5px] text-ink-muted">Minimum {peso(minBid)}. Bids are binding.{buyout !== null && value >= buyout && validAmount ? ` A bid this high is a Buy Now: you pay ${peso(buyout)} and the auction ends.` : ""}</p>
+                </>)}
               </div>
             ) : open ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-[14.5px] text-ink-soft">Sign in with your UMak account to place a bid.</p>
+                <p className="text-[14.5px] text-ink-soft">Sign in with your UMak account to place a bid{buyout !== null ? ` or Buy Now for ${peso(buyout)}` : ""}.</p>
                 {onSignIn && <button type="button" onClick={onSignIn} className={`${CX.btnGold} min-h-[44px] px-6`}>Log in to bid</button>}
               </div>
             ) : a.status === "scheduled" ? (
               <p className="text-[14.5px] text-ink-soft">Bidding opens {formatWhen(a.starts_at)}. Starting bid {peso(a.starting_price)}.</p>
             ) : a.status === "awaiting" ? (
-              <p className="text-[14.5px] font-medium text-ink-soft">Bidding is closed. The result is waiting for an administrator.</p>
+              <p className="text-[14.5px] font-medium text-ink-soft">{a.bought_out ? "Bought with Buy Now. The result is waiting for an administrator." : "Bidding is closed. The result is waiting for an administrator."}</p>
             ) : (
               <p className="text-[14.5px] font-medium text-ink-soft">Bidding is closed.</p>
             )}
@@ -426,23 +479,23 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
       size="sm"
       tone="gold"
       icon={<Gavel size={21} />}
-      eyebrow="Confirm your bid"
-      title={`Bid ${peso(value)} on this item?`}
-      description="Bids are binding. You cannot take a bid back."
+      eyebrow={isBuyNow ? "Confirm Buy Now" : "Confirm your bid"}
+      title={isBuyNow ? `Buy this item now for ${peso(payAmount)}?` : `Bid ${peso(value)} on this item?`}
+      description={isBuyNow ? "The auction ends at once and you are the winner. This cannot be undone." : "Bids are binding. You cannot take a bid back."}
       footer={<>
-        <button type="button" onClick={() => setConfirmOpen(false)} disabled={busy} className={CX.btnGhost}>Cancel</button>
-        <button type="button" onClick={() => void placeBid()} disabled={busy} data-autofocus className={CX.btnGold}>{busy ? "Placing…" : `Confirm ${pesoShort(value)}`}</button>
+        <button type="button" onClick={() => { setConfirmOpen(false); setBuyNowChosen(false); }} disabled={busy} className={CX.btnGhost}>Cancel</button>
+        <button type="button" onClick={() => void placeBid()} disabled={busy} data-autofocus className={isBuyNow ? CX.btnNavy : CX.btnGold}>{busy ? "Placing…" : isBuyNow ? `Buy Now ${pesoShort(payAmount)}` : `Confirm ${pesoShort(value)}`}</button>
       </>}
     >
       <div className="rounded-2xl border border-gold-200 bg-gold-50 px-4 py-3.5">
         <p className="text-[13px] font-medium text-ink-muted">{a.title}</p>
-        <p className="mt-0.5 font-[family-name:var(--font-heading)] text-[28px] font-semibold tabular-nums text-navy-800">{peso(value)}</p>
-        <p className="text-[13px] text-ink-muted">{a.bid_count === 0 ? "Opening bid" : `Current bid ${peso(a.current_price)}`}</p>
+        <p className="mt-0.5 font-[family-name:var(--font-heading)] text-[28px] font-semibold tabular-nums text-navy-800">{peso(payAmount)}</p>
+        <p className="text-[13px] text-ink-muted">{isBuyNow ? "Buy Now price. You never pay more than this." : a.bid_count === 0 ? "Opening bid" : `Current bid ${peso(a.current_price)}`}</p>
       </div>
       <ul className="mt-4 space-y-1.5 text-[14px] leading-6 text-ink-soft">
         <li>If you win, you pay and collect the item at the Lost and Found Office.</li>
         <li>Winners who do not collect can be suspended from E-Balik.</li>
-        <li>An administrator confirms the result after bidding closes.</li>
+        <li>{isBuyNow ? "Other bidders are told the auction ended. An administrator confirms your purchase." : "An administrator confirms the result after bidding closes."}</li>
       </ul>
     </Modal>
   </>);

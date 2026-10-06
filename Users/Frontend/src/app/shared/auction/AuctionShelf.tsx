@@ -4,18 +4,19 @@ import { AuctionTile } from "@/app/shared/auction/AuctionParts";
 import AuctionDetail from "@/app/shared/auction/AuctionDetail";
 import { SkeletonBlock } from "@/app/shared/LoadingSkeleton";
 import { CX } from "@/app/utils/clay";
-import { msLeft, useAuctionFeed, useNow, type Auction } from "@/app/utils/auctions";
+import { msLeft, useAuctionFeed, useClosingTick, type Auction } from "@/app/utils/auctions";
 
 /** Dashboard panel: the live auctions closing soonest, with bidding available right from the tile. */
 export default function AuctionShelf({ onViewAll, onVerify }: { onViewAll: () => void; onVerify?: () => void }) {
   const { feed, setupRequired, loading, offset, refresh } = useAuctionFeed(30000);
-  const now = useNow();
+  const closingTick = useClosingTick(feed?.live ?? [], offset);
   const [open, setOpen] = useState<Auction | null>(null);
   const close = useCallback(() => setOpen(null), []);
 
   const live = useMemo(
-    () => (feed?.live ?? []).filter((a) => a.status === "live" && msLeft(a, now, offset) > 0).sort((a, b) => Date.parse(a.ends_at) - Date.parse(b.ends_at)),
-    [feed, now, offset],
+    () => (feed?.live ?? []).filter((a) => a.status === "live" && msLeft(a, Date.now(), offset) > 0).sort((a, b) => Date.parse(a.ends_at) - Date.parse(b.ends_at)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closingTick re-runs this right after an auction closes
+    [feed, offset, closingTick],
   );
 
   if (setupRequired) return null;
@@ -52,7 +53,7 @@ export default function AuctionShelf({ onViewAll, onVerify }: { onViewAll: () =>
       ) : (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {live.slice(0, 4).map((auction) => (
-            <li key={auction.id}><AuctionTile auction={auction} now={now} offset={offset} onOpen={setOpen} /></li>
+            <li key={auction.id}><AuctionTile auction={auction} offset={offset} onOpen={setOpen} /></li>
           ))}
         </ul>
       )}
