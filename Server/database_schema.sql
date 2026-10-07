@@ -494,3 +494,34 @@ CREATE INDEX IF NOT EXISTS idx_smart_tags_pending ON public.smart_tags(review_re
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES ('smart-tag-images', 'smart-tag-images', false, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp'])
 ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================================
+-- Handover PINs, automatic auction pickup deadlines and the bidding ban
+-- Mirrors manual_migrations/20261012_handover_pins_and_auction_timeouts.sql (run that file on an existing database).
+-- claims: the 6 character Handover PIN created when an admin approves a claim. Only an HMAC (lookup) and an encrypted copy
+-- (shown to the claimant) are stored. The guard types the PIN to release the item; the claim then becomes 'collected'.
+-- auctions (defined by the Auction Hall migrations): pickup_warning_sent_at = 24-hour final warning sent after 48 hours;
+-- auto_forfeited_at = win forfeited automatically after 72 hours (ready for Re-Auction).
+-- user_profiles: bidding_banned_until = no bidding until this time (30 days after a forfeited win).
+-- ============================================================================
+ALTER TABLE claims
+    ADD COLUMN IF NOT EXISTS handover_pin_hash TEXT,
+    ADD COLUMN IF NOT EXISTS handover_pin_encrypted TEXT,
+    ADD COLUMN IF NOT EXISTS handover_pin_issued_at TIMESTAMP WITH TIME ZONE;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_claims_handover_pin_hash ON claims (handover_pin_hash) WHERE handover_pin_hash IS NOT NULL;
+
+DO $$
+BEGIN
+    IF to_regclass('public.auctions') IS NOT NULL THEN
+        ALTER TABLE public.auctions
+            ADD COLUMN IF NOT EXISTS pickup_warning_sent_at TIMESTAMP WITH TIME ZONE,
+            ADD COLUMN IF NOT EXISTS auto_forfeited_at TIMESTAMP WITH TIME ZONE;
+        CREATE INDEX IF NOT EXISTS idx_auctions_pickup_deadlines ON public.auctions (winner_notified_at)
+            WHERE status = 'ended' AND fulfillment_status = 'awaiting_pickup';
+    END IF;
+END $$;
+
+ALTER TABLE user_profiles
+    ADD COLUMN IF NOT EXISTS bidding_banned_until TIMESTAMP WITH TIME ZONE,
+    ADD COLUMN IF NOT EXISTS bidding_ban_reason TEXT;

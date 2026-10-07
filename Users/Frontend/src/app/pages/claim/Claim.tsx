@@ -15,7 +15,7 @@ import { isVerified, useCurrentUser } from "@/app/utils/system";
 type ClaimRecord = {
   claim_id: string; claim_reference?: string; fpost_id?: string; claim_reason?: string;
   proof_image_url?: string; rejection_reason?: string; status: "pending" | "approved_for_pickup" | "approved" | "rejected" | "collected" | string;
-  created_at?: string;
+  created_at?: string; handover_pin?: string | null;
   found_items?: { fpost_id?: string; item_name?: string; category?: string; location?: string; found_date?: string };
 };
 
@@ -396,6 +396,13 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
                       </div>
                       {(claim.status === "approved_for_pickup" || claim.status === "approved") && (
                         <div className="mt-3 rounded-[12px] border border-emerald-200 bg-emerald-50 p-3 text-[12px] leading-5 text-emerald-900">
+                          {claim.handover_pin && (
+                            <div className="mb-3 rounded-[12px] border-2 border-dashed border-[#d1a153] bg-[#1f3160] px-3 py-3 text-center" aria-label="Your Handover PIN">
+                              <p className="text-[11px] font-bold tracking-[0.14em] text-[#ecc787]">YOUR HANDOVER PIN</p>
+                              <p className="mt-1 select-all font-mono text-[30px] font-bold leading-none tracking-[0.28em] text-[#ffffff]">{claim.handover_pin}</p>
+                              <p className="mt-2 text-[11.5px] leading-4 text-[#b9c3dc]">Show this PIN and your original ID to the guard. It works once, and only for this item. Keep it private.</p>
+                            </div>
+                          )}
                           <p className="font-bold">Approved for office verification. Bring your original ID and claim reference.</p>
                           <p className="mt-1">Admin Building, Ground Floor, OHSO Office, or Security Office behind the Oval Stadium.</p>
                           <p className="mt-1"><a href="tel:09478685684" className="underline">09478685684</a> · <a href="mailto:ebaliksupport@gmail.com" className="underline">ebaliksupport@gmail.com</a></p>

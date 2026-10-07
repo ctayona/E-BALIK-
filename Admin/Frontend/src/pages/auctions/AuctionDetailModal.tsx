@@ -245,6 +245,16 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
                   ["Pickup status", auction.fulfillment_status === "collected" ? tr("Collected") : auction.fulfillment_status === "forfeited" ? tr("Forfeited, back in custody") : tr("Waiting for pickup")],
                 ]} />
                 <p className={`rounded-2xl border px-4 py-3 text-[13.5px] leading-6 ${emailFailed ? "border-rose-200 bg-rose-50 text-rose-800" : "border-line bg-frost-50 text-ink-soft"}`} role={emailFailed ? "alert" : undefined}>{email}</p>
+                {auction.reauction_ready && (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13.5px] leading-6 text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-[#fecdd3]" role="status">
+                    <p className="font-semibold">{tr("Ready for re-auction")}</p>
+                    <p className="mt-1">{tr("The winner did not collect within 72 hours. The win was forfeited automatically, the item is back in custody and the winner cannot bid for 30 days.")}</p>
+                    <button type="button" onClick={() => setReauctionOpen(true)} className={`${BTN.gold} mt-3`}><Repeat2 size={16} aria-hidden="true" />{tr("Re-auction this item")}</button>
+                  </div>
+                )}
+                {auction.pickup_warning_sent_at && auction.fulfillment_status === "awaiting_pickup" && (
+                  <p className="rounded-2xl border border-line bg-frost-50 px-4 py-3 text-[13.5px] leading-6 text-ink-soft">{tr("A 24-hour final warning was emailed to the winner. The win is forfeited automatically 72 hours after the winner notice.")}</p>
+                )}
                 {(auction.fulfillment_status === "awaiting_pickup" || auction.fulfillment_status === "collected") && (
                   <button type="button" disabled={busy} onClick={() => void run(() => resendAdminWinnerEmail(auction.id))} className={BTN.ghost}><Mail size={16} aria-hidden="true" />{tr("Resend winner email")}</button>
                 )}

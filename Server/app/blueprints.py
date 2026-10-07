@@ -23,6 +23,9 @@ def register_blueprints(app):
     app.register_blueprint(auctions_bp, url_prefix='/api/auctions')
     app.register_blueprint(smart_tags_bp, url_prefix='/api/tags')
 
+    from app.utils.scheduler import cron_bp
+    app.register_blueprint(cron_bp, url_prefix='/api/cron')
+
     # Admin section — every admin page blueprint mounts at /api/admin
     from Admin.Backend.dashboard.routes import dashboard_bp
     from Admin.Backend.lost_items.routes import lost_items_bp

@@ -78,6 +78,10 @@ def create_app(config_name: str = None):
     from app.blueprints import register_blueprints
     register_blueprints(app)
     logger.info("✓ Routes registered")
+
+    # Background timer for auction pickup deadlines (see app/utils/scheduler.py for the other ways to run it)
+    from app.utils.scheduler import start_scheduler
+    start_scheduler(app)
     
     # Register error handlers
     register_error_handlers(app)

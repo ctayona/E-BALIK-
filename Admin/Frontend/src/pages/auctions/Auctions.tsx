@@ -211,6 +211,8 @@ export default function Auctions() {
                 <StatusPill tone={STATUS_TONE[auction.status] ?? "slate"}>{statusLabel(auction)}</StatusPill>
                 {auction.bought_out && <StatusPill tone="gold">{tr("Bought with Buy Now")}</StatusPill>}
                 {auction.fulfillment_status === "awaiting_pickup" && <StatusPill tone="gold">Awaiting pickup</StatusPill>}
+                {auction.fulfillment_status === "awaiting_pickup" && auction.pickup_warning_sent_at && <StatusPill tone="rose">{tr("Final warning sent")}</StatusPill>}
+                {auction.reauction_ready && <StatusPill tone="rose">{tr("Ready for re-auction")}</StatusPill>}
               </div>
             </td>
             <RowActions>

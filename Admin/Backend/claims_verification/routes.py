@@ -2,7 +2,9 @@
 from flask import Blueprint, current_app, jsonify, request
 from app.utils import get_db
 from app.utils.claim_status import normalize_claim_status
-from app.utils.email_service import send_reference_email_best_effort
+from app.utils import rate_limit
+from app.utils.email_service import EmailService
+from app.utils.handover import HandoverError, HandoverService
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
 
 claims_verification_bp = Blueprint('admin_claims_verification', __name__)
@@ -84,23 +86,10 @@ def update_claim_status(claim_id):
         claim_email_context = db.get_claim_email_context(claim_id) if status == 'approved_for_pickup' else None
         updated = db.update_claim_status(claim_id, status, admin['account_id'], payload.get('rejection_reason'))
         _log_admin_action(db, admin, f'Claim {status.replace("_", " ").title()}', 'Claims & Verification', claim_id, claim_id)
+        handover = {'handover_pin_issued': False, 'approval_email_sent': False}
         if status == 'approved_for_pickup' and claim_email_context:
-            email_sent = send_reference_email_best_effort(
-                to_email=claim_email_context.get('email'),
-                recipient_name=claim_email_context.get('name') or 'there',
-                subject='Your E-Balik claim was approved',
-                summary='Your claim was approved for office verification. Bring your original ID and this claim reference when collecting the item. Online approval does not release the item.',
-                reference_label='Approved claim reference',
-                reference=str(claim_email_context.get('claim_reference') or claim_id),
-                details={
-                    'Found item': claim_email_context.get('item_name') or 'Found item',
-                    'Found item reference': claim_email_context.get('found_item_reference') or '',
-                    'Next step': 'Visit the UMAK Lost and Found Office for in-person verification.',
-                },
-            )
-            if not email_sent:
-                current_app.logger.warning('Claim %s was approved, but approval email was not sent', claim_id)
-        return jsonify({'claim': updated}), 200
+            handover = _issue_pin_and_notify(db, claim_id, claim_email_context)
+        return jsonify({'claim': updated, **handover}), 200
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except PermissionError as error:
@@ -114,6 +103,102 @@ def update_claim_status(claim_id):
     except Exception as error:
         current_app.logger.exception('Admin claim status error for claim_id=%s payload=%s: %s', claim_id, request.get_json(silent=True), error)
         return jsonify({'error': 'Unable to update claim status', 'details': str(error)}), 500
+
+
+def _issue_pin_and_notify(db, claim_id, context):
+    """Create the Handover PIN for a just-approved claim and email it. Neither step may undo the approval."""
+    pin = None
+    try:
+        pin = HandoverService(db).issue(claim_id)
+    except HandoverError as error:
+        current_app.logger.warning('Claim %s approved without a Handover PIN: %s', claim_id, error.message)
+    except Exception as error:
+        current_app.logger.exception('Claim %s approved, but the Handover PIN could not be created: %s', claim_id, error)
+    email_sent = False
+    try:
+        email_sent = EmailService().send_claim_approved_email(
+            to_email=context.get('email'),
+            recipient_name=context.get('name') or 'there',
+            claim_reference=str(context.get('claim_reference') or claim_id),
+            item_name=context.get('item_name') or 'Found item',
+            found_item_reference=context.get('found_item_reference') or '',
+            handover_pin=pin,
+        )
+    except Exception as error:
+        current_app.logger.exception('Claim %s approval email failed: %s', claim_id, error)
+    if not email_sent:
+        current_app.logger.warning('Claim %s was approved, but approval email was not sent', claim_id)
+    return {'handover_pin_issued': bool(pin), 'approval_email_sent': bool(email_sent)}
+
+
+def _handover_error(error):
+    return jsonify({'error': error.message, 'code': error.code}), error.status
+
+
+@claims_verification_bp.route('/claims/handover/lookup', methods=['POST'])
+def handover_lookup():
+    """The guard types the claimant's PIN; this shows who and what it belongs to before anything is released."""
+    try:
+        admin = _require_admin()
+        if not rate_limit.allow(f"handover:{admin['account_id']}", 12, 60):
+            return jsonify({'error': 'Too many PIN attempts. Wait a minute and try again.', 'code': 'rate_limited'}), 429
+        db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        found = HandoverService(db).find((request.get_json(silent=True) or {}).get('pin'))
+        return jsonify({'claim': found}), 200
+    except HandoverError as error:
+        return _handover_error(error)
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except PermissionError as error:
+        return jsonify({'error': str(error)}), 403
+    except Exception as error:
+        current_app.logger.exception('Handover PIN lookup failed: %s', error)
+        return jsonify({'error': 'Unable to check that PIN'}), 500
+
+
+@claims_verification_bp.route('/claims/handover/release', methods=['POST'])
+def handover_release():
+    """Complete the physical handover: the item is released to its owner and the claim closes as collected."""
+    try:
+        admin = _require_admin()
+        if not rate_limit.allow(f"handover:{admin['account_id']}", 12, 60):
+            return jsonify({'error': 'Too many PIN attempts. Wait a minute and try again.', 'code': 'rate_limited'}), 429
+        db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        released = HandoverService(db).release((request.get_json(silent=True) or {}).get('pin'), admin['account_id'])
+        _log_admin_action(db, admin, 'Release Item By Handover PIN', 'Claims & Verification', released.get('claim_reference') or released['claim_id'], released['claim_id'])
+        return jsonify({'success': True, 'claim': released, 'message': f"{released['item_name']} was released to {released['claimant_name']}."}), 200
+    except HandoverError as error:
+        return _handover_error(error)
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except PermissionError as error:
+        return jsonify({'error': str(error)}), 403
+    except Exception as error:
+        current_app.logger.exception('Handover release failed: %s', error)
+        return jsonify({'error': 'Unable to release the item'}), 500
+
+
+@claims_verification_bp.route('/claims/<claim_id>/handover-pin', methods=['POST'])
+def reissue_handover_pin(claim_id):
+    """Create a new PIN for an approved claim (claims approved before PINs existed, or a lost email) and email it."""
+    try:
+        admin = _require_admin()
+        db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        context = db.get_claim_email_context(claim_id)
+        if not context:
+            return jsonify({'error': 'Claim not found'}), 404
+        result = _issue_pin_and_notify(db, claim_id, context)
+        if not result['handover_pin_issued']:
+            return jsonify({'error': 'A PIN can only be created for an approved claim, after the PIN migration has been run.'}), 409
+        _log_admin_action(db, admin, 'Reissue Handover PIN', 'Claims & Verification', claim_id, claim_id)
+        return jsonify({'success': True, **result}), 200
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except PermissionError as error:
+        return jsonify({'error': str(error)}), 403
+    except Exception as error:
+        current_app.logger.exception('Handover PIN reissue failed for claim_id=%s: %s', claim_id, error)
+        return jsonify({'error': 'Unable to create a new PIN'}), 500
 
 
 CLOSED_FOUND_ITEM_STATUSES = {'claimed', 'returned', 'closed', 'collected', 'disposed', 'auctioned'}

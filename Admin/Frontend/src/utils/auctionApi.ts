@@ -46,11 +46,15 @@ export interface AdminAuction {
   finalized_at?: string | null;
   reaction_count?: number;
   reauctioned_from?: string | null;
+  /** The winner did not collect within 72 hours: forfeited by the scheduler and ready to be listed again. */
+  reauction_ready?: boolean;
+  auto_forfeited_at?: string | null;
+  pickup_warning_sent_at?: string | null;
   reauction_reason?: string | null;
   created_at: string;
 }
 
-export interface AuctionStats { live: number; scheduled: number; ended: number; awaiting_admin?: number; awaiting_pickup: number; total_bids: number; sales_total: number }
+export interface AuctionStats { live: number; scheduled: number; ended: number; awaiting_admin?: number; awaiting_pickup: number; reauction_ready?: number; total_bids: number; sales_total: number }
 export interface AuctionList { auctions: AdminAuction[]; stats: AuctionStats; server_time: string; min_custody_days: number }
 
 export interface EligibleItem {

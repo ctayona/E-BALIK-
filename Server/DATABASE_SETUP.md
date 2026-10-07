@@ -119,6 +119,20 @@ SELECT proname FROM pg_proc WHERE proname = 'auction_finalize';
 Note: once the gate is live, every existing account that is not verified can no
 longer report items, file claims or bid until an admin verifies it.
 
+### Handover PINs, auction pickup deadlines and the bidding ban
+
+Run `manual_migrations/20261012_handover_pins_and_auction_timeouts.sql` after `20261011`. It is additive and safe to re-run. It adds
+`claims.handover_pin_hash`, `handover_pin_encrypted` and `handover_pin_issued_at` (plus a unique index so a PIN always points at one claim),
+`auctions.pickup_warning_sent_at` and `auto_forfeited_at` (skipped with a notice if the Auction Hall tables do not exist yet), and
+`user_profiles.bidding_banned_until` and `bidding_ban_reason`. Until it runs, approving a claim still works but no PIN is created (the email
+says to bring ID instead), and the auction deadline job reports an error in the log and changes nothing. Verify with:
+
+```sql
+SELECT column_name FROM information_schema.columns WHERE table_name = 'claims' AND column_name LIKE 'handover_pin%';   -- 3 rows
+SELECT column_name FROM information_schema.columns WHERE table_name = 'auctions' AND column_name IN ('pickup_warning_sent_at','auto_forfeited_at');
+SELECT column_name FROM information_schema.columns WHERE table_name = 'user_profiles' AND column_name LIKE 'bidding_ban%';
+```
+
 ### Smart Tag staff approval (fraud prevention)
 
 Run `manual_migrations/20261011_tag_staff_verification.sql` after `20261010`. It is guarded, transactional and safe

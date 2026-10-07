@@ -701,3 +701,62 @@ export async function updateAdminClaimDetails(claimId: string, claimReason: stri
   }, "Update claim");
   return readJsonOrThrow(response, "Unable to update the claim");
 }
+
+// ---- Handover PINs (the guard's release screen) -------------------------------------------------
+
+export interface HandoverClaim {
+  claim_id: string;
+  claim_reference: string;
+  claimant_name: string;
+  claimant_campus_id: string;
+  item_name: string;
+  found_item_reference: string;
+  approved_at?: string | null;
+}
+
+async function handoverRequest<T>(path: string, pin: string): Promise<T> {
+  const response = await fetch(`${API_URL}/api/admin/claims/handover/${path}`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ pin: pin.replace(/\s/g, "") }) });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : tr("Unable to use that PIN."));
+  return payload as T;
+}
+
+/** Find the approved claim that holds this PIN. Nothing is released yet. */
+export async function lookupHandoverPin(pin: string): Promise<HandoverClaim> {
+  return (await handoverRequest<{ claim: HandoverClaim }>("lookup", pin)).claim;
+}
+
+/** Release the item to its owner. Returns the confirmation message. */
+export async function releaseByHandoverPin(pin: string): Promise<string> {
+  return (await handoverRequest<{ message?: string }>("release", pin)).message ?? tr("The item was released to its owner.");
+}
+
+/** Make a new PIN for an approved claim and email it to the claimant. */
+export async function reissueHandoverPin(claimId: string): Promise<void> {
+  const response = await adminMutationRequest(`${API_URL}/api/admin/claims/${encodeURIComponent(claimId)}/handover-pin`, { method: "POST", headers: getAuthHeaders() }, "Resend Handover PIN");
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(typeof payload.error === "string" ? payload.error : tr("Unable to create a new PIN."));
+  }
+}
+
+// ---- Dashboard visual analytics ------------------------------------------------------------------
+
+export interface DashboardAnalytics {
+  lost_total: number;
+  lost_categories: Array<{ name: string; value: number }>;
+  lost_by_weekday: Array<{ day: string; name: string; count: number }>;
+  lost_by_month: Array<{ key: string; month: string; count: number }>;
+  lost_heatmap: { weekdays: string[]; months: Array<{ key: string; label: string; counts: number[] }>; max: number };
+  busiest: { weekday: string | null; month: string | null };
+  outcomes: { returned: number; auctioned: number; abandoned: number; in_custody: number; total_found: number; return_rate: number; auction_forfeits?: number | null };
+  handover: { released: number | null; awaiting: number | null };
+  generated_at?: string;
+}
+
+export async function fetchDashboardAnalytics(): Promise<DashboardAnalytics> {
+  const response = await fetch(`${API_URL}/api/admin/dashboard/analytics`, { headers: getAuthHeaders() });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Unable to load analytics");
+  return payload as DashboardAnalytics;
+}

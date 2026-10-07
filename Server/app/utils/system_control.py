@@ -39,7 +39,7 @@ AUTH_OPEN_PATHS = {
     '/api/auth/login', '/api/auth/google-login', '/api/auth/admin-mfa/verify',
     '/api/auth/forgot-password', '/api/auth/reset-password',
 }
-PUBLIC_PATHS = {'/api/system/status'}
+PUBLIC_PATHS = {'/api/system/status', '/api/cron/run'}  # the cron trigger carries its own secret and must keep working during maintenance
 
 # (method, path pattern, what the user was trying to do)
 VERIFICATION_GATED = [

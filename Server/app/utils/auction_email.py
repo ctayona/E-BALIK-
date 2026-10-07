@@ -37,28 +37,81 @@ def build_winner_email(recipient_name: str, item_title: str, reference: str, amo
     return {'subject': subject, 'body': body}
 
 
-def send_auction_won_email(*, to_email: str, recipient_name: str, item_title: str, reference: str, amount: Any) -> Dict[str, Any]:
-    """Return {'mode', 'sent', 'subject'}. Never raises: a failed notice must not undo the saved auction result."""
+def _deliver(*, to_email: str, recipient_name: str, message: Dict[str, str], email: Dict[str, Any]) -> Dict[str, Any]:
+    """Send through SendGrid or only log, following AUCTION_EMAIL_MODE. Never raises: a failed notice must not undo saved data."""
     mode = (os.getenv('AUCTION_EMAIL_MODE') or 'auto').strip().lower()
     if mode == 'auto':  # real emails whenever SendGrid is configured, otherwise a logged mock for local development
         mode = 'sendgrid' if os.getenv('SENDGRID_API_KEY') else 'mock'
-    message = build_winner_email(recipient_name, item_title, reference, amount)
     if mode == 'sendgrid':
         try:
             from app.utils.email_service import send_reference_email_best_effort
-            sent = send_reference_email_best_effort(
-                to_email=to_email,
-                recipient_name=recipient_name,
-                subject=message['subject'],
-                summary=f"Your bid of {format_peso(amount)} won the auction for {item_title}. {PICKUP_NOTE}",
-                reference_label='Auction item',
-                reference=reference or item_title,
-                details={'Winning bid': format_peso(amount)},
-            )
+            sent = send_reference_email_best_effort(to_email=to_email, recipient_name=recipient_name, subject=message['subject'], **email)
             return {'mode': 'sendgrid', 'sent': bool(sent), 'subject': message['subject']}
         except Exception as error:  # pragma: no cover - depends on SendGrid configuration
-            logger.exception('Auction winner email failed: %s', error)
+            logger.exception('Auction email failed: %s', error)
             return {'mode': 'sendgrid', 'sent': False, 'subject': message['subject']}
 
     logger.info('[MOCK EMAIL] to=%s subject="%s"\n%s', _mask_email(to_email), message['subject'], message['body'])
     return {'mode': 'mock', 'sent': True, 'subject': message['subject']}
+
+
+def send_auction_won_email(*, to_email: str, recipient_name: str, item_title: str, reference: str, amount: Any) -> Dict[str, Any]:
+    """Return {'mode', 'sent', 'subject'}."""
+    message = build_winner_email(recipient_name, item_title, reference, amount)
+    return _deliver(to_email=to_email, recipient_name=recipient_name, message=message, email={
+        'title': 'Congratulations, you won!',
+        'summary': f"Your bid of {format_peso(amount)} won the auction for {item_title}. {PICKUP_NOTE} Please collect it within 72 hours of this notice.",
+        'reference_label': 'Auction item',
+        'reference': reference or item_title,
+        'details': {'Winning bid': format_peso(amount), 'Collect within': '72 hours'},
+        'cta_label': 'View Auction Details',
+        'tone': 'success',
+    })
+
+
+def build_final_warning_email(recipient_name: str, item_title: str) -> Dict[str, str]:
+    return {
+        'subject': f"Final warning: collect {item_title} within 24 hours",
+        'body': (f"Hello {recipient_name or 'there'},\n\nYou have not collected {item_title} yet. You have 24 hours left before "
+                 "the win is forfeited and you are barred from bidding for 30 days.\n\nUniversity of Makati - E-Balik Lost & Found"),
+    }
+
+
+def send_auction_final_warning_email(*, to_email: str, recipient_name: str, item_title: str, reference: str, amount: Any, hours_left: int = 24) -> Dict[str, Any]:
+    """The 24-hour Final Warning, sent when a winner has not collected after 48 hours."""
+    message = build_final_warning_email(recipient_name, item_title)
+    return _deliver(to_email=to_email, recipient_name=recipient_name, message=message, email={
+        'title': f'{hours_left}-hour final warning',
+        'summary': (f"Your winning bid of {format_peso(amount)} for {item_title} is still waiting at the Lost and Found Office. "
+                    f"Please collect it within {hours_left} hours. After that your win is forfeited, the item goes back to auction and you "
+                    "cannot bid for 30 days. If something has gone wrong, contact us right away and we will help."),
+        'reference_label': 'Auction item',
+        'reference': reference or item_title,
+        'details': {'Winning bid': format_peso(amount), 'Time left': f'{hours_left} hours', 'Bring': 'Your original school or government ID'},
+        'cta_label': 'Collect My Item',
+        'tone': 'warning',
+    })
+
+
+def build_forfeit_email(recipient_name: str, item_title: str) -> Dict[str, str]:
+    return {
+        'subject': f"Your win for {item_title} was forfeited",
+        'body': (f"Hello {recipient_name or 'there'},\n\nThe 72-hour collection window for {item_title} has passed, so the win was forfeited. "
+                 "You cannot place bids for 30 days.\n\nUniversity of Makati - E-Balik Lost & Found"),
+    }
+
+
+def send_auction_forfeited_email(*, to_email: str, recipient_name: str, item_title: str, reference: str, amount: Any, ban_days: int = 30) -> Dict[str, Any]:
+    """Sent once the 72-hour window passes without a pickup."""
+    message = build_forfeit_email(recipient_name, item_title)
+    return _deliver(to_email=to_email, recipient_name=recipient_name, message=message, email={
+        'title': 'Your auction win was forfeited',
+        'summary': (f"The 72-hour collection window for {item_title} has passed without a pickup, so your winning bid of {format_peso(amount)} was forfeited "
+                    f"and the item will be offered again. Bidding is paused on your account for {ban_days} days. You can still report, claim and browse as usual. "
+                    "If you believe this is a mistake, please contact the Lost and Found Office."),
+        'reference_label': 'Auction item',
+        'reference': reference or item_title,
+        'details': {'Bidding paused for': f'{ban_days} days'},
+        'cta_label': 'Open E-Balik',
+        'tone': 'danger',
+    })

@@ -76,9 +76,10 @@ Server/manual_migrations/20261008_smart_tags.sql
 Server/manual_migrations/20261009_tag_expiry_and_auction_buyout.sql
 Server/manual_migrations/20261010_tag_photo_and_mission_control.sql
 Server/manual_migrations/20261011_tag_staff_verification.sql
+Server/manual_migrations/20261012_handover_pins_and_auction_timeouts.sql
 ```
 
-The last seven are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo, the Mission Control storage tools and staff approval of Smart Tags. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, `20261010`, then `20261011`). The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
+The last eight are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo, the Mission Control storage tools staff approval of Smart Tags, Handover PINs, and the automatic auction pickup deadlines. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, `20261010`, `20261011`, then `20261012`). The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
 
 ```sql
 SELECT to_regclass('public.auctions') AS auctions,
@@ -128,8 +129,19 @@ UPDATE public.user_profiles SET access_level = 'super_admin' WHERE email = 'you@
 | `PUBLIC_SITE_URL` | `https://placeholder.vercel.app`. Temporary; set it to your exact VERCEL URL in Phase 4, and **before printing any Smart Tag stickers**, because every QR code opens `<this>/tag/<code>`. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | your Google values, or leave blank if unused |
 | `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` | your SendGrid values, or leave blank if unused |
+| `CRON_SECRET` | a long random string you invent. Optional: it switches on `POST /api/cron/run`, so an outside timer can wake the free service and run the auction deadlines (see below). |
 
 Render fills in `JWT_SECRET_KEY` itself, and `render.yaml` already sets `FLASK_ENV`, `PYTHON_VERSION` and `AUCTION_EMAIL_MODE=auto`. Leave those alone. With `auto`, auction winner emails (and AI-match emails) are really sent as soon as `SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL` are set. The same list as a checklist file is `Environment_Configs/backend/production.env.example`.
+
+#### Automatic auction deadlines (48h warning, 72h forfeit)
+
+The backend checks pickup deadlines itself every 15 minutes (`SCHEDULER_INTERVAL_MINUTES`; `SCHEDULER_ENABLED=false` turns it off), but a **free Render service sleeps when nobody visits**, and a sleeping service cannot keep time. To make the deadlines reliable, set `CRON_SECRET` and let a free outside timer call the API every 15 minutes, for example on cron-job.org:
+
+```text
+POST https://<your-api>.onrender.com/api/cron/run      header  X-Cron-Secret: <CRON_SECRET>
+```
+
+On a paid plan you can instead add a Render Cron Job running `python Server/scripts/run_cron.py`. All three ways are safe to combine: each warning and forfeit is claimed with a conditional database update, so nothing is ever sent twice.
 
 ### 2.3 Deploy and watch the log
 

@@ -9,6 +9,8 @@ import { useTheme, tr } from "../../utils/preferences";
 
 type DeskPage = "claims" | "ai-matching" | "lost-items" | "found-items" | "users" | "activity-logs" | "auctions";
 import { AdminMetricSkeleton, SkeletonBlock, AdminTableSkeleton } from "../../components/LoadingSkeleton";
+import AnalyticsSection from "./AnalyticsSection";
+import HandoverPinCard from "./HandoverPinCard";
 
 interface DonutProps { value: number; color: string; size?: number; }
 function Donut({ value, color, size = 110 }: DonutProps) {
@@ -41,10 +43,11 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
   // Auction pickups join the work queue once the Auction Hall tables exist; any failure just hides the row.
   const [auctionPickups, setAuctionPickups] = useState<number | null>(null);
   const [auctionDecisions, setAuctionDecisions] = useState<number | null>(null);
+  const [reauctionReady, setReauctionReady] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
-    fetchAdminAuctions().then((data) => { if (active) { setAuctionPickups(data.stats.awaiting_pickup); setAuctionDecisions(data.stats.awaiting_admin ?? 0); } }).catch(() => { if (active) { setAuctionPickups(null); setAuctionDecisions(null); } });
+    fetchAdminAuctions().then((data) => { if (active) { setAuctionPickups(data.stats.awaiting_pickup); setAuctionDecisions(data.stats.awaiting_admin ?? 0); setReauctionReady(data.stats.reauction_ready ?? 0); } }).catch(() => { if (active) { setAuctionPickups(null); setAuctionDecisions(null); setReauctionReady(null); } });
     return () => { active = false; };
   }, []);
 
@@ -176,6 +179,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
     { label: tr("AI matches to confirm"), hint: tr("Possible owner and item pairs found automatically"), value: summary?.potential_ai_matches ?? 0, page: "ai-matching", edge: "before:bg-iris-500", icon: <Sparkles size={18} aria-hidden="true" /> },
     { label: tr("Unresolved items"), hint: tr("Reports still open without a match or claim"), value: summary?.unresolved_items ?? 0, page: "lost-items", edge: "before:bg-rose-400", icon: <AlertTriangle size={18} aria-hidden="true" /> },
     ...(auctionDecisions ? [{ label: tr("Auctions awaiting your decision"), hint: tr("Bidding closed. Confirm the winner or re-auction"), value: auctionDecisions, page: "auctions" as DeskPage, edge: "before:bg-iris-400", icon: <Gavel size={18} aria-hidden="true" /> }] : []),
+    ...(reauctionReady ? [{ label: tr("Ready for re-auction"), hint: tr("The winner did not collect in 72 hours. List the item again"), value: reauctionReady, page: "auctions" as DeskPage, edge: "before:bg-rose-400", icon: <Gavel size={18} aria-hidden="true" /> }] : []),
     ...(auctionPickups ? [{ label: tr("Auction pickups waiting"), hint: tr("Winners who still need to pay and collect"), value: auctionPickups, page: "auctions" as DeskPage, edge: "before:bg-gold-300", icon: <Gavel size={18} aria-hidden="true" /> }] : []),
   ];
   const openItems = queue.reduce((total, item) => total + item.value, 0);
@@ -215,7 +219,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
             <p className="px-3 pb-1 pt-2 text-[13px] font-semibold text-gold-200">{tr("Needs your action")}</p>
             <ul className="space-y-1.5">
               {queue.map((item) => (
-                <li key={item.page}>
+                <li key={item.label}>
                   <button
                     type="button"
                     onClick={() => onNavigate?.(item.page)}
@@ -235,6 +239,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
           </div>
         </div>
       </section>
+
+      <HandoverPinCard />
 
       {/* Inventory at a glance: one quiet panel rather than a wall of identical cards */}
       <section className="admin-card overflow-hidden" aria-label={tr("Inventory")}>
@@ -292,6 +298,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
           </dl>
         </section>
       </div>
+
+      <AnalyticsSection />
 
       <section className="admin-card p-5 sm:p-6" aria-labelledby="activity-heading">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">

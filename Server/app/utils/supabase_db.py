@@ -212,7 +212,26 @@ class SupabaseDB:
             identity_path = claim.pop('identity_document_path', None)
             claim['identity_document_url'] = self._create_signed_storage_url('claim-id-documents', identity_path)
             claims.append(claim)
+        self._attach_handover_pins(claims)
         return claims
+
+    def _attach_handover_pins(self, claims: List[Dict[str, Any]]) -> None:
+        """Give the owner the Handover PIN of each approved claim (decrypted, own claims only). Silent if PINs are not set up yet."""
+        approved = [c for c in claims if str(c.get('status') or '') == 'approved_for_pickup' and c.get('claim_id')]
+        if not approved:
+            return
+        try:
+            rows = self.client.table('claims').select('claim_id,handover_pin_encrypted').in_('claim_id', [c['claim_id'] for c in approved]).execute().data or []
+        except Exception:
+            return
+        pins = {str(r['claim_id']): r.get('handover_pin_encrypted') for r in rows}
+        for claim in approved:
+            token = pins.get(str(claim['claim_id']))
+            if token:
+                try:
+                    claim['handover_pin'] = CryptoService.decrypt(token) or None
+                except Exception:
+                    claim['handover_pin'] = None
 
     def get_claim_email_context(self, claim_id: str) -> Optional[Dict[str, Any]]:
         """Return only stored recipient and item-reference fields needed for claim mail."""

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Dict, Iterable, List, Optional
 
-from app.utils.auction_email import format_peso, send_auction_won_email
+from app.utils.auction_email import format_peso, send_auction_final_warning_email, send_auction_forfeited_email, send_auction_won_email
 from app.utils.profanity import find_profanity
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,11 @@ MAX_DURATION_MINUTES = 60 * 24 * 60
 PAST_AUCTION_DAYS = 60
 COMMENT_COOLDOWN_SECONDS = 5
 SETTLE_THROTTLE_SECONDS = 2.0
+# A confirmed winner has 48 hours before a final warning and 72 hours before the win is forfeited.
+PICKUP_WARNING_HOURS = 48
+PICKUP_FORFEIT_HOURS = 72
+BIDDING_BAN_DAYS = 30
+STAFF_LEVELS = ('admin', 'super_admin')
 
 _last_settle = [0.0]
 
@@ -295,7 +300,7 @@ class AuctionService:
             self.db.create_user_notification(
                 str(winner['account_id']),
                 'You won the auction',
-                f"Your bid of {format_peso(amount)} won {title}. Bring your ID to the Lost and Found Office to pay and collect it.",
+                f"Your bid of {format_peso(amount)} won {title}. Bring your ID to the Lost and Found Office to pay and collect it within {PICKUP_FORFEIT_HOURS} hours, or the win is forfeited.",
                 notification_type='auction_won', link_label='View auction', link_page='auction-hall',
             )
         except Exception as error:
@@ -336,8 +341,142 @@ class AuctionService:
         if not winner or not winner.get('email'):
             raise AuctionError('The winner has no email address on file.', 409)
         result = self._email_winner(row, winner)
-        self.client.table('auctions').update({'winner_notified_at': _iso(_now())}).eq('auction_id', auction_id).execute()
+        # The pickup clock runs from the first notice, so a resend only fills the time in when it was never set.
+        self.client.table('auctions').update({'winner_notified_at': _iso(_now())}).eq('auction_id', auction_id).is_('winner_notified_at', 'null').execute()
         return {'auction': row, **result}
+
+    # ------------------------------------------------------------------ pickup deadlines (run by the scheduler)
+    def process_overdue_pickups(self, now: Optional[datetime] = None, warning_hours: int = PICKUP_WARNING_HOURS,
+                                forfeit_hours: int = PICKUP_FORFEIT_HOURS, ban_days: int = BIDDING_BAN_DAYS) -> Dict[str, Any]:
+        """Warn winners who have not collected after `warning_hours` and forfeit the win after `forfeit_hours`.
+
+        The clock starts when the winner was first notified (`winner_notified_at`). Every step claims its row with a
+        conditional update, so two workers or two overlapping runs can never warn or forfeit the same auction twice.
+        """
+        now = now or _now()
+        summary: Dict[str, Any] = {'checked': 0, 'warned': 0, 'forfeited': 0, 'errors': 0}
+        try:
+            rows = self.client.table('auctions').select('*').eq('status', 'ended').eq('fulfillment_status', 'awaiting_pickup') \
+                .not_.is_('winner_account_id', 'null').not_.is_('winner_notified_at', 'null').limit(200).execute().data or []
+        except Exception as error:
+            logger.warning('Pickup deadline check skipped: %s', error)
+            summary['errors'] += 1
+            return summary
+        for row in rows:
+            started = _parse(row.get('winner_notified_at'))
+            if not started:
+                continue
+            summary['checked'] += 1
+            age_hours = (now - started).total_seconds() / 3600
+            try:
+                if age_hours >= forfeit_hours:
+                    if self._auto_forfeit(row, now, ban_days):
+                        summary['forfeited'] += 1
+                elif age_hours >= warning_hours and not row.get('pickup_warning_sent_at'):
+                    if self._send_final_warning(row, now, max(1, round(forfeit_hours - age_hours))):
+                        summary['warned'] += 1
+            except Exception as error:
+                summary['errors'] += 1
+                logger.exception('Pickup deadline step failed for auction %s: %s', row.get('auction_id'), error)
+        return summary
+
+    def _send_final_warning(self, row: Dict[str, Any], now: datetime, hours_left: int) -> bool:
+        claimed = self.client.table('auctions').update({'pickup_warning_sent_at': _iso(now)}).eq('auction_id', row['auction_id']) \
+            .eq('fulfillment_status', 'awaiting_pickup').is_('pickup_warning_sent_at', 'null').execute().data or []
+        if not claimed:
+            return False
+        winner = (self._profiles([row.get('winner_account_id')]) or {}).get(str(row.get('winner_account_id')))
+        if not winner:
+            return True
+        hours_left = min(hours_left, PICKUP_FORFEIT_HOURS - PICKUP_WARNING_HOURS)
+        try:
+            self.db.create_user_notification(
+                str(winner['account_id']), f'Final warning: {hours_left} hours left',
+                f"You still have not collected {row.get('title')}. Collect it within {hours_left} hours, or your win is forfeited and you cannot bid for {BIDDING_BAN_DAYS} days.",
+                notification_type='auction_final_warning', link_label='View auction', link_page='auction-hall',
+            )
+        except Exception as error:
+            logger.warning('Final warning notification failed: %s', error)
+        send_auction_final_warning_email(
+            to_email=winner.get('email') or '', recipient_name=str(winner.get('fname') or '').strip(), item_title=row.get('title') or 'the item',
+            reference=row.get('item_reference') or '', amount=row.get('winning_amount'), hours_left=hours_left,
+        )
+        return True
+
+    def _auto_forfeit(self, row: Dict[str, Any], now: datetime, ban_days: int) -> bool:
+        reason = 'The winning bidder did not collect the item within 72 hours.'
+        claimed = self.client.table('auctions').update({
+            'fulfillment_status': 'forfeited', 'fulfillment_updated_at': _iso(now), 'auto_forfeited_at': _iso(now),
+            'reauction_reason': reason, 'updated_at': _iso(now),
+        }).eq('auction_id', row['auction_id']).eq('fulfillment_status', 'awaiting_pickup').execute().data or []
+        if not claimed:
+            return False
+        if row.get('found_item_id'):
+            # The item returns to custody so it can be listed again, or claimed by its real owner.
+            self.client.table('found_items').update({'status': 'unclaimed', 'custody_status': 'turned_over', 'updated_at': _iso(now)}) \
+                .eq('item_id', row['found_item_id']).eq('status', 'auctioned').execute()
+        winner_id = str(row.get('winner_account_id') or '')
+        winner = (self._profiles([winner_id]) or {}).get(winner_id) or {}
+        banned = False
+        if winner_id:
+            try:
+                level = str((self.db.get_user_by_account_id(winner_id) or {}).get('access_level') or '').lower()
+                if level not in STAFF_LEVELS:  # staff are never barred from here
+                    self.client.table('user_profiles').update({
+                        'bidding_banned_until': _iso(now + timedelta(days=ban_days)),
+                        'bidding_ban_reason': f"Did not collect a won auction ({row.get('item_reference') or row.get('title')}) within 72 hours.",
+                    }).eq('account_id', winner_id).execute()
+                    banned = True
+            except Exception as error:
+                logger.warning('Bidding ban could not be saved for %s: %s', winner_id, error)
+            try:
+                self.db.create_user_notification(
+                    winner_id, 'Your auction win was forfeited',
+                    f"The 72-hour collection window for {row.get('title')} passed, so the win was forfeited."
+                    + (f" You cannot bid for {ban_days} days." if banned else ''),
+                    notification_type='auction_forfeited', link_label='View auctions', link_page='auction-hall',
+                )
+            except Exception as error:
+                logger.warning('Forfeit notification failed: %s', error)
+            if winner.get('email'):
+                send_auction_forfeited_email(
+                    to_email=winner['email'], recipient_name=str(winner.get('fname') or '').strip(), item_title=row.get('title') or 'the item',
+                    reference=row.get('item_reference') or '', amount=row.get('winning_amount'), ban_days=ban_days,
+                )
+        self._alert_admins_reauction(row, winner)
+        return True
+
+    def _alert_admins_reauction(self, row: Dict[str, Any], winner: Dict[str, Any]) -> None:
+        """Tell every admin the item is back in custody and ready to be auctioned again. Best effort."""
+        title = row.get('title') or 'An item'
+        message = (f"{title} ({row.get('item_reference') or 'no reference'}) was forfeited because the winner did not collect it in 72 hours. "
+                   "It is back in custody and ready for Re-Auction.")
+        try:
+            admins = self.client.table('user_profiles').select('account_id,email,fname,is_active').in_('access_level', list(STAFF_LEVELS)).limit(100).execute().data or []
+        except Exception as error:
+            logger.warning('Could not list admins for the re-auction alert: %s', error)
+            return
+        from app.utils.email_service import send_reference_email_best_effort
+        for admin in admins:
+            if admin.get('is_active') is False:
+                continue
+            try:
+                self.db.create_user_notification(str(admin['account_id']), 'Ready for Re-Auction', message, notification_type='auction_reauction_ready', link_label='Open auctions', link_page='auctions')
+            except Exception as error:
+                logger.warning('Re-auction alert failed for an admin: %s', error)
+            if admin.get('email'):
+                send_reference_email_best_effort(
+                    to_email=admin['email'], recipient_name=str(admin.get('fname') or '').strip(), subject=f'Ready for Re-Auction: {title}',
+                    title='An item is ready for Re-Auction', summary=message, reference_label='Auction item', reference=row.get('item_reference') or title,
+                    details={'Previous winning bid': format_peso(row.get('winning_amount'))}, cta_label='Open the Auctions page', tone='warning',
+                )
+        try:
+            self.db.log_user_activity(
+                account_id=str(row.get('winner_account_id') or ''), user_name='System', action='Auction Win Forfeited (Automatic)', module='Auctions',
+                target_name=title, target_id=row.get('item_reference') or str(row.get('auction_id')), metadata={'ready_for_reauction': True},
+            )
+        except Exception as error:
+            logger.warning('Forfeit activity log failed: %s', error)
 
     # ------------------------------------------------------------------ public reads
     def public_feed(self) -> Dict[str, Any]:
@@ -507,11 +646,25 @@ class AuctionService:
         return {'auctions': items, 'server_time': _iso(now)}
 
     # ------------------------------------------------------------------ user writes
+    def _assert_can_bid(self, account_id: str) -> None:
+        """Refuse a bid from an account barred after a forfeited win. Quietly allows it if the ban column does not exist yet."""
+        try:
+            rows = self.client.table('user_profiles').select('bidding_banned_until').eq('account_id', account_id).limit(1).execute().data or []
+        except Exception:
+            return
+        until = _parse((rows[0] if rows else {}).get('bidding_banned_until'))
+        if until and until > _now():
+            raise AuctionError(
+                f"Bidding is paused on your account until {until.strftime('%b %d, %Y')} because a won auction was not collected in time. You can still browse, report and claim.",
+                403, code='bidding_banned', banned_until=_iso(until),
+            )
+
     def place_bid(self, auction_id: str, account_id: str, amount: Any) -> Dict[str, Any]:
         try:
             value = float(Decimal(str(amount).replace(',', '').strip()))
         except (InvalidOperation, ValueError):
             raise AuctionError('Enter a valid bid amount.')
+        self._assert_can_bid(account_id)
         try:
             response = self.client.rpc('auction_place_bid', {'p_auction_id': auction_id, 'p_bidder_id': account_id, 'p_amount': value}).execute()
         except Exception as error:
@@ -697,6 +850,7 @@ class AuctionService:
         return {**card, 'found_item_id': str(row['found_item_id']) if row.get('found_item_id') else None,
                 'db_status': row.get('status'), 'fulfillment_status': row.get('fulfillment_status'),
                 'winner_notified_at': row.get('winner_notified_at'), 'winner_email_mode': row.get('winner_email_mode'),
+                'pickup_warning_sent_at': row.get('pickup_warning_sent_at'), 'auto_forfeited_at': row.get('auto_forfeited_at'),
                 'cancelled_at': row.get('cancelled_at'), 'ended_at': row.get('ended_at'), 'created_at': row.get('created_at'),
                 'finalized_at': row.get('finalized_at'), 'reauctioned_from': str(row['reauctioned_from']) if row.get('reauctioned_from') else None, 'reauction_reason': row.get('reauction_reason'),
                 'leader': (person(leader) or {}).get('name') or card['leader'],
@@ -713,6 +867,10 @@ class AuctionService:
         profiles = self._profiles([r.get(k) for r in rows for k in ('highest_bidder_id', 'winner_account_id')])
         reactions = self.reaction_counts([str(r['auction_id']) for r in rows])
         cards = [self._admin_card(r, profiles, now, reactions) for r in rows]
+        relisted = {str(r['reauctioned_from']) for r in rows if r.get('reauctioned_from')}
+        for card in cards:
+            # Forfeited automatically and not yet listed again: the admin's cue to re-auction.
+            card['reauction_ready'] = bool(card.get('auto_forfeited_at')) and card['fulfillment_status'] == 'forfeited' and card['id'] not in relisted
         sold = [c for c in cards if c['sold'] and c['fulfillment_status'] != 'forfeited']
         stats = {
             'live': sum(1 for c in cards if c['status'] == 'live'),
@@ -720,6 +878,7 @@ class AuctionService:
             'awaiting_admin': sum(1 for c in cards if c['status'] == 'awaiting'),
             'ended': sum(1 for c in cards if c['status'] == 'ended'),
             'awaiting_pickup': sum(1 for c in cards if c['fulfillment_status'] == 'awaiting_pickup'),
+            'reauction_ready': sum(1 for c in cards if c.get('reauction_ready')),
             'total_bids': sum(c['bid_count'] for c in cards),
             'sales_total': round(sum(c['winning_amount'] or 0 for c in sold), 2),
         }
@@ -956,7 +1115,10 @@ class AuctionService:
         try:
             row = self._live_row(auction_id)
             status, fulfillment = row.get('status'), row.get('fulfillment_status')
-            if not (status == 'ended' and fulfillment == 'awaiting_pickup'):
+            auto_forfeited = status == 'ended' and fulfillment == 'forfeited' and bool(row.get('auto_forfeited_at'))
+            if auto_forfeited and (self.client.table('auctions').select('auction_id').eq('reauctioned_from', auction_id).limit(1).execute().data or []):
+                raise AuctionError('This item was already listed again.', 409)
+            if not ((status == 'ended' and fulfillment == 'awaiting_pickup') or auto_forfeited):
                 raise AuctionError('Confirm the winner first. An item can be re-auctioned only after a confirmed winner has not collected it.', 409)
             original_minutes = 4320
             starts_old, ends_old = _parse(row.get('starts_at')), _parse(row.get('original_ends_at'))
@@ -975,18 +1137,21 @@ class AuctionService:
                 if self.client.table('claims').select('claim_id').eq('found_item_id', row['found_item_id']).in_('status', list(OPEN_CLAIM_STATUSES)).limit(1).execute().data:
                     raise AuctionError('This item has an open ownership claim. Resolve the claim first.', 409)
 
-            forfeit = {'status': 'ended', 'fulfillment_status': 'forfeited', 'fulfillment_updated_at': _iso(now), 'reauction_reason': reason, 'updated_at': _iso(now)}
-            if not row.get('ended_at'):
-                forfeit['ended_at'] = _iso(now)
-            query = self.client.table('auctions').update(forfeit).eq('auction_id', auction_id).eq('status', status)
-            if status == 'ended':
-                query = query.eq('fulfillment_status', 'awaiting_pickup')
-            closed = query.execute().data or []
-            if not closed:
-                raise AuctionError('The auction changed while you were working. Reload and try again.', 409)
-            if row.get('found_item_id'):
-                self.client.table('found_items').update({'status': 'unclaimed', 'custody_status': 'turned_over', 'updated_at': _iso(now)}) \
-                    .eq('item_id', row['found_item_id']).eq('status', 'auctioned').execute()
+            if auto_forfeited:
+                closed = [row]  # the scheduler already forfeited it and returned the item to custody
+            else:
+                forfeit = {'status': 'ended', 'fulfillment_status': 'forfeited', 'fulfillment_updated_at': _iso(now), 'reauction_reason': reason, 'updated_at': _iso(now)}
+                if not row.get('ended_at'):
+                    forfeit['ended_at'] = _iso(now)
+                query = self.client.table('auctions').update(forfeit).eq('auction_id', auction_id).eq('status', status)
+                if status == 'ended':
+                    query = query.eq('fulfillment_status', 'awaiting_pickup')
+                closed = query.execute().data or []
+                if not closed:
+                    raise AuctionError('The auction changed while you were working. Reload and try again.', 409)
+                if row.get('found_item_id'):
+                    self.client.table('found_items').update({'status': 'unclaimed', 'custody_status': 'turned_over', 'updated_at': _iso(now)}) \
+                        .eq('item_id', row['found_item_id']).eq('status', 'auctioned').execute()
 
             ends = now + timedelta(minutes=duration)
             fresh = {
@@ -1002,10 +1167,11 @@ class AuctionService:
                 created = self.client.table('auctions').insert(fresh).execute().data or []
             except Exception:
                 # Put everything back so the admin can retry instead of being left with a half-finished re-auction.
-                revert = {'status': status, 'fulfillment_status': fulfillment, 'reauction_reason': None, 'updated_at': _iso(now)}
-                self.client.table('auctions').update(revert).eq('auction_id', auction_id).execute()
-                if row.get('found_item_id') and status == 'ended':
-                    self.client.table('found_items').update({'status': 'auctioned', 'custody_status': 'auctioned'}).eq('item_id', row['found_item_id']).execute()
+                if not auto_forfeited:
+                    revert = {'status': status, 'fulfillment_status': fulfillment, 'reauction_reason': None, 'updated_at': _iso(now)}
+                    self.client.table('auctions').update(revert).eq('auction_id', auction_id).execute()
+                    if row.get('found_item_id') and status == 'ended':
+                        self.client.table('found_items').update({'status': 'auctioned', 'custody_status': 'auctioned'}).eq('item_id', row['found_item_id']).execute()
                 raise
         except AuctionError:
             raise

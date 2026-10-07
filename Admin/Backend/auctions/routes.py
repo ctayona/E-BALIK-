@@ -186,15 +186,16 @@ def reauction_auction(auction_id):
         except Exception as error:
             current_app.logger.warning('Re-auction suspension failed: %s', error)
             suspension = {'applied': False, 'error': str(error)}
-        try:
-            extra = f' Your account is suspended for {suspend_days} days.' if suspension and suspension.get('applied') else ''
-            db.create_user_notification(
-                str(winner_id), 'Auction purchase not completed',
-                f"Your winning bid on {old.get('title')} was not completed, so the item was listed again.{extra}",
-                notification_type='auction_forfeited', link_label='View auctions', link_page='auction-hall',
-            )
-        except Exception as error:
-            current_app.logger.warning('Re-auction notification failed: %s', error)
+        if not old.get('auto_forfeited_at'):  # after an automatic forfeit the scheduler has already told the winner
+            try:
+                extra = f' Your account is suspended for {suspend_days} days.' if suspension and suspension.get('applied') else ''
+                db.create_user_notification(
+                    str(winner_id), 'Auction purchase not completed',
+                    f"Your winning bid on {old.get('title')} was not completed, so the item was listed again.{extra}",
+                    notification_type='auction_forfeited', link_label='View auctions', link_page='auction-hall',
+                )
+            except Exception as error:
+                current_app.logger.warning('Re-auction notification failed: %s', error)
 
     message = 'The item was listed again as a new auction.'
     if suspension and suspension.get('applied'):
