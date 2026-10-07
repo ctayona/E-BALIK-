@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { Eye, EyeOff, Mail, Phone, UserRound } from "lucide-react";
 import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
+import ItemTypePicker from "@/app/shared/tags/ItemTypePicker";
 import LivePhotoField from "@/app/shared/tags/LivePhotoField";
 import { CX } from "@/app/utils/clay";
 import { useCurrentUser } from "@/app/utils/system";
@@ -59,7 +60,7 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (name.trim().length < 2) { setProblem("Enter what this tag is attached to, for example \"My black Dell laptop\"."); return; }
+    if (name.trim().length < 2) { setProblem("Choose what this tag is attached to. If it is not in the list, choose Other and type its name."); return; }
     if (showPhone && !phone.trim()) { setProblem("Add a phone number, or switch \"Show my phone number\" off."); return; }
     if (mode === "claim" && !photo) { setProblem("Take a photo of your item with the sticker attached before registering."); return; }
     setProblem("");
@@ -68,13 +69,10 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
 
   return (
     <form onSubmit={submit} className="space-y-5" noValidate>
-      <div>
-        <label htmlFor="tag-item-name" className={CX.label}>What is this tag attached to? <span className="text-rose-600" aria-hidden="true">*</span></label>
-        <input id="tag-item-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="My black Dell laptop" autoComplete="off" className={`${CX.input} w-full`} data-autofocus />
-      </div>
+      <ItemTypePicker value={name} onChange={setName} />
       <div>
         <label htmlFor="tag-item-desc" className={CX.label}>Description <span className="font-normal text-ink-muted">(optional)</span></label>
-        <textarea id="tag-item-desc" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} rows={3} placeholder="Colour, stickers, scratches. Anyone who scans the tag can read this." className={`${CX.input} w-full resize-y py-3 leading-6`} />
+        <textarea id="tag-item-desc" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} rows={3} placeholder="Brand, colour, stickers, scratches. Anyone who scans the tag can read this." className={`${CX.input} w-full resize-y py-3 leading-6`} />
       </div>
 
       <LivePhotoField file={photo} existingUrl={initial?.photo_url} onChange={setPhoto} required={mode === "claim"} />
@@ -103,7 +101,7 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
 
       {(problem || error) && <p role="alert" className={CX.alertError}>{problem || error}</p>}
 
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <div className="sticky bottom-0 z-10 -mx-1 flex flex-col-reverse gap-2 border-t border-line bg-white/85 px-1 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl sm:flex-row sm:justify-end">
         {onCancel && <button type="button" onClick={onCancel} disabled={busy} className={CX.btnGhost}>Cancel</button>}
         <button type="submit" disabled={busy || (mode === "claim" && (!consent || !photo))} className={CX.btnGold}>{busy ? "Saving…" : submitLabel}</button>
       </div>

@@ -91,7 +91,7 @@ export default function Header({ breadcrumb, title, notifCount, onNotifClick, on
 
       <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
         {maintenance && (
-          <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-rose-50 p-2 text-[12.5px] font-semibold text-rose-700 ring-1 ring-rose-200 xl:px-3 xl:py-1.5 dark:bg-rose-500/15 dark:text-rose-200 dark:ring-rose-500/40" role="status" title={tr("Maintenance mode is ON")}>
+          <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-rose-50 p-2 text-[12.5px] font-semibold text-rose-700 ring-1 ring-rose-200 xl:px-3 xl:py-1.5 dark:bg-rose-500/15 dark:text-[#fecdd3] dark:ring-rose-500/40" role="status" title={tr("Maintenance mode is ON")}>
             <LockKeyhole size={14} aria-hidden="true" /><span className="hidden xl:inline">{tr("Maintenance mode is ON")}</span><span className="sr-only xl:hidden">{tr("Maintenance mode is ON")}</span>
           </span>
         )}

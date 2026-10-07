@@ -369,6 +369,15 @@ button:not(:disabled), [role="button"]:not([aria-disabled="true"]), select, summ
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
+/* QR scanner: the gold line sweeps down the viewfinder and back. */
+@keyframes scanline {
+  0%, 100% { transform: translateY(6px); }
+  50% { transform: translateY(calc(min(72vw, 320px) - 8px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-\[scanline_2\.2s_ease-in-out_infinite\] { animation: none; }
+}
+
 @keyframes kenburns {
   from { transform: scale(1.02); }
   to   { transform: scale(1.12); }

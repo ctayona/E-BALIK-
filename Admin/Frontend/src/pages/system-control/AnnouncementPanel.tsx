@@ -97,7 +97,7 @@ export default function AnnouncementPanel({ current, onSaved }: { current: Annou
               <p className="text-[13px] text-ink-muted">{current?.updated_at ? tr("Last saved {0}", { "0": formatDateTime(current.updated_at) }) : tr("Nothing saved yet.")}</p>
             </div>
           </div>
-          {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">{error}</p>}
+          {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-[#fecdd3]">{error}</p>}
           <div className="mt-auto flex flex-wrap items-center gap-3">
             <button type="button" onClick={() => void save()} disabled={busy || !ready || !dirty} className={live ? BTN.gold : BTN.primary}><Save size={16} aria-hidden="true" />{busy ? tr("Saving…") : live ? tr("Save and go live") : tr("Save")}</button>
             {!ready && <span className="text-[13px] text-rose-700 dark:text-rose-300">{tr("Write the message before going live.")}</span>}

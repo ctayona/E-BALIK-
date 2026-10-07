@@ -164,30 +164,43 @@ export default function LivePhotoField({ file, existingUrl, onChange, required =
 
   const start = () => { setError(""); if (live) setOpen(true); else fallbackRef.current?.click(); };
   const shown = preview || existingUrl || "";
+  // Why there is no camera, so the explanation is specific instead of a dead end.
+  const unavailable = typeof window !== "undefined" && window.isSecureContext === false
+    ? "Browsers only allow the camera on a secure (https) address. Open the https link of E-Balik, or use your phone."
+    : "No camera was found on this device. Open this page on your phone to take the photo.";
 
   return (
     <div>
       <p className={CX.label}>{label} {required && <span className="text-rose-600" aria-hidden="true">*</span>}</p>
-      <div className={`mt-1.5 overflow-hidden rounded-2xl border ${shown ? "border-gold-300 bg-gold-50" : "border-dashed border-line-strong bg-frost-50"}`}>
-        {shown ? (
+      {shown ? (
+        <div className="overflow-hidden rounded-2xl border border-gold-300 bg-frost-50 shadow-card">
           <div className="relative">
             <img src={shown} alt={file ? "The photo you just took" : "Current photo of the item"} className="max-h-[320px] w-full bg-navy-950 object-contain" />
-            {file && <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-tide-600 px-2.5 py-1 text-[12px] font-semibold text-white shadow"><ShieldCheck size={13} aria-hidden="true" />Taken just now</span>}
+            {file && <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-tide-600 px-2.5 py-1 text-[12px] font-semibold text-[#ffffff] shadow"><ShieldCheck size={13} aria-hidden="true" />Taken just now</span>}
           </div>
-        ) : (
-          <div className="px-5 py-7 text-center">
-            <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950" aria-hidden="true"><Camera size={22} /></span>
-            <p className="mt-3 text-[14.5px] font-semibold text-ink">Take a photo of your item with the sticker on it</p>
-            <p className="mx-auto mt-1 max-w-[44ch] text-[13px] leading-5 text-ink-muted">It helps the finder and the Lost and Found Office know it is really yours. Photos from your gallery are not accepted: the picture must be taken now.</p>
+          <div className="flex flex-wrap items-center gap-3 border-t border-line px-3 py-2.5">
+            <button type="button" onClick={start} disabled={!canUse} className={`${CX.btnGold} min-h-[44px] px-4 text-[14px]`}><Camera size={16} aria-hidden="true" />{file ? "Retake photo" : "Take a new photo"}</button>
+            {file && <button type="button" onClick={() => { onChange(null); setError(""); }} className="min-h-[44px] px-2 text-[13.5px] font-semibold text-ink-muted underline-offset-2 hover:underline">Remove</button>}
           </div>
-        )}
-        <div className="flex flex-wrap items-center gap-2 border-t border-line/70 bg-white/60 px-3 py-2.5">
-          {canUse
-            ? <button type="button" onClick={start} className={`${shown ? CX.btnGhost : CX.btnGold} min-h-[44px] px-4 text-[14px]`}><Camera size={16} aria-hidden="true" />{file ? "Retake photo" : existingUrl ? "Take a new photo" : "Open camera"}</button>
-            : <p className="text-[13px] leading-5 text-rose-700" role="alert">This device has no usable camera here. Open this page on your phone to take the photo.</p>}
-          {file && <button type="button" onClick={() => { onChange(null); setError(""); }} className="text-[13px] font-semibold text-ink-muted underline-offset-2 hover:underline">Remove</button>}
         </div>
-      </div>
+      ) : (
+        <button
+          type="button"
+          onClick={start}
+          disabled={!canUse}
+          aria-label="Open the camera to take a photo of your item with the sticker attached"
+          className="group relative block w-full overflow-hidden rounded-2xl border-2 border-dashed border-gold-400/80 bg-[linear-gradient(160deg,rgba(209,161,83,0.16),rgba(209,161,83,0.04))] px-5 py-7 text-center transition-[border-color,box-shadow,transform] duration-200 hover:border-gold-500 hover:shadow-[0_0_0_4px_rgba(209,161,83,0.16)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:shadow-none"
+        >
+          <span className="relative mx-auto flex size-14 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950 shadow-[0_12px_26px_-12px_rgba(209,161,83,0.9)]" aria-hidden="true">
+            <Camera size={26} />
+            {canUse && <span className="absolute inset-0 animate-ping rounded-2xl bg-gold-400/30 [animation-duration:2.4s]" />}
+          </span>
+          <span className="mt-3 block text-[15.5px] font-semibold text-ink">Take a photo of your item with the sticker on it</span>
+          <span className="mx-auto mt-1 block max-w-[44ch] text-[13px] leading-5 text-ink-muted">It helps the finder and the Lost and Found Office know it is really yours. Photos from your gallery are not accepted: the picture must be taken now.</span>
+          <span className={`${CX.btnGold} pointer-events-none mt-4 min-h-[48px] px-7 text-[15px] ${canUse ? "" : "opacity-60"}`}><Camera size={18} aria-hidden="true" />{canUse ? "Open camera" : "Camera not available"}</span>
+        </button>
+      )}
+      {!canUse && <p className={`${CX.alertError} mt-2`} role="alert">{unavailable}</p>}
       {!live && touch && <input ref={fallbackRef} id={fallbackId} type="file" accept="image/*" capture="environment" onChange={(event) => void fromCameraApp(event)} className="sr-only" tabIndex={-1} aria-hidden="true" />}
       {error && <p role="alert" className="mt-2 text-[13px] text-rose-700">{error}</p>}
       {open && <CameraSheet onCapture={accept} onClose={() => setOpen(false)} />}

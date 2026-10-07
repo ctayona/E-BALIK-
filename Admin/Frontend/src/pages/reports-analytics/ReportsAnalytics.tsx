@@ -130,7 +130,7 @@ export default function ReportsAnalytics() {
                 </div>
                 <div className="text-3xl font-bold text-slate-900 mb-0.5">{k.value}</div>
                 <div className="text-xs text-slate-500 mb-1">{k.label}</div>
-                <div className="text-xs font-semibold" style={{ color: k.delta.startsWith("-") ? "#ef4444" : k.color }}>{k.delta}</div>
+                <div className="text-xs font-semibold" style={{ color: k.delta.startsWith("-") ? "#f43f5e" : `color-mix(in srgb, ${k.color} 60%, var(--color-ink))` }}>{k.delta}</div>
               </div>
             ))}
           </div>

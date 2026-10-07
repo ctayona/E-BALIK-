@@ -68,7 +68,7 @@ export default function SuspendUserModal({ accountId, name, defaultReason = "", 
                 type="button"
                 aria-pressed={active}
                 onClick={() => setDays(option.days)}
-                className={`min-h-[40px] rounded-xl border px-3.5 text-[13.5px] font-semibold transition ${active ? "border-rose-400 bg-rose-50 text-rose-800 shadow-[0_8px_20px_-14px_rgba(225,29,72,0.9)] dark:bg-rose-500/15 dark:text-rose-200" : "border-line-strong bg-[var(--surface)] text-ink-soft hover:border-iris-300"}`}
+                className={`min-h-[40px] rounded-xl border px-3.5 text-[13.5px] font-semibold transition ${active ? "border-rose-400 bg-rose-50 text-rose-800 shadow-[0_8px_20px_-14px_rgba(225,29,72,0.9)] dark:bg-rose-500/15 dark:text-[#fecdd3]" : "border-line-strong bg-[var(--surface)] text-ink-soft hover:border-iris-300"}`}
               >
                 {tr(option.label)}
               </button>

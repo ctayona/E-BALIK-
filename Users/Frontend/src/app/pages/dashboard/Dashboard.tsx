@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowRight, GitCompareArrows, LibraryBig, PackageCheck, PackagePlus, Search, SearchX, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, GitCompareArrows, LibraryBig, PackageCheck, PackagePlus, QrCode, Search, SearchX, ShieldCheck, Sparkles } from "lucide-react";
 import type { NavigationOptions, Page } from "@/app/types";
 import type { User } from "@/app/utils/useAuth";
 import { useAuth } from "@/app/utils/useAuth";
@@ -122,6 +122,7 @@ export default function Dashboard({ user, onNavigate }: {
     { label: "I found an item", hint: "Log it and hand it to security", page: "found-item" as Page, icon: PackagePlus, tone: "from-[#e6be76] to-[#c9953f] text-navy-950" },
     { label: "I lost an item", hint: "Get matched to found reports", page: "missing-item" as Page, icon: SearchX, tone: "from-[#3b5394] to-[#1f3160] text-white" },
     { label: "Browse everything", hint: "Missing and in-custody lists", page: "browse-items" as Page, icon: LibraryBig, tone: "from-[#8aa2f3] to-[#5470d6] text-white" },
+    { label: "My Smart Tags", hint: "Register stickers, see expiry dates", page: "my-tags" as Page, icon: QrCode, tone: "from-[#3fbf9f] to-[#1b7863] text-white" },
   ];
 
   return (
@@ -141,7 +142,7 @@ export default function Dashboard({ user, onNavigate }: {
         )}
 
         {/* Quick actions */}
-        <section aria-label="Quick actions" className="grid gap-3 sm:grid-cols-3">
+        <section aria-label="Quick actions" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {actions.map(({ label, hint, page, icon: Icon, tone }) => (
             <button key={page} type="button" onClick={() => onNavigate(page)} className={`${CX.cardHover} group flex items-center gap-4 p-4 text-left`}>
               <span className={`flex size-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br shadow-card ${tone}`}><Icon size={21} aria-hidden="true" /></span>

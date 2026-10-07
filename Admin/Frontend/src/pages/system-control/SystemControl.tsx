@@ -20,7 +20,7 @@ const AGES = [30, 60, 90, 180, 365];
 const HEALTH_LOOK: Record<HealthStatus, { icon: typeof CheckCircle2; text: string; chip: string; label: string }> = {
   ok: { icon: CheckCircle2, text: "text-[#1b7863] dark:text-[#6fd6bb]", chip: "bg-[#e6f7f1] text-[#14594a] ring-[#bfe8db] dark:bg-[#3fbf9f]/10 dark:text-[#9fe0ca] dark:ring-[#3fbf9f]/30", label: "Healthy" },
   warn: { icon: AlertTriangle, text: "text-gold-700 dark:text-gold-300", chip: "bg-gold-50 text-gold-800 ring-gold-200 dark:bg-gold-500/10 dark:text-gold-200 dark:ring-gold-500/30", label: "Needs attention" },
-  fail: { icon: XCircle, text: "text-rose-600 dark:text-rose-300", chip: "bg-rose-50 text-rose-800 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-200 dark:ring-rose-500/30", label: "Action required" },
+  fail: { icon: XCircle, text: "text-rose-600 dark:text-rose-300", chip: "bg-rose-50 text-rose-800 ring-rose-200 dark:bg-rose-500/10 dark:text-[#fecdd3] dark:ring-rose-500/30", label: "Action required" },
 };
 
 function SetupNotice() {
@@ -67,7 +67,7 @@ export default function SystemControl() {
     try {
       const data = await fetchSystemOverview();
       setOverview(data);
-      setMessage((current) => current || data.maintenance.message);
+      setMessage((current) => current || data.maintenance?.message || "");
       setLoadError("");
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : tr("Unable to load system settings."));

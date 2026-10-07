@@ -270,7 +270,7 @@ function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew }:
             <figure className="overflow-hidden rounded-2xl border border-line bg-navy-950">
               {photoState === "ready" ? <img src={photo} alt={tr("Photo of the item with its sticker, taken by the owner at registration")} className="max-h-[260px] w-full object-contain" onError={() => setPhotoState("error")} />
                 : photoState === "loading" ? <SkeletonBlock className="h-40 w-full rounded-none" />
-                : <p className="px-4 py-8 text-center text-[13px] text-rose-200">{tr("The photo could not be loaded.")}</p>}
+                : <p className="px-4 py-8 text-center text-[13px] text-[#fecdd3]">{tr("The photo could not be loaded.")}</p>}
               <figcaption className="bg-[var(--surface)] px-3.5 py-2 text-[12.5px] text-ink-muted">{tr("Photo taken live by the owner at registration")}</figcaption>
             </figure>
           )}
@@ -408,7 +408,7 @@ export default function SmartTags() {
         </dl>
       </section>
 
-      {data && !data.url_check.ok && (
+      {data?.url_check && !data.url_check.ok && (
         <section role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-300 bg-rose-50 p-4 text-rose-900">
           <TriangleAlert size={20} className="mt-0.5 shrink-0" aria-hidden="true" />
           <div className="min-w-0 text-[14px] leading-6">

@@ -176,12 +176,12 @@ export default function Notifications() {
         )}
       </div>
 
-      <div className="bg-white rounded-2xl border border-line shadow-card p-1.5 flex gap-1 w-fit">
+      <div className="bg-white rounded-2xl border border-line shadow-card p-1.5 flex gap-1 w-fit max-w-full overflow-x-auto">
         {TABS.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-[color,background-color,border-color,box-shadow,opacity,transform]"
+            className="shrink-0 whitespace-nowrap px-4 py-2 rounded-lg text-sm font-medium transition-[color,background-color,border-color,box-shadow,opacity,transform]"
             style={activeTab === tab ? { background: "#1f3160", color: "white" } : { color: "#6b7280" }}
           >
             {tab === "Unread" ? tr("Unread ({0})", { "0": unreadCount }) : tr(tab)}

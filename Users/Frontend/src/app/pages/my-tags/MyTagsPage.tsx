@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
-import { CalendarClock, QrCode, ShieldCheck, TriangleAlert, Tag as TagIcon } from "lucide-react";
+import { CalendarClock, Camera, QrCode, ShieldCheck, TriangleAlert, Tag as TagIcon } from "lucide-react";
 import MyTags from "@/app/shared/tags/MyTags";
+import RegisterTagModal from "@/app/shared/tags/RegisterTagModal";
 import { CX } from "@/app/utils/clay";
 import type { OwnerTag } from "@/app/utils/tags";
 
@@ -9,6 +10,10 @@ const SOON_DAYS = 30;
 /** Dedicated space for the Smart Tags a user owns: register a sticker, edit privacy, mark lost, and see when each tag expires. */
 export default function MyTagsPage() {
   const [tags, setTags] = useState<OwnerTag[] | null>(null);
+  const [registering, setRegistering] = useState(false);
+  const [startCode, setStartCode] = useState<string | undefined>(undefined);
+  const [reloadKey, setReloadKey] = useState(0);
+  const startRegistration = useCallback((code?: string) => { setStartCode(code); setRegistering(true); }, []);
   const onLoaded = useCallback((list: OwnerTag[]) => setTags(list), []);
 
   const count = (test: (tag: OwnerTag) => boolean) => (tags ?? []).filter((tag) => !tag.is_disabled && test(tag)).length;
@@ -30,6 +35,7 @@ export default function MyTagsPage() {
               <span className="inline-flex items-center gap-2 rounded-full border border-gold-400/35 bg-gold-500/10 px-3 py-1 text-[13px] font-semibold text-gold-300"><QrCode size={13} aria-hidden="true" /> Smart Tags</span>
               <h1 id="my-tags-hero" className="mt-4 text-3xl font-semibold leading-tight sm:text-4xl" style={{ fontFamily: "var(--font-heading)" }}>My Smart Tags</h1>
               <p className="mt-3 max-w-2xl text-[15px] leading-7 text-white/70">Stick a tag on your laptop, bag or bottle. If someone finds it, they scan the code and you are notified right away. You choose what they can see.</p>
+              <button type="button" onClick={() => startRegistration()} className={`${CX.btnGold} mt-5 min-h-[50px] px-7 text-[15.5px]`}><Camera size={18} aria-hidden="true" />Register a new tag</button>
               <p className="mt-4 flex items-start gap-2 text-[13.5px] leading-6 text-white/60"><ShieldCheck size={15} className="mt-1 shrink-0 text-gold-300" aria-hidden="true" />Tags work for the validity period they were issued with. You are warned 30 days before one expires.</p>
             </div>
             <dl className="grid grid-cols-2 gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -43,7 +49,8 @@ export default function MyTagsPage() {
           </div>
         </section>
 
-        <MyTags standalone onLoaded={onLoaded} />
+        <MyTags standalone onLoaded={onLoaded} onRegister={startRegistration} reloadKey={reloadKey} />
+        <RegisterTagModal open={registering} initialCode={startCode} onClose={() => setRegistering(false)} onRegistered={() => setReloadKey((value) => value + 1)} />
       </div>
     </main>
   );

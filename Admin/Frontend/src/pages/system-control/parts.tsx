@@ -33,7 +33,7 @@ export function Card({ icon, tone = "navy", title, description, children, aside 
 }
 
 export function ErrorNote({ children }: { children: ReactNode }) {
-  return <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">{children}</p>;
+  return <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-[#fecdd3]">{children}</p>;
 }
 
 /** Shown when a tool needs the 20261010 migration. The tool is hidden behind it rather than failing with an error. */

@@ -200,7 +200,7 @@ export function EmailTester() {
       <button type="button" onClick={() => void run()} disabled={busy} className={`${BTN.primary} self-start`}>{busy ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Mail size={16} aria-hidden="true" />}{busy ? tr("Sending…") : tr("Send me a test email")}</button>
       {error && <div className="mt-3"><ErrorNote>{error}</ErrorNote></div>}
       {result && (
-        <div className={`mt-4 flex items-start gap-3 rounded-2xl border p-4 ${result.ok ? "border-[#bfe8db] bg-[#e6f7f1] text-[#14594a] dark:border-[#3fbf9f]/30 dark:bg-[#3fbf9f]/10 dark:text-[#9fe0ca]" : "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200"}`} role="status">
+        <div className={`mt-4 flex items-start gap-3 rounded-2xl border p-4 ${result.ok ? "border-[#bfe8db] bg-[#e6f7f1] text-[#14594a] dark:border-[#3fbf9f]/30 dark:bg-[#3fbf9f]/10 dark:text-[#9fe0ca]" : "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-[#fecdd3]"}`} role="status">
           {result.ok ? <MailCheck size={20} className="mt-0.5 shrink-0" aria-hidden="true" /> : <MailX size={20} className="mt-0.5 shrink-0" aria-hidden="true" />}
           <div className="min-w-0 text-[14px] leading-6">
             <p className="font-semibold">{result.ok ? tr("The email service is healthy") : tr("The email did not go out")}</p>

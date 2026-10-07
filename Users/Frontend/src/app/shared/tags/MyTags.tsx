@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { BellRing, CalendarClock, Pencil, QrCode, ShieldAlert, Tag as TagIcon, TriangleAlert } from "lucide-react";
+import { BellRing, CalendarClock, Camera, Pencil, QrCode, ShieldAlert, Tag as TagIcon, TriangleAlert } from "lucide-react";
 import Modal from "@/app/shared/modal/Modal";
 import { SkeletonBlock } from "@/app/shared/LoadingSkeleton";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
+import LivePhotoField from "@/app/shared/tags/LivePhotoField";
+import ScanCodeButton from "@/app/shared/tags/ScanCodeButton";
 import TagDetailsForm from "@/app/shared/tags/TagDetailsForm";
 import { CX } from "@/app/utils/clay";
 import { TagRequestError, expiryText, extractTagCode, spacedCode, tagsApi, type OwnerTag, type TagDetailsInput } from "@/app/utils/tags";
@@ -15,10 +17,14 @@ function StatusChip({ tag }: { tag: OwnerTag }) {
 }
 
 /** Dashboard section: the tags you own, quick lost/found switch, edit, and a way to register a new sticker by its code. */
-export default function MyTags({ standalone = false, onLoaded }: {
+export default function MyTags({ standalone = false, onLoaded, onRegister, reloadKey = 0 }: {
   /** On its own page the page supplies the heading, so the card header is hidden and tags use more columns. */
   standalone?: boolean;
   onLoaded?: (tags: OwnerTag[]) => void;
+  /** Opens the in-page registration dialog (with the live camera), optionally with the code already known. */
+  onRegister?: (code?: string) => void;
+  /** Change this number to make the list reload, for example after a tag was registered. */
+  reloadKey?: number;
 }) {
   const [tags, setTags] = useState<OwnerTag[] | null>(null);
   const [setup, setSetup] = useState(false);
@@ -29,6 +35,9 @@ export default function MyTags({ standalone = false, onLoaded }: {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [switching, setSwitching] = useState<string | null>(null);
+  const [photoFor, setPhotoFor] = useState<OwnerTag | null>(null);
+  const [newPhoto, setNewPhoto] = useState<File | null>(null);
+  const [photoError, setPhotoError] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -51,11 +60,31 @@ export default function MyTags({ standalone = false, onLoaded }: {
     return () => window.removeEventListener("focus", refresh);
   }, [load]);
 
+  useEffect(() => { if (reloadKey) void load(); }, [reloadKey, load]);
+
   const open = (event: React.FormEvent) => {
     event.preventDefault();
     const clean = extractTagCode(code);
     if (!clean) { setCodeError("That does not look like a tag code. Enter the 10 to 12 characters printed on the sticker, or paste its link."); return; }
+    if (onRegister) { onRegister(clean); setCode(""); return; }
     window.location.assign(`/tag/${clean}`);
+  };
+
+  const savePhoto = async () => {
+    if (!photoFor || !newPhoto) return;
+    setSaving(true);
+    setPhotoError("");
+    try {
+      const result = await tagsApi.photo(photoFor.tag_id, newPhoto);
+      setTags((current) => { const next = (current ?? []).map((t) => (t.tag_id === photoFor.tag_id ? result.tag : t)); onLoaded?.(next); return next; });
+      setPhotoFor(null);
+      setNewPhoto(null);
+      showInfoModal({ variant: "success", title: "Photo saved", message: "Finders who scan this tag will now see the new photo of your item." });
+    } catch (reason) {
+      setPhotoError(reason instanceof Error ? reason.message : "Unable to save the photo.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const setStatus = async (tag: OwnerTag, status: "active" | "lost") => {
@@ -113,6 +142,7 @@ export default function MyTags({ standalone = false, onLoaded }: {
                 <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950" aria-hidden="true"><TagIcon size={22} /></span>
                 <p className="mt-3 text-[16px] font-semibold text-ink">Protect something you can't afford to lose</p>
                 <p className="mx-auto mt-1 max-w-[46ch] text-[14px] leading-6 text-ink-muted">Stick a Smart Tag on your laptop, bag or bottle. If someone finds it, they scan the code and you are notified right away.</p>
+                {onRegister && <button type="button" onClick={() => onRegister()} className={`${CX.btnGold} mt-4 min-h-[48px] px-6`}><Camera size={17} aria-hidden="true" />Register a tag</button>}
               </div>
             )}
 
@@ -143,20 +173,33 @@ export default function MyTags({ standalone = false, onLoaded }: {
                           : <button type="button" disabled={switching === tag.tag_id} onClick={() => void setStatus(tag, "lost")} className={`${CX.btnGhost} min-h-[40px] px-4 text-[13.5px] border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50`}>Mark as lost</button>
                       )}
                       {!tag.is_disabled && tag.status !== "expired" && <button type="button" onClick={() => { setFormError(""); setEditing(tag); }} className={`${CX.btnGhost} min-h-[40px] px-4 text-[13.5px]`}><Pencil size={14} aria-hidden="true" />Edit</button>}
+                      {!tag.is_disabled && tag.status !== "expired" && <button type="button" onClick={() => { setPhotoError(""); setNewPhoto(null); setPhotoFor(tag); }} className={`${tag.photo_url ? CX.btnGhost : CX.btnGold} min-h-[40px] px-4 text-[13.5px]`}><Camera size={14} aria-hidden="true" />{tag.photo_url ? "Retake photo" : "Add photo"}</button>}
                     </div>
                   </li>
                 ))}
               </ul>
             )}
 
-            <form onSubmit={open} className="rounded-2xl bg-frost-50 p-4" noValidate>
-              <label htmlFor="tag-code-input" className="block text-[14px] font-semibold text-ink">Got a new sticker?</label>
-              <p className="text-[13px] text-ink-muted">Scan it with your phone camera, or type the code printed on it.</p>
-              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                <input id="tag-code-input" value={code} onChange={(e) => { setCode(e.target.value); setCodeError(""); }} placeholder="ABCD EFGH JK23" autoComplete="off" autoCapitalize="characters" spellCheck={false} className={`${CX.input} flex-1 font-mono uppercase tracking-wider`} />
-                <button type="submit" disabled={!code.trim()} className={CX.btnNavy}>Register it</button>
+            <form onSubmit={open} className="rounded-2xl border border-gold-300/50 bg-[linear-gradient(135deg,rgba(209,161,83,0.14),rgba(209,161,83,0.03)_65%)] p-4 sm:p-5" noValidate>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-6">
+                <div className="flex items-start gap-3 lg:w-[36%] lg:shrink-0">
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950" aria-hidden="true"><QrCode size={20} /></span>
+                  <div className="min-w-0">
+                    <label htmlFor="tag-code-input" className="block text-[15.5px] font-semibold text-ink">Got a new sticker?</label>
+                    <p className="text-[13px] leading-5 text-ink-muted">Type the code printed on it or scan its QR code, then take a photo of your item.</p>
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="flex min-w-0 flex-1 gap-2">
+                      <input id="tag-code-input" value={code} onChange={(e) => { setCode(e.target.value); setCodeError(""); }} placeholder="ABCD EFGH JK23" autoComplete="off" autoCapitalize="characters" spellCheck={false} className={`${CX.input} min-w-0 flex-1 font-mono uppercase tracking-wider`} />
+                      <ScanCodeButton compact onCode={(scanned) => { if (onRegister) onRegister(scanned); else window.location.assign(`/tag/${scanned}`); }} />
+                    </div>
+                    <button type="submit" disabled={!code.trim()} className={`${CX.btnGold} min-h-[48px] px-7`}>Continue</button>
+                  </div>
+                  {codeError && <p role="alert" className="mt-2 text-[13px] text-rose-700">{codeError}</p>}
+                </div>
               </div>
-              {codeError && <p role="alert" className="mt-2 text-[13px] text-rose-700">{codeError}</p>}
             </form>
           </>
         )}
@@ -174,6 +217,29 @@ export default function MyTags({ standalone = false, onLoaded }: {
         description="Changes apply to the page finders see as soon as you save."
       >
         {editing && <TagDetailsForm key={editing.tag_id} mode="edit" initial={editing} submitLabel="Save changes" busy={saving} error={formError} onSubmit={(values, consent, photo) => void save(values, consent, photo)} onCancel={() => setEditing(null)} />}
+      </Modal>
+
+      <Modal
+        open={Boolean(photoFor)}
+        onClose={() => { if (!saving) { setPhotoFor(null); setNewPhoto(null); } }}
+        dismissible={!saving}
+        size="md"
+        tone="gold"
+        icon={<Camera size={20} />}
+        eyebrow={photoFor ? `Tag ${spacedCode(photoFor.tag_id)}` : undefined}
+        title={photoFor?.photo_url ? "Retake the photo" : "Add a photo"}
+        description="Take a new photo of your item with the sticker attached. Finders see it when they scan the tag."
+        footer={<>
+          <button type="button" onClick={() => { setPhotoFor(null); setNewPhoto(null); }} disabled={saving} className={CX.btnGhost}>Cancel</button>
+          <button type="button" onClick={() => void savePhoto()} disabled={saving || !newPhoto} className={CX.btnGold}>{saving ? "Saving…" : "Save photo"}</button>
+        </>}
+      >
+        {photoFor && (
+          <div className="space-y-3">
+            <LivePhotoField file={newPhoto} existingUrl={photoFor.photo_url} onChange={setNewPhoto} required />
+            {photoError && <p role="alert" className={CX.alertError}>{photoError}</p>}
+          </div>
+        )}
       </Modal>
     </section>
   );
