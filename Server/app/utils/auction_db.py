@@ -1179,16 +1179,25 @@ class AuctionService:
             self._guard(error)
         return {'old': closed[0], 'new': created[0], 'previous_winner_id': row.get('winner_account_id')}
 
-    def delete_auction(self, auction_id: str) -> Dict[str, Any]:
+    def delete_auction(self, auction_id: str, admin_id: Optional[str] = None) -> Dict[str, Any]:
+        from app.utils.recycle_bin import RecycleBin
         try:
             row = self._live_row(auction_id)
             if row.get('status') in OPEN_STATUSES:
                 raise AuctionError('Cancel the auction before deleting it.', 409)
             if row.get('fulfillment_status') == 'awaiting_pickup':
                 raise AuctionError('The winner has not collected this item yet. Mark it collected or forfeited first.', 409)
-            self.client.table('auctions').delete().eq('auction_id', auction_id).execute()
+            actor = (self.db.get_user_by_account_id(admin_id) or {}) if admin_id else {}
+            archive_id = RecycleBin(self.db).archive_entity('auction', auction_id, admin_id, actor.get('email') or 'Admin')   # the bids are kept too
+            try:
+                self.client.table('auctions').delete().eq('auction_id', auction_id).execute()
+            except Exception:
+                RecycleBin(self.db).discard(archive_id)
+                raise
         except AuctionError:
             raise
         except Exception as error:
+            if hasattr(error, 'status') and hasattr(error, 'code') and hasattr(error, 'message'):
+                raise   # a BinError: the route shows its message
             self._guard(error)
         return row

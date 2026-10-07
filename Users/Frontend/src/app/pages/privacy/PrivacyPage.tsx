@@ -2,7 +2,7 @@ import { ArrowLeft, Clock3, Eye, FileLock2, Mail, Trash2 } from "lucide-react";
 
 /**
  * The short data privacy page, public at /privacy. The retention periods match the server defaults
- * (EVIDENCE_RETENTION_DAYS, CLAIM_PICKUP_DAYS in Server/app/utils/housekeeping.py): update both together.
+ * (EVIDENCE_RETENTION_DAYS, CLAIM_PICKUP_DAYS in Server/app/utils/housekeeping.py, RECYCLE_BIN_DAYS in recycle_bin.py): update both together.
  */
 const SECTIONS: Array<{ icon: React.ReactNode; title: string; body: React.ReactNode }> = [
   {
@@ -27,7 +27,8 @@ const SECTIONS: Array<{ icon: React.ReactNode; title: string; body: React.ReactN
     title: "How long we keep it",
     body: (
       <ul className="list-disc space-y-1.5 pl-5">
-        <li><strong>ID documents and proof photos</strong> are deleted <strong>30 days</strong> after a claim is closed (collected or rejected), and 30 days after an account verification is reviewed.</li>
+        <li><strong>ID documents and proof photos</strong> leave the claim <strong>30 days</strong> after it is closed (collected or rejected), and 30 days after an account verification is reviewed. They then wait in an administrators-only recycle bin for <strong>30 more days</strong>, so a mistake can be undone, and are deleted for good after that.</li>
+        <li>When an administrator deletes an account, report or claim, it also waits in the recycle bin for 30 days before it is gone for good.</li>
         <li>An approved claim that is not collected closes automatically after <strong>14 days</strong>.</li>
         <li>The record of the report or claim itself is kept so the office can show what happened. Verification codes are short-lived and are cleared regularly.</li>
       </ul>

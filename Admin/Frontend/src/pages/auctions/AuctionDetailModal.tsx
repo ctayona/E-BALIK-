@@ -328,7 +328,7 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
           title={{ end: "end this auction now?", delete: "delete this auction and its bids?", collected: "mark this item as collected?", forfeited: "forfeit this sale?" }[pending]}
           description={{
             end: "The highest bid wins immediately and the winner is notified.",
-            delete: "This permanently deletes the auction, its bids and its comments.",
+            delete: "This moves the auction, its bids and its comments to the Recycle bin. A super admin can restore them.",
             collected: "Confirm the winner paid and took the item from the Lost and Found Office.",
             forfeited: "The winner did not collect. The item returns to unclaimed custody so it can be claimed or auctioned again.",
           }[pending]}

@@ -1259,6 +1259,16 @@ class SupabaseDB:
             return None
         return value.lstrip('/') if allow_raw_path else None
 
+    def _archive_before_delete(self, entity_type: str, reference: str, admin_account_id: str) -> str:
+        """Copy what is about to be deleted into the recycle bin. Raises BinError (and the caller deletes nothing) if that fails."""
+        from app.utils.recycle_bin import RecycleBin
+        actor = self.get_user_by_account_id(admin_account_id) or {}
+        return RecycleBin(self).archive_entity(entity_type, reference, admin_account_id, actor.get('email') or 'Admin')
+
+    def _undo_archive(self, archive_id: str) -> None:
+        from app.utils.recycle_bin import RecycleBin
+        RecycleBin(self).discard(archive_id)
+
     def delete_admin_user(self, target_account_id: str, admin_account_id: str, totp_step: int) -> Dict[str, Any]:
         """Delete an account through a superadmin/TOTP-guarded RPC, then clean its Storage objects."""
         profile = self.get_user_by_account_id(target_account_id)
@@ -1318,16 +1328,23 @@ class SupabaseDB:
                 self._account_storage_path('claim-id-documents', claim.get('identity_document_path'), allow_raw_path=True),
             )
 
-        response = self.client.rpc('admin_delete_user', {
-            'p_target_account_id': target_account_id,
-            'p_admin_id': admin_account_id,
-            'p_totp_step': int(totp_step),
-        }).execute()
+        archive_id = self._archive_before_delete('user', target_account_id, admin_account_id)
+        try:
+            response = self.client.rpc('admin_delete_user', {
+                'p_target_account_id': target_account_id,
+                'p_admin_id': admin_account_id,
+                'p_totp_step': int(totp_step),
+            }).execute()
+        except Exception:
+            self._undo_archive(archive_id)
+            raise
         deleted_user = response.data
         if isinstance(deleted_user, list):
             deleted_user = deleted_user[0] if deleted_user else None
         if not deleted_user:
+            self._undo_archive(archive_id)
             raise RuntimeError('User not found or was not deleted')
+        deleted_user['archive_id'] = archive_id
 
         cleanup_failures = []
         for bucket, paths in storage_objects.items():
@@ -1370,14 +1387,25 @@ class SupabaseDB:
         return response.data[0] if response.data else {}
 
     def delete_admin_missing_item(self, reference: str, admin_account_id: str) -> bool:
-        response = self.client.rpc('admin_delete_missing_item', {
-            'p_item_reference': reference,
-            'p_admin_id': admin_account_id,
-        }).execute()
+        try:
+            archive_id = self._archive_before_delete('missing_item', reference, admin_account_id)
+        except Exception as error:
+            if getattr(error, 'status', None) == 404:
+                return False   # nothing to delete: the route answers "not found"
+            raise
+        try:
+            response = self.client.rpc('admin_delete_missing_item', {
+                'p_item_reference': reference,
+                'p_admin_id': admin_account_id,
+            }).execute()
+        except Exception:
+            self._undo_archive(archive_id)
+            raise
         item = response.data
         if isinstance(item, list):
             item = item[0] if item else None
         if not item:
+            self._undo_archive(archive_id)
             return False
         self._remove_public_item_image('missing-item-images', item.get('image_url'))
         return True
@@ -1409,14 +1437,25 @@ class SupabaseDB:
         return response.data[0] if response.data else {}
 
     def delete_admin_found_item(self, reference: str, admin_account_id: str) -> bool:
-        response = self.client.rpc('admin_delete_found_item', {
-            'p_item_reference': reference,
-            'p_admin_id': admin_account_id,
-        }).execute()
+        try:
+            archive_id = self._archive_before_delete('found_item', reference, admin_account_id)
+        except Exception as error:
+            if getattr(error, 'status', None) == 404:
+                return False
+            raise
+        try:
+            response = self.client.rpc('admin_delete_found_item', {
+                'p_item_reference': reference,
+                'p_admin_id': admin_account_id,
+            }).execute()
+        except Exception:
+            self._undo_archive(archive_id)
+            raise
         item = response.data
         if isinstance(item, list):
             item = item[0] if item else None
         if not item:
+            self._undo_archive(archive_id)
             return False
         self._remove_public_item_image('found-item-images', item.get('image_url'))
         return True
@@ -1666,15 +1705,21 @@ class SupabaseDB:
         return mapped
 
     def delete_admin_claim(self, claim_id: str, admin_account_id: str) -> Dict[str, Any]:
-        """Delete a claim through the Superadmin-validated database RPC and remove stored files."""
-        response = self.client.rpc('admin_delete_claim', {
-            'p_claim_id': claim_id,
-            'p_admin_id': admin_account_id,
-        }).execute()
+        """Archive a claim in the recycle bin, delete it through the Superadmin-validated database RPC, then remove the stored originals."""
+        archive_id = self._archive_before_delete('claim', claim_id, admin_account_id)
+        try:
+            response = self.client.rpc('admin_delete_claim', {
+                'p_claim_id': claim_id,
+                'p_admin_id': admin_account_id,
+            }).execute()
+        except Exception:
+            self._undo_archive(archive_id)
+            raise
         deleted_claim = response.data
         if isinstance(deleted_claim, list):
             deleted_claim = deleted_claim[0] if deleted_claim else None
         if not deleted_claim:
+            self._undo_archive(archive_id)
             raise RuntimeError(f"No claim row was deleted for claim_id={claim_id}")
 
         claim = self._decrypt_claim_sensitive_fields(deleted_claim) or deleted_claim

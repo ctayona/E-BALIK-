@@ -6,6 +6,7 @@ from flask import Blueprint, current_app, jsonify, request
 from app.utils import PasswordService, get_db
 from app.utils.admin_mfa import matched_totp_step
 from app.utils.crypto_service import CryptoService
+from app.utils.recycle_bin import BinError, retention_days
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
 
 users_bp = Blueprint('admin_users', __name__)
@@ -154,8 +155,8 @@ def delete_user_account(account_id):
         _log_admin_action(db, actor, 'Delete User Account', 'Users', 'Deleted account', None)
         storage_clean = bool(deleted.get('storage_cleanup_complete', False))
         message = (
-            'Account and associated data were deleted.' if storage_clean
-            else 'Account data was deleted, but some stored files need administrator cleanup.'
+            'Account moved to the Recycle bin. A super admin can restore it, with its reports and claims, for the next %d days.' % retention_days() if storage_clean
+            else 'Account moved to the Recycle bin, but some original files need administrator cleanup.'
         )
         return jsonify({
             'success': True,
@@ -166,6 +167,8 @@ def delete_user_account(account_id):
             'storage_cleanup_complete': storage_clean,
             'storage_cleanup_failures': deleted.get('storage_cleanup_failures', []),
         }), 200
+    except BinError as error:
+        return jsonify({'error': error.message, 'code': error.code}), error.status
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except PermissionError as error:

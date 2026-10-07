@@ -119,6 +119,17 @@ SELECT proname FROM pg_proc WHERE proname = 'auction_finalize';
 Note: once the gate is live, every existing account that is not verified can no
 longer report items, file claims or bid until an admin verifies it.
 
+### Recycle bin
+
+Run `manual_migrations/20261014_recycle_bin.sql` after `20261013`. It is additive and safe to re-run. It creates the table `recycle_bin` (RLS on,
+backend only) and the private storage bucket `recycle-bin`. **Until it runs, admin deletes of claims, found items, lost reports, accounts and
+auctions are refused with a clear message (nothing is deleted), and the file-retention rule waits.** Verify with:
+
+```sql
+SELECT to_regclass('public.recycle_bin');
+SELECT id, public FROM storage.buckets WHERE id = 'recycle-bin';   -- public must be false
+```
+
 ### Guard role, email preferences, reminders and evidence retention
 
 Run `manual_migrations/20261013_guard_role_reminders_and_retention.sql` after `20261012`. It is additive and safe to re-run. It allows

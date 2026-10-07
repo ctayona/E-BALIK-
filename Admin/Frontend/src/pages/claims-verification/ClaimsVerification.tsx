@@ -791,7 +791,7 @@ export default function ClaimsVerification() {
       {deleteTarget && isSuperAdmin && (
         <AdminModal
           title={tr("Delete claim {0}?", { "0": deleteTarget.claimReference || deleteTarget.id })}
-          description={tr("This permanently removes the claim and its uploaded proof and ID files. A deletion entry stays in the change history.")}
+          description={tr("This moves the claim and its uploaded proof and ID files to the Recycle bin, where a super admin can restore them. A deletion entry stays in the change history.")}
           icon={<Trash2 size={19} />}
           tone="danger"
           size="sm"

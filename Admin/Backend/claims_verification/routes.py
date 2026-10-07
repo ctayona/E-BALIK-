@@ -5,6 +5,7 @@ from app.utils.claim_status import normalize_claim_status
 from app.utils import housekeeping, rate_limit
 from app.utils.email_service import EmailService
 from app.utils.handover import HandoverError, HandoverService
+from app.utils.recycle_bin import BinError, retention_days
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
 
 claims_verification_bp = Blueprint('admin_claims_verification', __name__)
@@ -59,8 +60,10 @@ def delete_claim(claim_id):
         return jsonify({
             'success': True,
             'claim_reference': deleted.get('claim_reference'),
-            'message': 'Claim deleted and recorded in claim history.',
+            'message': 'Claim moved to the Recycle bin and recorded in claim history. A super admin can restore it for the next %d days.' % retention_days(),
         }), 200
+    except BinError as error:
+        return jsonify({'error': error.message, 'code': error.code}), error.status
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except PermissionError as error:

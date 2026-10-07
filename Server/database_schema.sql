@@ -552,3 +552,35 @@ BEGIN
             WHERE status IN ('active', 'lost') AND expiry_reminder_sent_at IS NULL;
     END IF;
 END $$;
+
+-- ============================================================================
+-- Recycle bin
+-- Mirrors manual_migrations/20261014_recycle_bin.sql (run that file on an existing database).
+-- One row per deleted record: a JSON snapshot of it and what was deleted with it, plus the files copied into the private `recycle-bin`
+-- bucket. Restoring puts them back; purging (by hand with an authenticator code, or automatically at expires_at) empties it.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.recycle_bin (
+    archive_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    entity_type VARCHAR(20) NOT NULL CHECK (entity_type IN ('claim', 'found_item', 'missing_item', 'user', 'auction', 'evidence')),
+    entity_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    reason VARCHAR(20) NOT NULL DEFAULT 'admin_delete' CHECK (reason IN ('admin_delete', 'retention')),
+    snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+    files JSONB NOT NULL DEFAULT '[]'::jsonb,
+    deleted_by UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL,
+    deleted_by_label TEXT,
+    deleted_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    status VARCHAR(10) NOT NULL DEFAULT 'archived' CHECK (status IN ('archived', 'restored', 'purged')),
+    finished_at TIMESTAMP WITH TIME ZONE,
+    finished_by UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recycle_bin_archived ON public.recycle_bin (deleted_at DESC) WHERE status = 'archived';
+CREATE INDEX IF NOT EXISTS idx_recycle_bin_expiry ON public.recycle_bin (expires_at) WHERE status = 'archived';
+CREATE INDEX IF NOT EXISTS idx_recycle_bin_entity ON public.recycle_bin (entity_type, entity_id);
+ALTER TABLE public.recycle_bin ENABLE ROW LEVEL SECURITY;
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit)
+VALUES ('recycle-bin', 'recycle-bin', false, 26214400)
+ON CONFLICT (id) DO NOTHING;

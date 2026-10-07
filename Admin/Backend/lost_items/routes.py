@@ -1,6 +1,7 @@
 """Lost Items page: list, create, edit and delete missing reports."""
 from datetime import datetime
 from flask import Blueprint, current_app, jsonify, request
+from app.utils.recycle_bin import BinError, retention_days
 from app.utils import get_db
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
 
@@ -58,6 +59,8 @@ def create_lost_item():
         })
         _log_admin_action(db, admin, 'Create Lost Item', 'Lost Items', item_name, reference)
         return jsonify({'success': True, 'reference': reference, 'item': created}), 201
+    except BinError as error:
+        return jsonify({'error': error.message, 'code': error.code}), error.status
     except ValueError as error:
         return jsonify({'error': str(error)}), 400
     except PermissionError as error:
@@ -76,7 +79,7 @@ def manage_lost_item(item_reference):
             if not db.delete_admin_missing_item(item_reference, admin['account_id']):
                 return jsonify({'error': 'Lost item not found'}), 404
             _log_admin_action(db, admin, 'Delete Lost Item', 'Lost Items', item_reference, item_reference)
-            return jsonify({'success': True, 'reference': item_reference}), 200
+            return jsonify({'success': True, 'reference': item_reference, 'message': 'Moved to the Recycle bin. A super admin can restore it for the next %d days.' % retention_days()}), 200
 
         payload = request.get_json(silent=True) or {}
         updated = db.update_admin_missing_item(item_reference, payload)

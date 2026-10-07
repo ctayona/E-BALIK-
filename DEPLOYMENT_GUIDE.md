@@ -79,9 +79,10 @@ Server/manual_migrations/20261010_tag_photo_and_mission_control.sql
 Server/manual_migrations/20261011_tag_staff_verification.sql
 Server/manual_migrations/20261012_handover_pins_and_auction_timeouts.sql
 Server/manual_migrations/20261013_guard_role_reminders_and_retention.sql
+Server/manual_migrations/20261014_recycle_bin.sql
 ```
 
-The last nine are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo, the Mission Control storage tools staff approval of Smart Tags, Handover PINs, the automatic auction pickup deadlines, the guard role, email preferences, claim and Smart Tag reminders and evidence retention. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, `20261010`, `20261011`, `20261012`, then `20261013`). The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
+The last ten are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo, the Mission Control storage tools staff approval of Smart Tags, Handover PINs, the automatic auction pickup deadlines, the guard role, email preferences, claim and Smart Tag reminders, evidence retention and the recycle bin. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, `20261010`, `20261011`, `20261012`, `20261013`, then `20261014`). **Until `20261014` is run, no admin delete works** (the app refuses to delete anything it cannot archive first) and the file-retention rule waits. The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
 
 ```sql
 SELECT to_regclass('public.auctions') AS auctions,
@@ -155,6 +156,7 @@ On a paid plan you can instead add a Render Cron Job running `python Server/scri
 | `CLAIM_REMINDER_DAYS` | 7 | Days after approval when the pickup reminder is sent. |
 | `TAG_EXPIRY_REMINDER_DAYS` | 30 | How many days before a Smart Tag expires its owner is reminded. |
 | `EVIDENCE_RETENTION_DAYS` | 30 | ID documents and proof photos are deleted this many days after a claim closes or a verification is reviewed. **`0` switches deletion off.** Update the numbers on the data privacy page (`PrivacyPage.tsx`) if you change it. |
+| `RECYCLE_BIN_DAYS` | 30 | How long a deleted record, and any ID document removed by the retention rule, waits in the recycle bin before it is deleted for good. The privacy page says 30: update it if you change this. |
 | `PUBLIC_API_URL` | Render's own address | The address used in unsubscribe links. Render provides `RENDER_EXTERNAL_URL` itself, so you normally set nothing. |
 
 Existing 30-day sign-ins stop working as soon as this is deployed (the server refuses any token older than the limits above), so everyone signs in once more.

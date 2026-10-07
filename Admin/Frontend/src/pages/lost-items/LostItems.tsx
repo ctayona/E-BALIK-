@@ -308,7 +308,7 @@ export default function LostItems() {
       {pendingAction && (
         <ConfirmActionDialog
           title={pendingAction.type === "delete" ? tr("delete lost report {0}?", { "0": pendingAction.reference }) : pendingAction.reference ? tr("save these lost-report changes?") : tr("add this lost report?")}
-          description={pendingAction.type === "delete" ? tr("This permanently deletes {0}, its photo, and its AI match suggestions.", { "0": pendingAction.reference }) : tr("The change is saved to the shared item registry.")}
+          description={pendingAction.type === "delete" ? tr("This moves {0}, its photo, and its AI match suggestions to the Recycle bin, where a super admin can restore them.", { "0": pendingAction.reference }) : tr("The change is saved to the shared item registry.")}
           confirmLabel={pendingAction.type === "delete" ? tr("Delete report") : pendingAction.reference ? tr("Save changes") : tr("Add report")}
           danger={pendingAction.type === "delete"}
           busy={actionBusy}

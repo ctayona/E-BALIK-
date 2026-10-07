@@ -3,9 +3,9 @@ import umakLogo from "../imports/UMak Logo.png";
 import { AdminUser } from "../utils/api";
 import { useT, tr } from "../utils/preferences";
 import type { StringKey } from "../i18n/strings";
-import { Gavel, QrCode, SlidersHorizontal } from "lucide-react";
+import { ArchiveRestore, Gavel, QrCode, SlidersHorizontal } from "lucide-react";
 
-type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "admin-profile";
+type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "admin-profile";
 
 interface SidebarProps {
   currentPage: Page;
@@ -53,6 +53,7 @@ const navItems = [
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
   ), notifBadge: true },
   { id: "system-control" as Page, group: "System", label: "nav.systemControl" as StringKey, superOnly: true, icon: <SlidersHorizontal size={18} aria-hidden="true" /> },
+  { id: "recycle-bin" as Page, group: "System", label: "nav.recycleBin" as StringKey, superOnly: true, icon: <ArchiveRestore size={18} aria-hidden="true" /> },
   { id: "activity-logs" as Page, group: "System", label: "nav.activityLogs" as StringKey, icon: (
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" stroke="currentColor" strokeWidth="2"/><path d="M9 7h6M9 11h6M9 15h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
   )},

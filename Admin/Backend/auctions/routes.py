@@ -1,6 +1,7 @@
 """Auctions page: list eligible items, create and manage auctions, moderate comments, track pickup."""
 from functools import wraps
 from flask import Blueprint, current_app, jsonify, request
+from app.utils.recycle_bin import BinError, retention_days
 from app.utils import get_db
 from app.utils.auction_db import MAX_GALLERY_IMAGES, AuctionError, AuctionService, AuctionsUnavailable
 from Admin.Backend.found_items.routes import _store_admin_item_photo
@@ -25,6 +26,8 @@ def _handled(label):
                 return jsonify({'error': error.message, **error.extra}), error.status
             except AuctionsUnavailable as error:
                 return jsonify({'error': str(error), 'setup_required': True}), 503
+            except BinError as error:
+                return jsonify({'error': error.message, 'code': error.code}), error.status
             except ValueError as error:
                 return jsonify({'error': str(error)}), 401
             except PermissionError as error:
@@ -256,6 +259,6 @@ def moderate_comment(auction_id, comment_id):
 def delete_auction(auction_id):
     admin = _require_admin(required_level='super_admin')
     db, service = _service()
-    row = service.delete_auction(auction_id)
+    row = service.delete_auction(auction_id, admin['account_id'])
     _log_admin_action(db, admin, 'Delete Auction', 'Auctions', row.get('title'), row.get('item_reference') or auction_id)
-    return jsonify({'success': True, 'message': 'The auction and its bids were deleted.'}), 200
+    return jsonify({'success': True, 'message': 'The auction and its bids were moved to the Recycle bin. A super admin can restore them for the next %d days.' % retention_days()}), 200

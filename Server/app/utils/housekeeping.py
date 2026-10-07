@@ -4,8 +4,10 @@
    pickup deadline (default 14 days). A closed claim is stored as `rejected` with a clear reason, its Handover PIN stops working,
    and the item stays in custody so the owner can claim again or it can be auctioned.
 2. Smart Tag expiry reminders: one email and one in-app notice, 30 days before a tag expires.
-3. Evidence retention: ID documents and proof photos are deleted from private storage N days after a claim closes (collected or
-   rejected) and N days after an account verification is reviewed. The records stay; only the files and their paths go.
+3. Evidence retention: ID documents and proof photos leave the claim N days after it closes (collected or rejected) and N days after an
+   account verification is reviewed. They are not deleted straight away: they are copied into the recycle bin (see recycle_bin.py), where a
+   super admin can restore them, and are purged for good when the bin period ends. Nothing is removed from the claim until the copy exists.
+4. Recycle bin expiry: entries older than RECYCLE_BIN_DAYS (default 30) are purged: their files and snapshot are removed.
 
 Every step claims its row with a conditional update before it sends anything, so overlapping runs never send twice, and every step
 degrades quietly (logs, changes nothing) on a database that has not run migration 20261013 yet.
@@ -17,6 +19,7 @@ from typing import Any, Dict, List, Optional
 
 from app.utils import email_prefs
 from app.utils.crypto_service import CryptoService
+from app.utils.recycle_bin import RecycleBin
 
 logger = logging.getLogger(__name__)
 
@@ -265,12 +268,13 @@ def _plain(value: Any) -> Optional[str]:
 
 
 def _retention_ready(db) -> bool:
-    """True once the `evidence_purged_at` column exists (migration 20261013)."""
+    """True once `evidence_purged_at` (migration 20261013) and the recycle bin (migration 20261014) exist."""
     try:
         db.client.table('claims').select('claim_id,evidence_purged_at').limit(1).execute()
+        db.client.table('recycle_bin').select('archive_id').limit(1).execute()
         return True
     except Exception as error:
-        logger.warning('File retention is waiting for migration 20261013: %s', error)
+        logger.warning('File retention is waiting for migrations 20261013 and 20261014: %s', error)
         return False
 
 
@@ -295,7 +299,7 @@ def _purge_claims(db, cutoff: datetime):
     purged = errors = 0
     try:
         rows = db.client.table('claims').select(
-            'claim_id,status,proof_image_path,proof_image_url,identity_document_path,collected_at,reviewed_at,updated_at,evidence_purged_at'
+            'claim_id,claim_reference,status,proof_image_path,proof_image_url,identity_document_path,identity_document_name,collected_at,reviewed_at,updated_at,evidence_purged_at'
         ).in_('status', list(CLOSED_CLAIM_STATUSES)).is_('evidence_purged_at', 'null').lte('updated_at', _iso(cutoff)).limit(50).execute().data or []
     except Exception as error:
         logger.warning('Claim evidence purge skipped: %s', error)
@@ -304,8 +308,14 @@ def _purge_claims(db, cutoff: datetime):
         closed = _parse(row.get('collected_at')) or _parse(row.get('reviewed_at')) or _parse(row.get('updated_at'))
         if not closed or closed > cutoff:
             continue
+        archive_id = None
         try:
             proof = row.get('proof_image_path') or db._legacy_claim_storage_path(_plain(row.get('proof_image_url')), 'claim-proof-images')
+            files = [('claim-proof-images', proof), ('claim-id-documents', row.get('identity_document_path'))]
+            if any(path for _, path in files):
+                # Keep a copy in the recycle bin first; if that fails nothing below runs and the claim keeps its files for the next try.
+                keep = {key: row.get(key) for key in ('claim_id', 'proof_image_path', 'proof_image_url', 'identity_document_path', 'identity_document_name')}
+                archive_id = RecycleBin(db).archive_evidence('claims', keep, files, f"ID document and proof photo of claim {row.get('claim_reference') or row['claim_id']}")
             _remove(db, 'claim-proof-images', proof)
             _remove(db, 'claim-id-documents', row.get('identity_document_path'))
             db.client.table('claims').update({
@@ -314,6 +324,8 @@ def _purge_claims(db, cutoff: datetime):
             }).eq('claim_id', row['claim_id']).execute()
             purged += 1
         except Exception as error:
+            if archive_id:
+                RecycleBin(db).discard(archive_id)   # the move did not finish, so do not leave a second copy in the bin
             errors += 1
             logger.warning('Evidence purge failed for claim %s: %s', row.get('claim_id'), error)
     return purged, errors
@@ -322,32 +334,43 @@ def _purge_claims(db, cutoff: datetime):
 def _purge_verifications(db, cutoff: datetime):
     purged = errors = 0
     try:
-        rows = db.client.table('user_profiles').select('account_id,verification_status,verification_reviewed_at,verification_document_url,verification_document_bucket') \
+        rows = db.client.table('user_profiles').select('account_id,fname,lname,email,verification_status,verification_reviewed_at,verification_document_url,verification_document_name,verification_document_bucket') \
             .in_('verification_status', ['verified', 'rejected']).not_.is_('verification_document_url', 'null') \
             .lte('verification_reviewed_at', _iso(cutoff)).limit(50).execute().data or []
     except Exception as error:
         logger.warning('Verification document purge skipped: %s', error)
         return 0, 1
     for row in rows:
+        archive_id = None
         try:
             path, bucket = _plain(row.get('verification_document_url')), row.get('verification_document_bucket')
             if path and bucket:
+                keep = {key: row.get(key) for key in ('account_id', 'verification_document_url', 'verification_document_name', 'verification_document_bucket')}
+                who = f"{row.get('fname') or ''} {row.get('lname') or ''}".strip() or row.get('email') or str(row['account_id'])
+                archive_id = RecycleBin(db).archive_evidence('user_profiles', keep, [(str(bucket), path)], f"Verification document of {who}")
                 _remove(db, str(bucket), path)
             db.client.table('user_profiles').update({
                 'verification_document_url': None, 'verification_document_name': None, 'verification_document_bucket': None,
             }).eq('account_id', row['account_id']).execute()
             purged += 1
         except Exception as error:
+            if archive_id:
+                RecycleBin(db).discard(archive_id)
             errors += 1
             logger.warning('Verification document purge failed for %s: %s', row.get('account_id'), error)
     return purged, errors
+
+
+# ------------------------------------------------------------------------------------------------ 4. recycle bin expiry
+def process_recycle_bin(db, now: Optional[datetime] = None) -> Dict[str, int]:
+    return RecycleBin(db).purge_expired(now)
 
 
 # ------------------------------------------------------------------------------------------------ all together
 def run_housekeeping(db, now: Optional[datetime] = None) -> Dict[str, Any]:
     """Every step, each isolated so one failure cannot stop the others."""
     result: Dict[str, Any] = {}
-    for name, step in (('claim_pickups', process_claim_pickups), ('tag_reminders', process_tag_expiry_reminders), ('evidence', purge_old_evidence)):
+    for name, step in (('claim_pickups', process_claim_pickups), ('tag_reminders', process_tag_expiry_reminders), ('evidence', purge_old_evidence), ('recycle_bin', process_recycle_bin)):
         try:
             result[name] = step(db, now)
         except Exception as error:

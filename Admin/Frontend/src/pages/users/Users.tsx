@@ -174,7 +174,7 @@ export default function Users() {
     type: "delete",
     userId: user.id,
     title: tr("delete {0}'s account?", { "0": user.name }),
-    description: tr("This permanently deletes the account and removes owned reports, claims, notifications, verification data and files. This can't be undone."),
+    description: tr("This moves the account, its reports, claims, verification data and files to the Recycle bin, and the person can no longer sign in. A super admin can restore it from there."),
     confirmText: "Delete account",
   });
 

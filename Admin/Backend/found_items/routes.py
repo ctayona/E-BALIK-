@@ -5,6 +5,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, request
+from app.utils.recycle_bin import BinError, retention_days
 from app.utils import get_db
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
 
@@ -90,6 +91,8 @@ def create_found_item():
         })
         _log_admin_action(db, admin, 'Create Found Item', 'Found Items', item_name, reference)
         return jsonify({'success': True, 'reference': reference, 'item': created}), 201
+    except BinError as error:
+        return jsonify({'error': error.message, 'code': error.code}), error.status
     except ValueError as error:
         return jsonify({'error': str(error)}), 400
     except PermissionError as error:
@@ -108,7 +111,7 @@ def manage_found_item(item_reference):
             if not db.delete_admin_found_item(item_reference, admin['account_id']):
                 return jsonify({'error': 'Found item not found'}), 404
             _log_admin_action(db, admin, 'Delete Found Item', 'Found Items', item_reference, item_reference)
-            return jsonify({'success': True, 'reference': item_reference}), 200
+            return jsonify({'success': True, 'reference': item_reference, 'message': 'Moved to the Recycle bin. A super admin can restore it for the next %d days.' % retention_days()}), 200
 
         payload = request.get_json(silent=True) or {}
         if str(payload.get('status') or '').strip().lower() == 'returned':

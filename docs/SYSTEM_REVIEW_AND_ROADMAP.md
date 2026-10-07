@@ -84,6 +84,11 @@ Smart Tag expiry reminder emails; analytics date range, CSV and printable export
 auction "ready to list" count on the dashboard; overnight sessions now end (users 60 min idle / 12 h, staff 20 min idle / 8 h). Details in `PROJECT_CONTEXT.md`.
 Still open from the list: the end-to-end test on the real stack, email deliverability, CI, error monitoring, scaling the in-memory rate limits.
 
+## Recycle bin (2026-10-07)
+
+Admin deletes (claim, found item, lost report, account, auction) and the file-retention rule now go through a recycle bin first: restore with a confirm,
+delete permanently with an authenticator code, automatic purge after 30 days. See `PROJECT_CONTEXT.md`, "Recycle bin". Requires migration `20261014`.
+
 ## Working with the live database (Supabase connector)
 
 Connected 2026-10-07 as a read-only connector pointed at the live project (`read_only=true`, one project). Verified: it lists tables and

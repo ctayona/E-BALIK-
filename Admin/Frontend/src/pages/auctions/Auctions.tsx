@@ -244,7 +244,7 @@ export default function Auctions() {
       {deleteTarget && (
         <ConfirmActionDialog
           title={tr("delete auction {0}?", { "0": deleteTarget.reference || deleteTarget.title })}
-          description="This permanently deletes the auction, its bids and its comments."
+          description="This moves the auction, its bids and its comments to the Recycle bin. A super admin can restore them."
           confirmLabel="Delete auction"
           danger
           busy={busy}

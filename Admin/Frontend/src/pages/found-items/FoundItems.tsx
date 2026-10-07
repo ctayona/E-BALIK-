@@ -357,7 +357,7 @@ export default function FoundItems() {
       {pendingAction && (
         <ConfirmActionDialog
           title={pendingAction.type === "delete" ? tr("delete found item {0}?", { "0": pendingAction.reference }) : pendingAction.reference ? tr("save these found-item changes?") : tr("register this found item?")}
-          description={pendingAction.type === "delete" ? tr("This permanently deletes {0}, its photo, and its linked claim records.", { "0": pendingAction.reference }) : tr("The change is saved to the shared item registry.")}
+          description={pendingAction.type === "delete" ? tr("This moves {0}, its photo, and its linked claim records to the Recycle bin, where a super admin can restore them.", { "0": pendingAction.reference }) : tr("The change is saved to the shared item registry.")}
           confirmLabel={pendingAction.type === "delete" ? tr("Delete item") : pendingAction.reference ? tr("Save changes") : tr("Register item")}
           danger={pendingAction.type === "delete"}
           busy={actionBusy}
