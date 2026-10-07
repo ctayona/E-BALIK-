@@ -119,6 +119,20 @@ SELECT proname FROM pg_proc WHERE proname = 'auction_finalize';
 Note: once the gate is live, every existing account that is not verified can no
 longer report items, file claims or bid until an admin verifies it.
 
+### Archive and exact bid steps
+
+Run `manual_migrations/20261016_archive_and_bid_steps.sql` after `20261015`. It is additive and safe to re-run. It adds `archived_at` and
+`archived_by` to `missing_items`, `found_items`, `claims` and `auctions` (the **Archive** action on the admin pages) and replaces the database
+function `auction_place_bid` so a bid between two steps is refused (starting bid 100 with an increment of 100 allows 100, 200, 300, never 150;
+the Buy Now price is always allowed). **The app works without it**: the Archive buttons answer "run the latest database update" and change
+nothing, the Archived tabs are empty, and the server already refuses off-step bids before they reach the database. Verify with:
+
+```sql
+SELECT table_name FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'archived_at'
+  AND table_name IN ('missing_items', 'found_items', 'claims', 'auctions');                                       -- 4 rows
+SELECT pg_get_functiondef('public.auction_place_bid(uuid,uuid,numeric)'::regprocedure) LIKE '%bid_not_on_step%';   -- true
+```
+
 ### Report lifecycle and guard handover
 
 Run `manual_migrations/20261015_report_lifecycle_and_guard_handover.sql` after `20261014`. It is additive and safe to re-run. It adds

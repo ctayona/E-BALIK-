@@ -49,7 +49,12 @@ BID_ERRORS = {
     'invalid_amount': ('Enter a valid bid amount.', 400),
     'bid_too_high': ('That bid is above the allowed maximum.', 400),
     'bid_too_low': ('Your bid is below the minimum.', 409),
+    'bid_not_on_step': ('Bids go up in exact steps.', 409),
 }
+# After an auction is sold (or while it waits for the administrator) only the description of the lot can still change.
+SOLD_EDITABLE_FIELDS = frozenset({'title', 'description', 'gallery'})
+# Stages (admin view): where an auction is in its life. Finished stages can be archived.
+FINISHED_STAGES = frozenset({'completed', 'forfeited', 'no_bids', 'cancelled'})
 
 
 class AuctionError(Exception):
@@ -117,6 +122,31 @@ def parse_buyout(value: Any, starting: Decimal) -> Optional[Decimal]:
     if amount <= starting:
         raise AuctionError('The Buy Now price must be higher than the starting bid.')
     return amount
+
+
+def ladder_ceiling(value: Any, starting: Any, increment: Any) -> Decimal:
+    """The lowest valid bid that is at least `value`. Valid bids sit on the ladder: the starting bid plus whole increments."""
+    start, step, target = Decimal(str(starting)), Decimal(str(increment)), Decimal(str(value))
+    if step <= 0 or target <= start:
+        return start if target <= start else target
+    steps = ((target - start) / step).to_integral_value(rounding='ROUND_CEILING')
+    return (start + steps * step).quantize(Decimal('0.01'))
+
+
+def bid_step_problem(amount: Decimal, starting: Any, increment: Any, buyout: Any = None) -> Optional[Dict[str, Any]]:
+    """None when the amount is on the bidding ladder (or is the Buy Now price); otherwise what the bidder should try instead.
+
+    Example: starting bid 100, increment 100: 100, 200, 300 are valid; 150 is not and should be 200.
+    """
+    step = Decimal(str(increment))
+    if step <= 0:
+        return None
+    if buyout is not None and amount >= Decimal(str(buyout)):
+        return None
+    start = Decimal(str(starting))
+    if amount >= start and (amount - start) % step == 0:
+        return None
+    return {'step': float(step), 'suggested': float(ladder_ceiling(max(amount, start), start, step))}
 
 
 def parse_int(value: Any, field: str, minimum: int, maximum: int) -> int:
@@ -219,7 +249,7 @@ class AuctionService:
             'starting_price': starting,
             'bid_increment': increment,
             'current_price': current,
-            'min_next_bid': starting if bid_count == 0 else round(current + increment, 2),
+            'min_next_bid': starting if bid_count == 0 else float(ladder_ceiling(round(current + increment, 2), starting, increment)),
             'bid_count': bid_count,
             'starts_at': row.get('starts_at'),
             'ends_at': row.get('ends_at'),
@@ -660,12 +690,31 @@ class AuctionService:
                 403, code='bidding_banned', banned_until=_iso(until),
             )
 
+    @staticmethod
+    def _step_message(step: float, suggested: float) -> str:
+        return f"Bids go up in exact steps of {format_peso(step)} from the starting bid. The next bid you can place is {format_peso(suggested)} (or any higher step)."
+
+    def _assert_on_step(self, auction_id: str, value: float) -> None:
+        """Refuse a bid between two steps (starting bid 100 and increment 100 means 100, 200, 300, not 150). The database function
+        enforces the same rule; this check also protects a database that has not run migration 20261016 yet."""
+        try:
+            rows = self.client.table('auctions').select('status,starting_price,bid_increment,buyout_price').eq('auction_id', auction_id).limit(1).execute().data or []
+        except Exception:
+            return
+        if not rows or rows[0].get('status') not in LIVE_STATUSES:
+            return   # the database function reports a missing or closed auction
+        row = rows[0]
+        problem = bid_step_problem(Decimal(str(value)).quantize(Decimal('0.01')), row.get('starting_price'), row.get('bid_increment'), row.get('buyout_price'))
+        if problem:
+            raise AuctionError(self._step_message(problem['step'], problem['suggested']), 409, **problem)
+
     def place_bid(self, auction_id: str, account_id: str, amount: Any) -> Dict[str, Any]:
         try:
             value = float(Decimal(str(amount).replace(',', '').strip()))
         except (InvalidOperation, ValueError):
             raise AuctionError('Enter a valid bid amount.')
         self._assert_can_bid(account_id)
+        self._assert_on_step(auction_id, value)
         try:
             response = self.client.rpc('auction_place_bid', {'p_auction_id': auction_id, 'p_bidder_id': account_id, 'p_amount': value}).execute()
         except Exception as error:
@@ -679,6 +728,9 @@ class AuctionService:
             if result.get('error') == 'bid_too_low' and result.get('min_bid') is not None:
                 extra['min_bid'] = _num(result['min_bid'])
                 message = f"Your bid must be at least {format_peso(result['min_bid'])}."
+            if result.get('error') == 'bid_not_on_step':
+                extra.update(step=_num(result.get('step')), suggested=_num(result.get('suggested')))
+                message = self._step_message(extra['step'], extra['suggested'])
             raise AuctionError(message, status, **extra)
 
         auction = result['auction']
@@ -749,12 +801,13 @@ class AuctionService:
 
     # ------------------------------------------------------------------ admin: eligibility and creation
     def eligible_items(self) -> Dict[str, Any]:
+        """Every unclaimed item that can be put up for auction. Items held for MIN_CUSTODY_DAYS or more are `recommended`; younger ones are
+        listed too, because an administrator may decide to auction early (they confirm it when they choose the item)."""
         now = _now()
-        cutoff = _iso(now - timedelta(days=MIN_CUSTODY_DAYS))
         try:
             items = self.client.table('found_items').select(
                 'item_id,fpost_id,item_name,category,description,location,found_date,image_url,turnover_location,created_at'
-            ).eq('status', 'unclaimed').lte('created_at', cutoff).order('created_at').limit(500).execute().data or []
+            ).eq('status', 'unclaimed').order('created_at').limit(500).execute().data or []
             unclaimed_total = self.client.table('found_items').select('item_id', count='exact').eq('status', 'unclaimed').limit(1).execute().count or 0
             ids = [str(i['item_id']) for i in items]
             blocked = set()
@@ -769,13 +822,16 @@ class AuctionService:
             if str(item['item_id']) in blocked:
                 continue
             since = _parse(item.get('created_at')) or now
+            days = max((now - since).days, 0)
             eligible.append({
                 'id': str(item['item_id']), 'reference': item.get('fpost_id') or '', 'name': item.get('item_name') or 'Item',
                 'category': item.get('category') or '', 'description': item.get('description') or '', 'location': item.get('location') or '',
                 'storage': item.get('turnover_location') or '', 'photo': item.get('image_url') or '',
-                'found_date': item.get('found_date'), 'days_in_custody': max((now - since).days, 0),
+                'found_date': item.get('found_date'), 'days_in_custody': days, 'recommended': days >= MIN_CUSTODY_DAYS,
             })
-        return {'items': eligible, 'min_custody_days': MIN_CUSTODY_DAYS, 'unclaimed_total': int(unclaimed_total)}
+        eligible.sort(key=lambda entry: (not entry['recommended'], -entry['days_in_custody']))
+        return {'items': eligible, 'min_custody_days': MIN_CUSTODY_DAYS, 'unclaimed_total': int(unclaimed_total),
+                'recommended_total': sum(1 for entry in eligible if entry['recommended'])}
 
     def create_auction(self, payload: Dict[str, Any], gallery_urls: List[str], admin_id: str) -> Dict[str, Any]:
         reference = str(payload.get('found_item_reference') or '').strip()
@@ -790,8 +846,11 @@ class AuctionService:
             if str(item.get('status') or '').lower() != 'unclaimed':
                 raise AuctionError('Only unclaimed items can be auctioned.', 409)
             since = _parse(item.get('created_at'))
-            if not since or (now - since).days < MIN_CUSTODY_DAYS:
-                raise AuctionError(f'An item must be in custody for at least {MIN_CUSTODY_DAYS} days before it can be auctioned.', 409)
+            held_days = (now - since).days if since else 0
+            if held_days < MIN_CUSTODY_DAYS and not payload.get('allow_early'):
+                # Not a block: administrators may auction any unclaimed item, but must say they mean to do it early.
+                raise AuctionError(f'This item has been in custody for {held_days} days, less than the recommended {MIN_CUSTODY_DAYS}. Confirm that you want to auction it early.',
+                                   409, code='early_auction', days_in_custody=held_days, min_custody_days=MIN_CUSTODY_DAYS)
             if self.client.table('claims').select('claim_id').eq('found_item_id', item['item_id']).in_('status', list(OPEN_CLAIM_STATUSES)).limit(1).execute().data:
                 raise AuctionError('This item has an open ownership claim. Resolve the claim first.', 409)
             if self.client.table('auctions').select('auction_id').eq('found_item_id', item['item_id']).in_('status', list(OPEN_STATUSES)).limit(1).execute().data:
@@ -838,6 +897,19 @@ class AuctionService:
         return created[0]
 
     # ------------------------------------------------------------------ admin: reads
+    @staticmethod
+    def stage_of(card: Dict[str, Any], row: Dict[str, Any]) -> str:
+        """live, scheduled, awaiting_admin (decide the winner), awaiting_pickup (confirmed, waiting for payment and pickup), completed
+        (paid and collected), forfeited, no_bids or cancelled. A won auction is NOT "sold" until the winner has paid and collected."""
+        status = card['status']
+        if status in ('live', 'scheduled', 'cancelled'):
+            return status
+        if status == 'awaiting':
+            return 'awaiting_admin'
+        if not card['sold']:
+            return 'no_bids'
+        return {'collected': 'completed', 'forfeited': 'forfeited'}.get(str(row.get('fulfillment_status') or ''), 'awaiting_pickup')
+
     def _admin_card(self, row: Dict[str, Any], profiles: Dict[str, Dict[str, Any]], now: datetime, reactions: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
         card = self.card(row, profiles, now, anonymous=False, reactions=reactions)
         winner = profiles.get(str(row['winner_account_id'])) if row.get('winner_account_id') else None
@@ -848,7 +920,9 @@ class AuctionService:
                 return None
             return {'account_id': str(profile['account_id']), 'name': f"{profile.get('fname') or ''} {profile.get('lname') or ''}".strip(),
                     'campus_id': profile.get('campus_id') or '', 'email': profile.get('email') or ''}
-        return {**card, 'found_item_id': str(row['found_item_id']) if row.get('found_item_id') else None,
+        stage = self.stage_of(card, row)
+        return {**card, 'stage': stage, 'archived': bool(row.get('archived_at')), 'archived_at': row.get('archived_at'),
+                'found_item_id': str(row['found_item_id']) if row.get('found_item_id') else None,
                 'db_status': row.get('status'), 'fulfillment_status': row.get('fulfillment_status'),
                 'winner_notified_at': row.get('winner_notified_at'), 'winner_email_mode': row.get('winner_email_mode'),
                 'pickup_warning_sent_at': row.get('pickup_warning_sent_at'), 'auto_forfeited_at': row.get('auto_forfeited_at'),
@@ -868,18 +942,22 @@ class AuctionService:
         profiles = self._profiles([r.get(k) for r in rows for k in ('highest_bidder_id', 'winner_account_id')])
         reactions = self.reaction_counts([str(r['auction_id']) for r in rows])
         cards = [self._admin_card(r, profiles, now, reactions) for r in rows]
+        archived_total = sum(1 for c in cards if c['archived'])
         relisted = {str(r['reauctioned_from']) for r in rows if r.get('reauctioned_from')}
         for card in cards:
             # Forfeited automatically and not yet listed again: the admin's cue to re-auction.
             card['reauction_ready'] = bool(card.get('auto_forfeited_at')) and card['fulfillment_status'] == 'forfeited' and card['id'] not in relisted
         sold = [c for c in cards if c['sold'] and c['fulfillment_status'] != 'forfeited']
+        cards_in_play = [c for c in cards if not c['archived']]
         stats = {
             'live': sum(1 for c in cards if c['status'] == 'live'),
             'scheduled': sum(1 for c in cards if c['status'] == 'scheduled'),
             'awaiting_admin': sum(1 for c in cards if c['status'] == 'awaiting'),
             'ended': sum(1 for c in cards if c['status'] == 'ended'),
-            'awaiting_pickup': sum(1 for c in cards if c['fulfillment_status'] == 'awaiting_pickup'),
-            'reauction_ready': sum(1 for c in cards if c.get('reauction_ready')),
+            'awaiting_pickup': sum(1 for c in cards if c['stage'] == 'awaiting_pickup'),
+            'completed': sum(1 for c in cards if c['stage'] == 'completed'),
+            'archived': archived_total,
+            'reauction_ready': sum(1 for c in cards_in_play if c.get('reauction_ready')),
             'total_bids': sum(c['bid_count'] for c in cards),
             'sales_total': round(sum(c['winning_amount'] or 0 for c in sold), 2),
         }
@@ -933,8 +1011,10 @@ class AuctionService:
         now = _now()
         try:
             row = self._live_row(auction_id)
+            if self._sold_but_open(row):
+                return self._update_sold_lot(row, payload, gallery_urls, now)
             if row.get('status') not in LIVE_STATUSES or (_parse(row.get('ends_at')) or now) <= now:
-                raise AuctionError('Only scheduled or running auctions can be edited.', 409)
+                raise AuctionError('Only scheduled, running, awaiting or sold-but-not-collected auctions can be edited.', 409)
             has_bids = int(row.get('bid_count') or 0) > 0
             update: Dict[str, Any] = {}
             for field in ('starting_price', 'bid_increment'):
@@ -1000,6 +1080,34 @@ class AuctionService:
             raise
         except Exception as error:
             self._guard(error)
+        if not updated:
+            raise AuctionError('The auction changed while you were editing. Reload and try again.', 409)
+        return updated[0]
+
+    @staticmethod
+    def _sold_but_open(row: Dict[str, Any]) -> bool:
+        """The timer ended with bids and the lot is not finished: waiting for the administrator, or confirmed and waiting for pickup."""
+        return row.get('status') == 'awaiting_admin' or (row.get('status') == 'ended' and row.get('winner_account_id') and row.get('fulfillment_status') == 'awaiting_pickup')
+
+    def _update_sold_lot(self, row: Dict[str, Any], payload: Dict[str, Any], gallery_urls: Optional[List[str]], now: datetime) -> Dict[str, Any]:
+        """A won lot can still have its title, description and photos corrected. Prices, times and the winner are final."""
+        locked = sorted(key for key in payload if key not in SOLD_EDITABLE_FIELDS)
+        if locked:
+            raise AuctionError('The bidding is over, so prices and times can no longer change. You can still edit the title, description and photos.', 409)
+        update: Dict[str, Any] = {}
+        if 'title' in payload:
+            title = str(payload['title'] or '').strip()[:255]
+            if not title:
+                raise AuctionError('The auction needs a title.')
+            update['title'] = title
+        if 'description' in payload:
+            update['description'] = str(payload['description'] or '').strip()[:2000]
+        if gallery_urls is not None:
+            update['gallery_urls'] = gallery_urls[:MAX_GALLERY_IMAGES]
+        if not update:
+            raise AuctionError('Nothing to update.')
+        update['updated_at'] = _iso(now)
+        updated = self.client.table('auctions').update(update).eq('auction_id', row['auction_id']).execute().data or []
         if not updated:
             raise AuctionError('The auction changed while you were editing. Reload and try again.', 409)
         return updated[0]
@@ -1072,6 +1180,57 @@ class AuctionService:
         except Exception as error:
             self._guard(error)
         return updated[0]
+
+    def extend_pickup(self, auction_id: str) -> Dict[str, Any]:
+        """Give a winner who asked for time a fresh pickup window: the 48 hour warning and 72 hour forfeit clocks start again."""
+        now = _now()
+        try:
+            row = self._live_row(auction_id)
+            if row.get('fulfillment_status') != 'awaiting_pickup' or not row.get('winner_account_id'):
+                raise AuctionError('Only a sale that is waiting for pickup can be given more time.', 409)
+            updated = self.client.table('auctions').update({'winner_notified_at': _iso(now), 'pickup_warning_sent_at': None, 'updated_at': _iso(now)}) \
+                .eq('auction_id', auction_id).eq('fulfillment_status', 'awaiting_pickup').execute().data or []
+            if not updated:
+                raise AuctionError('This auction was already updated.', 409)
+        except AuctionError:
+            raise
+        except Exception as error:
+            self._guard(error)
+        try:
+            self.db.create_user_notification(
+                str(row['winner_account_id']), 'More time to collect your item',
+                f"The Lost and Found Office gave you more time to pay for and collect {row.get('title')}. Please come within {PICKUP_FORFEIT_HOURS} hours.",
+                notification_type='auction_pickup_extended', link_label='View auction', link_page='auction-hall',
+            )
+        except Exception as error:
+            logger.warning('Pickup extension notice failed: %s', error)
+        return updated[0]
+
+    def set_archived(self, auction_id: str, admin_id: str, archived: bool) -> Dict[str, Any]:
+        """Archive a finished auction (completed, forfeited, ended without bids or cancelled) or bring it back. Nothing is deleted."""
+        from app.utils.archive import SETUP_MESSAGE
+        try:
+            row = self._live_row(auction_id)
+            stage = self.stage_of(self.card(row, {}), row)
+            if archived:
+                if row.get('archived_at'):
+                    raise AuctionError('This auction is already archived.', 409)
+                if stage not in FINISHED_STAGES:
+                    raise AuctionError('Only finished auctions can be archived. Complete, cancel or close it first.', 409)
+            elif not row.get('archived_at'):
+                raise AuctionError('This auction is not archived.', 409)
+            update = {'archived_at': _iso(_now()) if archived else None, 'archived_by': admin_id if archived else None}
+            try:
+                self.client.table('auctions').update(update).eq('auction_id', auction_id).execute()
+            except Exception as error:
+                if 'archived_' in str(error):
+                    raise AuctionError(SETUP_MESSAGE, 503, code='setup_required')
+                raise
+        except AuctionError:
+            raise
+        except Exception as error:
+            self._guard(error)
+        return {'kind': 'auction', 'reference': auction_id, 'archived': archived}
 
     def set_comment_hidden(self, auction_id: str, comment_id: str, hidden: bool, admin_id: str) -> bool:
         try:

@@ -4,7 +4,7 @@ import Header from "./components/Header";
 import AnnouncementBanner from "./components/AnnouncementBanner";
 import { AdminCardGridSkeleton, AdminMetricSkeleton, AdminTableSkeleton, SkeletonBlock } from "./components/LoadingSkeleton";
 import { getUnreadNotificationCount } from "./utils/notificationsStore";
-import { AdminUser, API_URL, clearAdminSession, getStoredAdmin } from "./utils/api";
+import { AdminUser, API_URL, clearAdminSession, fetchAdminNavBadges, getStoredAdmin } from "./utils/api";
 import { SESSION_NOTICE_KEY, startSessionGuard, watchForExpiredSessions, type SessionEndReason } from "./utils/sessionGuard";
 import InfoModalHost from "./components/info-modal/InfoModalHost";
 import { showInfoModal } from "./components/info-modal/infoModalStore";
@@ -69,6 +69,8 @@ export default function App() {
     return (stored && REPORT_TAB_FOR[stored]) || (saved === "found" || saved === "custody" ? saved : "lost");
   });
   const [notifCount, setNotifCount] = useState<number>(() => getUnreadNotificationCount());
+  // Numbers on the menu: how many items wait for an approval or verification on each page.
+  const [badges, setBadges] = useState<Record<string, number>>({});
   const t = useT();
 
   const handleLogout = () => {
@@ -85,6 +87,26 @@ export default function App() {
       window.location.replace("/");
     }
   }, [user]);
+
+  // Keep the menu badges fresh: on load, every minute, when the tab comes back, after a page change and when a page says it changed something.
+  useEffect(() => {
+    if (!user || user.access_level === "guard") return undefined;
+    let active = true;
+    const refresh = () => { void fetchAdminNavBadges().then((next) => { if (active) setBadges(next); }).catch(() => undefined); };
+    refresh();
+    const timer = window.setInterval(() => { if (!document.hidden) refresh(); }, 60000);
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("ebalik-claims-updated", refresh);
+    window.addEventListener("ebalik-account-verifications-updated", refresh);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("ebalik-claims-updated", refresh);
+      window.removeEventListener("ebalik-account-verifications-updated", refresh);
+    };
+  }, [user, page]);
 
   // End an admin session that expired or sat idle (rules in utils/sessionGuard.ts): clear every copy of the sign-in, then send the
   // person to the public site, which tells them why. This is what stops last night's admin session working this morning.
@@ -178,6 +200,7 @@ export default function App() {
         currentPage={page}
         onNavigate={navigate}
         notifCount={notifCount}
+        badges={badges}
         user={user}
         onLogout={handleLogout}
       />

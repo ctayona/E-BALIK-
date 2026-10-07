@@ -124,8 +124,15 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
   }, [minBid]);
 
   const value = Number(amount);
-  const validAmount = Number.isFinite(value) && value >= minBid && value <= 10_000_000;
   const buyout = a.buyout_price ?? null;
+  // Bids sit on a ladder: the starting bid plus whole increments (start 100, step 100 means 100, 200, 300, never 150). Buy Now is always allowed.
+  const cents = (n: number) => Math.round(n * 100);
+  const onStep = a.bid_increment > 0 && cents(value) >= cents(a.starting_price) && (cents(value) - cents(a.starting_price)) % cents(a.bid_increment) === 0;
+  const isBuyNowAmount = buyout !== null && value >= buyout;
+  const validAmount = Number.isFinite(value) && value >= minBid && value <= 10_000_000 && (onStep || isBuyNowAmount);
+  const nextStep = a.bid_increment > 0 && Number.isFinite(value) && value > 0
+    ? Math.max(minBid, a.starting_price + Math.ceil(Math.max(0, cents(value) - cents(a.starting_price)) / cents(a.bid_increment)) * a.bid_increment)
+    : minBid;
   const buyNowAvailable = open && buyout !== null && !a.bought_out;
   /** Nobody can bid below the Buy Now price any more: the next bid would already reach it. */
   const buyNowOnly = buyNowAvailable && buyout !== null && minBid >= buyout;
@@ -135,7 +142,10 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
 
   /** Step 1: validate, then ask for confirmation. Bids are binding, so nothing is sent until the user confirms. */
   const requestBid = () => {
-    if (!validAmount) { setNotice({ type: "error", text: `Your bid must be at least ${peso(minBid)}.` }); return; }
+    if (!validAmount) {
+      setNotice({ type: "error", text: value >= minBid && !onStep ? `Bids go up in exact steps of ${peso(a.bid_increment)}. The next bid you can place near that is ${peso(nextStep)}.` : `Your bid must be at least ${peso(minBid)}.` });
+      return;
+    }
     setNotice(null);
     setBuyNowChosen(false);
     setConfirmOpen(true);
@@ -174,10 +184,11 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
       setConfirmOpen(false);
       setBuyNowChosen(false);
       if (reason instanceof AuctionRequestError) {
-        if (reason.minBid) setAmount(String(reason.minBid));
+        if (reason.suggested) setAmount(String(reason.suggested));
+        else if (reason.minBid) setAmount(String(reason.minBid));
         showInfoModal(reason.verificationRequired
           ? { variant: "warning", title: "Verify your account first", message: reason.message, details: ["Open My Profile and upload a school or government ID."] }
-          : { variant: "error", title: reason.minBid ? "Someone bid first" : "Bid not placed", message: reason.message, details: reason.minBid ? [`The new minimum bid is ${peso(reason.minBid)}.`] : undefined });
+          : { variant: "error", title: reason.suggested ? "Bid is between two steps" : reason.minBid ? "Someone bid first" : "Bid not placed", message: reason.message, details: reason.suggested ? [`Next valid bid: ${peso(reason.suggested)}.`] : reason.minBid ? [`The new minimum bid is ${peso(reason.minBid)}.`] : undefined });
         await load();
       } else {
         showInfoModal({ variant: "error", title: "Bid not placed", message: "The bid could not be placed. Try again." });
@@ -449,7 +460,7 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
                   </label>
                   <button type="button" onClick={requestBid} disabled={busy || !validAmount} className={`${CX.btnGold} min-h-[44px] shrink-0 px-5`}>Place bid</button>
                 </div>
-                <p className="text-[12.5px] text-ink-muted">Minimum {peso(minBid)}. Bids are binding.{buyout !== null && value >= buyout && validAmount ? ` A bid this high is a Buy Now: you pay ${peso(buyout)} and the auction ends.` : ""}</p>
+                <p className="text-[12.5px] text-ink-muted">Minimum {peso(minBid)}, then exact steps of {peso(a.bid_increment)} (such as {peso(minBid + a.bid_increment)}). Bids are binding.{buyout !== null && value >= buyout && validAmount ? ` A bid this high is a Buy Now: you pay ${peso(buyout)} and the auction ends.` : ""}</p>
                 </>)}
               </div>
             ) : open ? (

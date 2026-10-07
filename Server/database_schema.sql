@@ -599,3 +599,18 @@ CREATE INDEX IF NOT EXISTS idx_claims_missing_report ON public.claims (missing_r
 ALTER TABLE public.found_items
     ADD COLUMN IF NOT EXISTS handover_guard_id UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_found_items_handover_guard ON public.found_items (handover_guard_id) WHERE handover_guard_id IS NOT NULL;
+
+-- ============================================================================
+-- Archive and exact bid steps
+-- Mirrors manual_migrations/20261016_archive_and_bid_steps.sql (run that file on an existing database; it also replaces auction_place_bid).
+-- archived_at / archived_by hide a FINISHED lost report, found report, claim or auction from the admin working lists (its page's Archived tab)
+-- without deleting anything. auction_place_bid refuses a bid between two steps of the ladder (starting bid + whole increments).
+-- ============================================================================
+ALTER TABLE public.missing_items ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP WITH TIME ZONE, ADD COLUMN IF NOT EXISTS archived_by UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL;
+ALTER TABLE public.found_items   ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP WITH TIME ZONE, ADD COLUMN IF NOT EXISTS archived_by UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL;
+ALTER TABLE public.claims        ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP WITH TIME ZONE, ADD COLUMN IF NOT EXISTS archived_by UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL;
+ALTER TABLE public.auctions      ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP WITH TIME ZONE, ADD COLUMN IF NOT EXISTS archived_by UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_missing_items_archived ON public.missing_items (archived_at) WHERE archived_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_found_items_archived   ON public.found_items   (archived_at) WHERE archived_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_claims_archived        ON public.claims        (archived_at) WHERE archived_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_auctions_archived      ON public.auctions      (archived_at) WHERE archived_at IS NOT NULL;

@@ -27,6 +27,7 @@ export default function AccountVerificationTab({ requests, loading, error, onRef
   const [decision, setDecision] = useState<"verified" | "rejected">("verified");
   const [identityRole, setIdentityRole] = useState("");
   const [reviewNote, setReviewNote] = useState("");
+  const [idChecked, setIdChecked] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reviewError, setReviewError] = useState("");
@@ -36,6 +37,7 @@ export default function AccountVerificationTab({ requests, loading, error, onRef
     setDecision(nextDecision);
     setIdentityRole(VERIFICATION_ROLES.some((role) => role.value === request.user_role) ? request.user_role : "");
     setReviewNote("");
+    setIdChecked(false);
     setReviewError("");
   };
 
@@ -44,7 +46,7 @@ export default function AccountVerificationTab({ requests, loading, error, onRef
     setBusy(true);
     setReviewError("");
     try {
-      await reviewAdminAccountVerification(reviewTarget.account_id, decision, identityRole, reviewNote);
+      await reviewAdminAccountVerification(reviewTarget.account_id, decision, identityRole, reviewNote, idChecked);
       setConfirmOpen(false);
       setReviewTarget(null);
       onReviewed();
@@ -117,7 +119,7 @@ export default function AccountVerificationTab({ requests, loading, error, onRef
           onClose={() => setReviewTarget(null)}
           footer={<>
             <button type="button" onClick={() => setReviewTarget(null)} className={BTN.ghost}>{tr("Cancel")}</button>
-            <button type="button" onClick={() => { if (decision === "rejected" && !reviewNote.trim()) { setReviewError(tr("A reason is required when rejecting a document.")); return; } if (decision === "verified" && !identityRole) { setReviewError(tr("Choose a role before verifying this account.")); return; } setReviewError(""); setConfirmOpen(true); }} className={decision === "rejected" ? BTN.danger : BTN.success}>{tr("Continue")}</button>
+            <button type="button" onClick={() => { if (decision === "rejected" && !reviewNote.trim()) { setReviewError(tr("A reason is required when rejecting a document.")); return; } if (decision === "verified" && !identityRole) { setReviewError(tr("Choose a role before verifying this account.")); return; } if (decision === "verified" && !idChecked) { setReviewError(tr("Open the submitted ID and tick the box to confirm it matches this account.")); return; } setReviewError(""); setConfirmOpen(true); }} className={decision === "rejected" ? BTN.danger : BTN.success}>{tr("Continue")}</button>
           </>}
         >
           {decision === "verified" ? (
@@ -138,6 +140,10 @@ export default function AccountVerificationTab({ requests, loading, error, onRef
                   );
                 })}
               </div>
+              <label className="mt-4 flex items-start gap-2.5 rounded-xl border border-line bg-frost-50 p-3 text-[13.5px] leading-6 text-ink-soft">
+                <input type="checkbox" checked={idChecked} onChange={(event) => setIdChecked(event.target.checked)} className="mt-1 size-4 shrink-0" />
+                <span>{tr("I opened the submitted ID and its name and number match this account ({0}, campus ID {1}).", { "0": reviewTarget.name || reviewTarget.email, "1": reviewTarget.campus_id || "N/A" })}</span>
+              </label>
             </fieldset>
           ) : (
             <Field label={tr("Reason for rejection")} required hint={tr("The user sees this note.")}>{(id) => (

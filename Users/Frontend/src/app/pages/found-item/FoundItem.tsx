@@ -2,6 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { ArrowLeft, BadgeCheck, CalendarRange, ChevronDown, ClipboardList, FileStack, ImagePlus, MapPin, PackageSearch, RefreshCw, ShieldCheck, Tag, UserRound, X } from "lucide-react";
 import { useAuth } from "@/app/utils/useAuth";
+import PhotoSourceButtons from "@/app/shared/PhotoSourceButtons";
+import { useVerificationPrompt } from "@/app/shared/verification/VerificationRequiredModal";
 import { CX } from "@/app/utils/clay";
 import type { NavigationOptions, Page } from "@/app/types";
 import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
@@ -44,6 +46,7 @@ type MatchSummary = {
 export default function FoundItem({ focused = false, onBack }: { focused?: boolean; onBack?: (page: Page, options?: NavigationOptions) => void }) {
   const { createFoundItem, getFoundItems, getFoundMatchSummaries, getGuards, isLoading, user } = useAuth();
   const verified = isVerified(useCurrentUser());
+  const { ensure, prompt } = useVerificationPrompt(onBack, "report a found item");
   const [activeTab, setActiveTab] = useState<"intake" | "reports">("intake");
   const [title, setTitle] = useState("");
   const [location, setLocation] = useState(FOUND_LOCATIONS[0]);
@@ -141,10 +144,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
-    if (!verified) {
-      setError("Verify your account first. Open My Profile and upload an ID.");
-      return;
-    }
+    if (!ensure()) return;
     if (!guardLabel) {
       setError(typingGuardName ? "Enter the name or ID number of the guard who received the item." : "Choose the guard who received the item.");
       return;
@@ -216,6 +216,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
 
   return (
     <main className={CX.page}>
+      {prompt}
       <div className="mx-auto w-full max-w-[1040px]">
         <header className="mb-6 flex items-start gap-4">
           <span className="flex size-14 shrink-0 items-center justify-center rounded-[18px] bg-[linear-gradient(145deg,#e6be76,#c9953f)] text-navy-950 shadow-[0_14px_30px_-14px_rgba(209,161,83,0.9)]">
@@ -287,7 +288,8 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
                     </span>
                   )}
                 </button>
-                <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => selectImage(event.target.files?.[0])} />
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(event) => selectImage(event.target.files?.[0])} />
+                <PhotoSourceButtons className="mt-3" onFile={selectImage} />
               </div>
             </section>
 
@@ -329,7 +331,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
                 <UserRound size={15} className="shrink-0 text-iris-600" aria-hidden="true" />
                 <span className="min-w-0 truncate">Reporting as <span className="font-semibold text-ink">{user?.email}</span>{user?.campus_id ? ` · ${user.campus_id}` : ""}</span>
               </p>
-              <button type="submit" disabled={isLoading || !verified} className={`${CX.btnGold} shrink-0 px-6`}>
+              <button type="submit" disabled={isLoading} className={`${CX.btnGold} shrink-0 px-6`}>
                 <BadgeCheck size={17} aria-hidden="true" />{isLoading ? "Saving…" : "Publish found report"}
               </button>
             </div>

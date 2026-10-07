@@ -836,13 +836,13 @@ class ReadyToAuctionTests(unittest.TestCase):
         app = Flask(__name__)
         app.register_blueprint(auction_routes.auctions_bp, url_prefix='/api/admin')
         service = MagicMock()
-        service.eligible_items.return_value = {'items': [{'days_in_custody': 41}, {'days_in_custody': 33}], 'min_custody_days': 30}
+        service.eligible_items.return_value = {'items': [{'days_in_custody': 41, 'recommended': True}, {'days_in_custody': 33, 'recommended': True}, {'days_in_custody': 5, 'recommended': False}], 'min_custody_days': 30}
         with patch.object(auction_routes, '_require_admin', return_value={'account_id': ADMIN_ID}), patch.object(auction_routes, '_service', return_value=(MagicMock(), service)):
             client = app.test_client()
             summary = client.get('/api/admin/auctions/eligible-items?summary=1')
             full = client.get('/api/admin/auctions/eligible-items')
         self.assertEqual(summary.get_json(), {'count': 2, 'oldest_days': 41, 'min_custody_days': 30})
-        self.assertEqual(len(full.get_json()['items']), 2)
+        self.assertEqual(len(full.get_json()['items']), 3)   # the full list also holds items that are not recommended yet
 
 
 if __name__ == '__main__':

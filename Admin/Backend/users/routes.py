@@ -60,6 +60,9 @@ def review_account_verification(account_id):
             return jsonify({'error': 'Choose verified or rejected'}), 400
         if status == 'verified' and role not in VERIFIED_CATEGORIES:
             return jsonify({'error': 'Choose a role for this user: Student, Faculty, Staff or Visitor'}), 400
+        if status == 'verified' and payload.get('identity_checked') is not True:
+            # An account is verified by a person looking at the submitted ID, never by a click alone.
+            return jsonify({'error': 'Open the submitted ID and confirm that its name and number match this account before approving.', 'code': 'identity_check_required'}), 400
         if status == 'rejected' and not review_note:
             return jsonify({'error': 'Provide a review note when rejecting a document'}), 400
 
@@ -76,7 +79,7 @@ def review_account_verification(account_id):
         )
         display_name = reviewed.get('email') or account_id
         action = 'Verify User Account' if status == 'verified' else 'Reject User Verification'
-        _log_admin_action(db, admin, action, 'Account Verification', display_name, account_id)
+        _log_admin_action(db, admin, action, 'Account Verification', display_name, account_id)   # the approval itself records that the ID was checked
         notification_created = False
         try:
             if status == 'verified':

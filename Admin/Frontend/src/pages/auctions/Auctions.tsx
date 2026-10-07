@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCheck, Database, Eye, Gavel, PackageCheck, Pencil, Plus, RefreshCw, Timer, Trash2, Trophy } from "lucide-react";
+import { Archive, ArchiveRestore, CheckCheck, Database, Eye, Gavel, PackageCheck, Pencil, Plus, RefreshCw, Timer, Trash2, Trophy } from "lucide-react";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import { BTN, PageHeader, RolePill } from "../../components/ui/primitives";
 import { DataTable, ExportButton, IconAction, RowActions, SearchField, SegmentedFilter, StatusPill, TableFooter, Thumb, Toolbar, usePagination } from "../../components/ui/management";
 import { AuctionSetupError, deleteAdminAuction, fetchAdminAuctions, fetchEligibleAuctionItems, peso, type AdminAuction, type AuctionList } from "../../utils/auctionApi";
 import { downloadCsv } from "../../utils/csv";
+import { ARCHIVED_TAB, setArchived } from "../../utils/archive";
 import { formatDateTime, formatRemaining, serverOffset, useNow } from "../../utils/countdown";
 import { canDelete } from "../../utils/permissions";
 import { tr } from "../../utils/preferences";
 import AuctionFormModal from "./AuctionFormModal";
-import AuctionDetailModal, { STATUS_TONE, statusLabel } from "./AuctionDetailModal";
+import AuctionDetailModal, { FINISHED_STAGES, STAGE_TONE, statusLabel } from "./AuctionDetailModal";
 
 const ALL = "__all__";
 
@@ -54,6 +55,7 @@ export default function Auctions() {
   const [form, setForm] = useState<{ edit?: AdminAuction } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminAuction | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<AdminAuction | null>(null);
   const [busy, setBusy] = useState(false);
   const isSuperAdmin = canDelete();
   const now = useNow() + offset;
@@ -63,7 +65,7 @@ export default function Auctions() {
       const [list, items] = await Promise.all([fetchAdminAuctions(), fetchEligibleAuctionItems().catch(() => null)]);
       setData(list);
       setOffset(serverOffset(list.server_time));
-      setEligible(items ? items.items.length : null);
+      setEligible(items ? items.recommended_total : null);
       setSetupError("");
       setLoadError("");
     } catch (reason) {
@@ -81,17 +83,29 @@ export default function Auctions() {
   }, [load]);
 
   const auctions = data?.auctions ?? [];
+  // Archived auctions only appear in the Archived tab; every other tab and count is about work still in play.
+  const working = useMemo(() => auctions.filter((a) => !a.archived), [auctions]);
   const counts = useMemo(() => ({
-    live: auctions.filter((a) => a.status === "live").length,
-    scheduled: auctions.filter((a) => a.status === "scheduled").length,
-    awaiting: auctions.filter((a) => a.status === "awaiting").length,
-    ended: auctions.filter((a) => a.status === "ended").length,
-    cancelled: auctions.filter((a) => a.status === "cancelled").length,
-  }), [auctions]);
+    live: working.filter((a) => a.stage === "live").length,
+    scheduled: working.filter((a) => a.stage === "scheduled").length,
+    awaiting: working.filter((a) => a.stage === "awaiting_admin").length,
+    pickup: working.filter((a) => a.stage === "awaiting_pickup").length,
+    completed: working.filter((a) => a.stage === "completed").length,
+    closed: working.filter((a) => a.stage === "no_bids" || a.stage === "forfeited" || a.stage === "cancelled").length,
+    archived: auctions.filter((a) => a.archived).length,
+  }), [auctions, working]);
 
+  const matchesTab = (a: AdminAuction) => {
+    if (filter === ARCHIVED_TAB) return Boolean(a.archived);
+    if (a.archived) return false;
+    if (filter === ALL) return true;
+    if (filter === "closed") return a.stage === "no_bids" || a.stage === "forfeited" || a.stage === "cancelled";
+    return a.stage === filter;
+  };
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return auctions.filter((a) => (filter === ALL || a.status === filter) && (!query || `${a.title} ${a.reference} ${a.winner ?? ""} ${a.leader ?? ""}`.toLowerCase().includes(query)));
+    return auctions.filter((a) => matchesTab(a) && (!query || `${a.title} ${a.reference} ${a.winner ?? ""} ${a.leader ?? ""}`.toLowerCase().includes(query)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auctions, filter, search]);
   const paging = usePagination(filtered, 12, `${filter}|${search}`);
 
@@ -106,6 +120,20 @@ export default function Auctions() {
     } finally {
       setBusy(false);
       setDeleteTarget(null);
+    }
+  };
+
+  const confirmArchive = async () => {
+    if (!archiveTarget || busy) return;
+    setBusy(true);
+    try {
+      await setArchived("auction", archiveTarget.id, !archiveTarget.archived);
+      await load();
+    } catch {
+      // Reported by the API helper.
+    } finally {
+      setBusy(false);
+      setArchiveTarget(null);
     }
   };
 
@@ -127,12 +155,14 @@ export default function Auctions() {
 
   const stats = data?.stats;
   const tabs = [
-    { value: ALL, label: "All", count: auctions.length },
+    { value: ALL, label: "All", count: working.length },
     { value: "live", label: "Live", count: counts.live },
-    { value: "awaiting", label: "Awaiting admin", count: counts.awaiting },
+    { value: "awaiting_admin", label: "Awaiting admin", count: counts.awaiting },
+    { value: "awaiting_pickup", label: "Awaiting pickup", count: counts.pickup },
     { value: "scheduled", label: "Scheduled", count: counts.scheduled },
-    { value: "ended", label: "Ended", count: counts.ended },
-    ...(counts.cancelled ? [{ value: "cancelled", label: "Cancelled", count: counts.cancelled }] : []),
+    { value: "completed", label: "Completed", count: counts.completed },
+    ...(counts.closed ? [{ value: "closed", label: "Closed without a sale", count: counts.closed }] : []),
+    { value: ARCHIVED_TAB, label: "Archived", count: counts.archived },
   ];
 
   return (
@@ -151,7 +181,7 @@ export default function Auctions() {
         <dl className="grid grid-cols-2 lg:grid-cols-4 [&>*]:border-line max-lg:[&>*:nth-child(-n+2)]:border-b max-lg:[&>*:nth-child(odd)]:border-r lg:divide-x lg:divide-line">
           {[
             { label: "Live now", value: String(stats?.live ?? 0), hint: stats?.scheduled ? tr("{0} scheduled", { "0": stats.scheduled }) : tr("Open for bids"), icon: <Gavel size={16} aria-hidden="true" /> },
-            { label: "Ready to auction", value: eligible === null ? "—" : String(eligible), hint: tr("Unclaimed over {0} days", { "0": data?.min_custody_days ?? 30 }), icon: <Timer size={16} aria-hidden="true" /> },
+            { label: "Ready to auction", value: eligible === null ? "—" : String(eligible), hint: tr("Recommended: unclaimed over {0} days", { "0": data?.min_custody_days ?? 30 }), icon: <Timer size={16} aria-hidden="true" /> },
             { label: "Needs your decision", value: String(stats?.awaiting_admin ?? counts.awaiting), hint: stats?.awaiting_pickup ? tr("{0} winners to collect", { "0": stats.awaiting_pickup }) : tr("Closed, not confirmed"), icon: <PackageCheck size={16} aria-hidden="true" /> },
             { label: "Sales total", value: peso(stats?.sales_total), hint: tr("{0} bids placed", { "0": stats?.total_bids ?? 0 }), icon: <Trophy size={16} aria-hidden="true" /> },
           ].map((stat) => (
@@ -190,7 +220,7 @@ export default function Auctions() {
         footer={<TableFooter {...paging} onPage={paging.setPage} />}
       >
         {paging.pageItems.map((auction) => (
-          <tr key={auction.id} data-tone={STATUS_TONE[auction.status]}>
+          <tr key={auction.id} data-tone={STAGE_TONE[auction.stage]}>
             <td>
               <div className="flex min-w-[230px] max-w-[320px] items-center gap-3">
                 <Thumb src={auction.image_url} alt={auction.title} />
@@ -208,9 +238,8 @@ export default function Auctions() {
             <td className="whitespace-nowrap"><TimeLeft auction={auction} now={now} /></td>
             <td>
               <div className="flex flex-wrap items-center gap-1.5">
-                <StatusPill tone={STATUS_TONE[auction.status] ?? "slate"}>{statusLabel(auction)}</StatusPill>
+                <StatusPill tone={STAGE_TONE[auction.stage] ?? "slate"}>{statusLabel(auction)}</StatusPill>
                 {auction.bought_out && <StatusPill tone="gold">{tr("Bought with Buy Now")}</StatusPill>}
-                {auction.fulfillment_status === "awaiting_pickup" && <StatusPill tone="gold">Awaiting pickup</StatusPill>}
                 {auction.fulfillment_status === "awaiting_pickup" && auction.pickup_warning_sent_at && <StatusPill tone="rose">{tr("Final warning sent")}</StatusPill>}
                 {auction.reauction_ready && <StatusPill tone="rose">{tr("Ready for re-auction")}</StatusPill>}
               </div>
@@ -218,7 +247,9 @@ export default function Auctions() {
             <RowActions>
               <IconAction label={`${tr("View")} ${auction.reference || auction.title}`} onClick={() => setDetailId(auction.id)} icon={<Eye size={17} aria-hidden="true" />} />
               {auction.status === "awaiting" && <IconAction label={`${tr("Review result")} ${auction.reference || auction.title}`} tone="success" onClick={() => setDetailId(auction.id)} icon={<CheckCheck size={17} aria-hidden="true" />} />}
-              {(auction.status === "live" || auction.status === "scheduled") && <IconAction label={`${tr("Edit")} ${auction.reference || auction.title}`} tone="gold" onClick={() => setForm({ edit: auction })} icon={<Pencil size={16} aria-hidden="true" />} />}
+              {(auction.stage === "live" || auction.stage === "scheduled" || auction.stage === "awaiting_admin" || auction.stage === "awaiting_pickup") && <IconAction label={`${tr("Edit")} ${auction.reference || auction.title}`} tone="gold" onClick={() => setForm({ edit: auction })} icon={<Pencil size={16} aria-hidden="true" />} />}
+              {FINISHED_STAGES.includes(auction.stage) && !auction.archived && <IconAction label={`${tr("Archive")} ${auction.reference || auction.title}`} onClick={() => setArchiveTarget(auction)} icon={<Archive size={16} aria-hidden="true" />} />}
+              {auction.archived && <IconAction label={`${tr("Restore from archive")} ${auction.reference || auction.title}`} tone="success" onClick={() => setArchiveTarget(auction)} icon={<ArchiveRestore size={16} aria-hidden="true" />} />}
               {isSuperAdmin && auction.status !== "live" && auction.status !== "scheduled" && auction.status !== "awaiting" && auction.fulfillment_status !== "awaiting_pickup" && (
                 <IconAction label={`${tr("Delete")} ${auction.reference || auction.title}`} tone="danger" onClick={() => setDeleteTarget(auction)} icon={<Trash2 size={16} aria-hidden="true" />} />
               )}
@@ -238,6 +269,17 @@ export default function Auctions() {
           onClose={() => setDetailId(null)}
           onEdit={(auction) => { setDetailId(null); setForm({ edit: auction }); }}
           onChanged={() => { void load(); }}
+        />
+      )}
+
+      {archiveTarget && (
+        <ConfirmActionDialog
+          title={archiveTarget.archived ? tr("restore auction {0} from the archive?", { "0": archiveTarget.reference || archiveTarget.title }) : tr("archive auction {0}?", { "0": archiveTarget.reference || archiveTarget.title })}
+          description={archiveTarget.archived ? tr("It goes back to the working list.") : tr("It moves out of the working list into the Archived tab. Nothing is deleted and you can restore it any time.")}
+          confirmLabel={archiveTarget.archived ? tr("Restore") : tr("Archive")}
+          busy={busy}
+          onCancel={() => { if (!busy) setArchiveTarget(null); }}
+          onConfirm={() => void confirmArchive()}
         />
       )}
 

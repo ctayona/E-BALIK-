@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 from app.utils import get_db, JWTService
 from Users.Backend.shared.account import _infer_user_role_and_campus, _verification_profile_metadata
 from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, dpa_consent_given
+from Users.Backend.shared.uploads import has_valid_signature
 
 logger = logging.getLogger(__name__)
 profile_bp = Blueprint('user_profile', __name__)
@@ -135,6 +136,8 @@ def upload_verification_document():
         file_bytes = document.read()
         if not file_bytes or len(file_bytes) > 10 * 1024 * 1024:
             return jsonify({'error': 'Documents must be non-empty and 10 MB or smaller'}), 400
+        if not has_valid_signature(file_bytes, document.mimetype):
+            return jsonify({'error': 'That file is not a real photo or PDF of your ID. Take a clear photo of the ID or upload a JPG, PNG, WEBP or PDF.', 'code': 'invalid_document'}), 400
 
         failure_stage = 'connecting to Supabase'
         db = get_db(

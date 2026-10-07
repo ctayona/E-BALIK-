@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Ban, CheckCheck, EyeOff, Eye, Gavel, Heart, Mail, PackageCheck, Pencil, Repeat2, Timer, Trash2, Trophy, Undo2, UserX } from "lucide-react";
+import { Archive, ArchiveRestore, Ban, CheckCheck, EyeOff, Eye, Gavel, Heart, Hourglass, Mail, PackageCheck, Pencil, Repeat2, Timer, Trash2, Trophy, Undo2, UserX } from "lucide-react";
 import AdminModal from "../../components/ui/AdminModal";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import SuspendUserModal from "../../components/SuspendUserModal";
@@ -7,21 +7,28 @@ import ReauctionModal from "./ReauctionModal";
 import { BTN, INPUT } from "../../components/ui/primitives";
 import { DetailGrid, SegmentedFilter, StatusPill, type Tone } from "../../components/ui/management";
 import {
-  cancelAdminAuction, deleteAdminAuction, endAdminAuction, fetchAdminAuctionDetail, finalizeAdminAuction, moderateAuctionComment, peso, resendAdminWinnerEmail, setAdminAuctionFulfillment,
-  type AdminAuction, type AuctionDetail,
+  cancelAdminAuction, deleteAdminAuction, endAdminAuction, extendAdminAuctionPickup, fetchAdminAuctionDetail, finalizeAdminAuction, moderateAuctionComment, peso, resendAdminWinnerEmail, setAdminAuctionFulfillment,
+  type AdminAuction, type AuctionDetail, type AuctionStage,
 } from "../../utils/auctionApi";
+import { setArchived } from "../../utils/archive";
 import { formatDateTime, formatRemaining, serverOffset, useNow } from "../../utils/countdown";
 import { tr } from "../../utils/preferences";
 
-export const STATUS_TONE: Record<string, Tone> = { live: "gold", scheduled: "iris", awaiting: "iris", ended: "mint", cancelled: "rose" };
+/** Colour of each stage. A won auction is "Awaiting pickup" until the winner has paid and collected, and only then "Completed". */
+export const STAGE_TONE: Record<AuctionStage, Tone> = {
+  live: "gold", scheduled: "iris", awaiting_admin: "iris", awaiting_pickup: "gold", completed: "mint", forfeited: "rose", no_bids: "slate", cancelled: "rose",
+};
+const STAGE_LABEL: Record<AuctionStage, string> = {
+  live: "Live", scheduled: "Scheduled", awaiting_admin: "Awaiting admin", awaiting_pickup: "Awaiting pickup", completed: "Completed", forfeited: "Forfeited", no_bids: "Ended, no bids", cancelled: "Cancelled",
+};
+export const FINISHED_STAGES: AuctionStage[] = ["completed", "forfeited", "no_bids", "cancelled"];
 
 export function statusLabel(auction: AdminAuction) {
-  if (auction.status === "ended") return auction.sold ? "Sold" : "Ended, no bids";
-  return { live: "Live", scheduled: "Scheduled", awaiting: "Awaiting admin", cancelled: "Cancelled" }[auction.status] ?? auction.status;
+  return STAGE_LABEL[auction.stage] ?? auction.status;
 }
 
 type Tab = "bids" | "comments" | "hearts" | "pickup";
-type Pending = "end" | "delete" | "collected" | "forfeited" | "finalize" | null;
+type Pending = "end" | "delete" | "collected" | "forfeited" | "finalize" | "archive" | "unarchive" | "extend" | null;
 
 export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onChanged }: {
   id: string;
@@ -64,6 +71,9 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
   const live = auction?.status === "live" || auction?.status === "scheduled";
   const awaiting = auction?.status === "awaiting";
   const pickupPending = auction?.fulfillment_status === "awaiting_pickup";
+  // Still editable (title, description, photos) while the winner has not paid and collected; finished lots are closed.
+  const soldOpen = awaiting || pickupPending;
+  const finished = Boolean(auction && FINISHED_STAGES.includes(auction.stage));
 
   const run = async (action: () => Promise<unknown>, closeAfter = false) => {
     setBusy(true);
@@ -116,10 +126,12 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
         onClose={onClose}
         footer={<>
           {canDelete && !live && !awaiting && !pickupPending && <button type="button" onClick={() => setPending("delete")} className={`${BTN.ghost} sm:mr-auto`}><Trash2 size={16} aria-hidden="true" />{tr("Delete")}</button>}
+          {finished && !auction.archived && <button type="button" onClick={() => setPending("archive")} className={BTN.ghost}><Archive size={16} aria-hidden="true" />{tr("Archive")}</button>}
+          {auction.archived && <button type="button" onClick={() => setPending("unarchive")} className={BTN.ghost}><ArchiveRestore size={16} aria-hidden="true" />{tr("Restore from archive")}</button>}
           {(live || awaiting) && <button type="button" onClick={() => setCancelOpen(true)} className={`${BTN.ghost} sm:mr-auto`}><Ban size={16} aria-hidden="true" />{tr("Cancel auction")}</button>}
           {awaiting && <button type="button" onClick={() => setPending("finalize")} className={BTN.success}><CheckCheck size={16} aria-hidden="true" />{tr("Confirm winner")}</button>}
           {auction.status === "live" && <button type="button" onClick={() => setPending("end")} className={BTN.ghost}><Timer size={16} aria-hidden="true" />{tr("End now")}</button>}
-          {live && <button type="button" onClick={() => onEdit(auction)} className={BTN.primary}><Pencil size={16} aria-hidden="true" />{tr("Edit")}</button>}
+          {(live || soldOpen) && <button type="button" onClick={() => onEdit(auction)} className={BTN.primary}><Pencil size={16} aria-hidden="true" />{tr("Edit")}</button>}
           <button type="button" onClick={onClose} className={BTN.ghost}>{tr("Close")}</button>
         </>}
       >
@@ -127,7 +139,7 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
           <div className="min-w-0 space-y-4">
             <div className="relative overflow-hidden rounded-2xl bg-navy-900 ring-1 ring-line">
               {gallery[photo] ? <img decoding="async" src={gallery[photo]} alt={auction.title} className="aspect-[4/3] max-h-[32dvh] w-full object-cover lg:max-h-none" /> : <div className="flex aspect-[4/3] items-center justify-center text-[13px] text-navy-200">{tr("No photo")}</div>}
-              <span className="absolute left-3 top-3"><StatusPill tone={STATUS_TONE[auction.status] ?? "slate"}>{statusLabel(auction)}</StatusPill></span>
+              <span className="absolute left-3 top-3"><StatusPill tone={STAGE_TONE[auction.stage] ?? "slate"}>{statusLabel(auction)}</StatusPill></span>
             </div>
             {gallery.length > 1 && (
               <div className="flex gap-2 overflow-x-auto pb-1">
@@ -152,7 +164,7 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
             {awaiting && (
               <div className="rounded-2xl border border-iris-300/70 bg-iris-50 px-4 py-3.5 text-[14px] leading-6 text-ink-soft dark:bg-iris-500/10" role="status">
                 <p className="font-semibold text-ink">{auction.bought_out ? tr("A bidder used Buy Now and the auction ended at once. Confirm the purchase.") : tr("Bidding is closed. The result needs your decision.")}</p>
-                <p className="mt-1">{tr("Confirm the winner to notify them for pickup. If they do not collect, you can re-auction the item afterwards.")}</p>
+                <p className="mt-1">{tr("Confirming only says who won. The winner is told to pay and collect the item, and the auction stays open as Awaiting pickup until you press Complete auction. If they never collect, you can re-auction it.")}</p>
               </div>
             )}
             {auction.reauctioned_from && <p className="rounded-2xl border border-line bg-frost-50 px-4 py-3 text-[13.5px] leading-6 text-ink-soft">{tr("This is a re-auction of an earlier sale.")}{auction.reauction_reason ? ` ${auction.reauction_reason}` : ""}</p>}
@@ -242,7 +254,7 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
                   ["Winner", auction.winner_detail?.name ?? "—"],
                   ["Campus ID", auction.winner_detail?.campus_id ?? "—"],
                   ["Email", auction.winner_detail?.email ?? "—"],
-                  ["Pickup status", auction.fulfillment_status === "collected" ? tr("Collected") : auction.fulfillment_status === "forfeited" ? tr("Forfeited, back in custody") : tr("Waiting for pickup")],
+                  ["Pickup status", auction.fulfillment_status === "collected" ? tr("Completed: paid and collected") : auction.fulfillment_status === "forfeited" ? tr("Forfeited, back in custody") : tr("Awaiting pickup and payment")],
                 ]} />
                 <p className={`rounded-2xl border px-4 py-3 text-[13.5px] leading-6 ${emailFailed ? "border-rose-200 bg-rose-50 text-rose-800" : "border-line bg-frost-50 text-ink-soft"}`} role={emailFailed ? "alert" : undefined}>{email}</p>
                 {auction.reauction_ready && (
@@ -260,7 +272,8 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
                 )}
                 {auction.fulfillment_status === "awaiting_pickup" && (
                   <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={() => setPending("collected")} className={BTN.success}><PackageCheck size={16} aria-hidden="true" />{tr("Mark collected")}</button>
+                    <button type="button" onClick={() => setPending("collected")} className={BTN.success}><PackageCheck size={16} aria-hidden="true" />{tr("Complete auction")}</button>
+                    <button type="button" onClick={() => setPending("extend")} className={BTN.ghost}><Hourglass size={16} aria-hidden="true" />{tr("Give the winner more time")}</button>
                     <button type="button" onClick={() => setReauctionOpen(true)} className={BTN.ghost}><Repeat2 size={16} aria-hidden="true" />{tr("Winner flaked: re-auction")}</button>
                     {auction.winner_detail && <button type="button" onClick={() => setSuspendOpen(true)} className={BTN.ghost}><UserX size={16} aria-hidden="true" />{tr("Suspend winner")}</button>}
                     <button type="button" onClick={() => setPending("forfeited")} className={BTN.ghost}><Undo2 size={16} aria-hidden="true" />{tr("Forfeit and return to custody")}</button>
@@ -304,7 +317,7 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
       {pending === "finalize" && (
         <AdminModal
           title={tr("Confirm the winner?")}
-          description={tr("This closes the auction for good.")}
+          description={tr("This confirms who won. The auction is not complete until the winner has paid and collected the item.")}
           icon={<CheckCheck size={19} />} tone="mint" size="sm" busy={busy} onClose={() => setPending(null)}
           footer={<>
             <button type="button" onClick={() => setPending(null)} disabled={busy} className={BTN.ghost}>{tr("Back")}</button>
@@ -317,29 +330,34 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
           </div>
           <ul className="mt-4 space-y-1.5 text-[14px] leading-6 text-ink-soft">
             <li>{tr("The winner is notified to collect and pay at the Lost and Found Office.")}</li>
-            <li>{tr("The item is marked as auctioned and waits for pickup.")}</li>
-            <li>{tr("If the winner does not show up, you can still re-auction it.")}</li>
+            <li>{tr("The item is marked as auctioned and the auction becomes Awaiting pickup.")}</li>
+            <li>{tr("After the winner has paid and collected, press Complete auction. If they do not show up, you can edit the listing, give them more time or re-auction it.")}</li>
           </ul>
         </AdminModal>
       )}
 
       {pending && pending !== "finalize" && (
         <ConfirmActionDialog
-          title={{ end: "end this auction now?", delete: "delete this auction and its bids?", collected: "mark this item as collected?", forfeited: "forfeit this sale?" }[pending]}
+          title={{ end: "end this auction now?", delete: "delete this auction and its bids?", collected: "complete this auction?", forfeited: "forfeit this sale?", archive: "archive this auction?", unarchive: "restore this auction from the archive?", extend: "give the winner more time?" }[pending]}
           description={{
             end: "The highest bid wins immediately and the winner is notified.",
             delete: "This moves the auction, its bids and its comments to the Recycle bin. A super admin can restore them.",
-            collected: "Confirm the winner paid and took the item from the Lost and Found Office.",
+            collected: "Confirm the winner paid and took the item from the Lost and Found Office. This completes the auction and closes the found report.",
             forfeited: "The winner did not collect. The item returns to unclaimed custody so it can be claimed or auctioned again.",
+            archive: "It moves out of the working list into the Archived tab. Nothing is deleted and you can restore it any time.",
+            unarchive: "It goes back to the working list.",
+            extend: "The winner gets a fresh pickup window (the 48 hour warning and 72 hour forfeit start again) and is told.",
           }[pending]}
-          confirmLabel={{ end: "End auction", delete: "Delete auction", collected: "Mark collected", forfeited: "Forfeit sale" }[pending]}
+          confirmLabel={{ end: "End auction", delete: "Delete auction", collected: "Complete auction", forfeited: "Forfeit sale", archive: "Archive", unarchive: "Restore", extend: "Give more time" }[pending]}
           danger={pending === "delete" || pending === "forfeited"}
           busy={busy}
           onCancel={() => { if (!busy) setPending(null); }}
           onConfirm={() => void run(
             pending === "end" ? () => endAdminAuction(auction.id)
               : pending === "delete" ? () => deleteAdminAuction(auction.id)
-                : () => setAdminAuctionFulfillment(auction.id, pending),
+                : pending === "archive" || pending === "unarchive" ? () => setArchived("auction", auction.id, pending === "archive")
+                  : pending === "extend" ? () => extendAdminAuctionPickup(auction.id)
+                    : () => setAdminAuctionFulfillment(auction.id, pending),
             pending === "delete",
           )}
         />

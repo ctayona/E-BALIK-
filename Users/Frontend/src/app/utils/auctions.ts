@@ -65,6 +65,8 @@ export class AuctionRequestError extends Error {
   verificationRequired = false;
   /** The server's reason code, such as "profanity" for a blocked comment. */
   code?: string;
+  /** Set when the bid was between two steps: the next amount the bidder can place. */
+  suggested?: number;
   constructor(message: string, status: number, setupRequired = false, minBid?: number) {
     super(message);
     this.name = "AuctionRequestError";
@@ -93,6 +95,7 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
     const failure = new AuctionRequestError(message, response.status, Boolean(data.setup_required), typeof data.min_bid === "number" ? data.min_bid : undefined);
     failure.verificationRequired = Boolean(data.verification_required);
     if (typeof data.code === "string") failure.code = data.code;
+    if (typeof data.suggested === "number") failure.suggested = data.suggested;
     throw failure;
   }
   return data as T;

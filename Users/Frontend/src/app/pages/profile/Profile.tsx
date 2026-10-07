@@ -39,6 +39,7 @@ export default function Profile({
   const [confirmValue,         setConfirmValue]         = useState("");
   const [errorMessage,         setErrorMessage]         = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
   // Ask the server for the latest status every few seconds while the account is not verified yet.
   const verified = String(user?.verification_status || "").toLowerCase() === "verified";
@@ -247,7 +248,8 @@ export default function Profile({
         footer={
           <>
             <button type="button" onClick={() => setShowUploadModal(false)} className={CX.btnGhost}>Cancel</button>
-            <button type="button" disabled={!dpaChecked} onClick={() => { setShowUploadModal(false); fileInputRef.current?.click(); }} className={CX.btnNavy}>Choose file</button>
+            <button type="button" disabled={!dpaChecked} onClick={() => { setShowUploadModal(false); cameraInputRef.current?.click(); }} className={CX.btnNavy}>Take photo</button>
+            <button type="button" disabled={!dpaChecked} onClick={() => { setShowUploadModal(false); fileInputRef.current?.click(); }} className={CX.btnNavy}>Upload photo or PDF</button>
           </>
         }
       >
@@ -316,6 +318,19 @@ export default function Profile({
         {errorMessage && <div role="alert" className={`${CX.alertError} mt-3`}>{errorMessage}</div>}
       </Modal>
 
+      {/* Camera input: opens the camera app on a phone; the next input is the gallery or file picker. */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleDocumentUpload(file);
+          e.target.value = "";
+        }}
+      />
       {/* Hidden file input (unchanged) */}
       <input
         ref={fileInputRef}

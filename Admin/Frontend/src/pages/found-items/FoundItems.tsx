@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Eye, ImagePlus, PackageCheck, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Eye, ImagePlus, PackageCheck, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
 import { createAdminFoundItem, deleteAdminFoundItem, fetchAdminFoundItems, updateAdminFoundItem, type AdminFoundItemRow } from "../../utils/api";
 import { canDelete } from "../../utils/permissions";
+import { ARCHIVED_TAB, setArchived } from "../../utils/archive";
 import { useT, tr } from "../../utils/preferences";
 import { downloadCsv } from "../../utils/csv";
 import { CAMPUS_LOCATIONS, ITEM_CATEGORIES, categoryOptions, uniqueSorted } from "../../utils/itemOptions";
@@ -16,7 +17,11 @@ type FoundStatus = FoundItem["status"];
 type FoundForm = { item: string; description: string; category: string; locationFound: string; dateFound: string; storage: string; photo: string; status?: string };
 type PendingAction =
   | { type: "save"; data: Partial<FoundForm>; reference?: string }
-  | { type: "delete"; reference: string };
+  | { type: "delete"; reference: string }
+  | { type: "archive"; reference: string; restore: boolean };
+
+/** A found report is finished once the item left custody (returned, claimed or sold and collected). Only finished reports can be archived. */
+const isFinished = (item: AdminFoundItemRow) => ["returned", "claimed", "closed", "collected"].includes(String(item.rawStatus ?? "").toLowerCase());
 
 const STATUS_TONE: Record<FoundStatus, Tone> = {
   "Unclaimed": "gold",
@@ -193,17 +198,21 @@ export default function FoundItems() {
     return () => { active = false; };
   }, []);
 
-  const statusCounts = useMemo(() => items.reduce<Record<string, number>>((counts, item) => {
+  // Archived reports only appear in the Archived tab.
+  const working = useMemo(() => items.filter((item) => !item.archived), [items]);
+  const archivedCount = items.length - working.length;
+  const statusCounts = useMemo(() => working.reduce<Record<string, number>>((counts, item) => {
     counts[item.status] = (counts[item.status] ?? 0) + 1;
     return counts;
-  }, {}), [items]);
+  }, {}), [working]);
   const categories = useMemo(() => uniqueSorted([...ITEM_CATEGORIES, ...items.map((item) => item.category)]), [items]);
-  const inCustody = items.filter((item) => item.status !== "Released").length;
+  const inCustody = working.filter((item) => item.status !== "Released").length;
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return items.filter((item) => {
-      if (statusFilter !== ALL && item.status !== statusFilter) return false;
+      if (statusFilter === ARCHIVED_TAB ? !item.archived : item.archived) return false;
+      if (statusFilter !== ALL && statusFilter !== ARCHIVED_TAB && item.status !== statusFilter) return false;
       if (category !== ALL && item.category !== category) return false;
       return !query || [item.item, item.id, item.locationFound, item.storage, item.description].some((value) => value?.toLowerCase().includes(query));
     });
@@ -217,6 +226,9 @@ export default function FoundItems() {
     try {
       if (pendingAction.type === "delete") {
         await deleteAdminFoundItem(pendingAction.reference);
+        setViewItem(null);
+      } else if (pendingAction.type === "archive") {
+        await setArchived("found", pendingAction.reference, !pendingAction.restore);
         setViewItem(null);
       } else if (pendingAction.reference) {
         await updateAdminFoundItem(pendingAction.reference, pendingAction.data);
@@ -241,10 +253,11 @@ export default function FoundItems() {
   }
 
   const statusTabs = [
-    { value: ALL, label: t("common.allStatuses"), count: items.length },
+    { value: ALL, label: t("common.allStatuses"), count: working.length },
     ...(["Unclaimed", "Under Review", "Claimed", "Ready to Release", "Auctioned", "Released"] as FoundStatus[])
       .filter((status) => statusCounts[status])
       .map((status) => ({ value: status, label: status, count: statusCounts[status] })),
+    { value: ARCHIVED_TAB, label: "Archived", count: archivedCount },
   ];
 
   return (
@@ -304,6 +317,8 @@ export default function FoundItems() {
             <RowActions>
               <IconAction label={`${t("common.view")} ${item.id}`} onClick={() => setViewItem(item)} icon={<Eye size={17} aria-hidden="true" />} />
               <IconAction label={`${t("common.edit")} ${item.id}`} tone="gold" onClick={() => setFormItem({ item })} icon={<Pencil size={16} aria-hidden="true" />} />
+              {isFinished(item) && !item.archived && <IconAction label={`${tr("Archive")} ${item.id}`} onClick={() => setPendingAction({ type: "archive", reference: item.id, restore: false })} icon={<Archive size={16} aria-hidden="true" />} />}
+              {item.archived && <IconAction label={`${tr("Restore from archive")} ${item.id}`} tone="success" onClick={() => setPendingAction({ type: "archive", reference: item.id, restore: true })} icon={<ArchiveRestore size={16} aria-hidden="true" />} />}
               {isSuperAdmin && <IconAction label={`${t("common.delete")} ${item.id}`} tone="danger" onClick={() => setPendingAction({ type: "delete", reference: item.id })} icon={<Trash2 size={16} aria-hidden="true" />} />}
             </RowActions>
           </tr>
@@ -356,9 +371,9 @@ export default function FoundItems() {
 
       {pendingAction && (
         <ConfirmActionDialog
-          title={pendingAction.type === "delete" ? tr("delete found item {0}?", { "0": pendingAction.reference }) : pendingAction.reference ? tr("save these found-item changes?") : tr("register this found item?")}
-          description={pendingAction.type === "delete" ? tr("This moves {0}, its photo, and its linked claim records to the Recycle bin, where a super admin can restore them.", { "0": pendingAction.reference }) : tr("The change is saved to the shared item registry.")}
-          confirmLabel={pendingAction.type === "delete" ? tr("Delete item") : pendingAction.reference ? tr("Save changes") : tr("Register item")}
+          title={pendingAction.type === "archive" ? (pendingAction.restore ? tr("restore found report {0} from the archive?", { "0": pendingAction.reference }) : tr("archive found report {0}?", { "0": pendingAction.reference })) : pendingAction.type === "delete" ? tr("delete found item {0}?", { "0": pendingAction.reference }) : pendingAction.reference ? tr("save these found-item changes?") : tr("register this found item?")}
+          description={pendingAction.type === "archive" ? (pendingAction.restore ? tr("It goes back to the working list.") : tr("It moves out of the working list into the Archived tab. Nothing is deleted and you can restore it any time.")) : pendingAction.type === "delete" ? tr("This moves {0}, its photo, and its linked claim records to the Recycle bin, where a super admin can restore them.", { "0": pendingAction.reference }) : tr("The change is saved to the shared item registry.")}
+          confirmLabel={pendingAction.type === "archive" ? (pendingAction.restore ? tr("Restore") : tr("Archive")) : pendingAction.type === "delete" ? tr("Delete item") : pendingAction.reference ? tr("Save changes") : tr("Register item")}
           danger={pendingAction.type === "delete"}
           busy={actionBusy}
           onCancel={() => { if (!actionBusy) setPendingAction(null); }}

@@ -11,6 +11,8 @@ interface SidebarProps {
   currentPage: Page;
   onNavigate: (page: Page) => void;
   notifCount: number;
+  /** Items waiting for an administrator on each page, keyed by page id (claims, users, smart-tags, auctions). */
+  badges?: Record<string, number>;
   user: AdminUser;
   onLogout: () => void;
 }
@@ -55,7 +57,7 @@ const navItems = [
   )},
 ];
 
-export default function Sidebar({ currentPage, onNavigate, notifCount, user, onLogout }: SidebarProps) {
+export default function Sidebar({ currentPage, onNavigate, notifCount, badges = {}, user, onLogout }: SidebarProps) {
   const t = useT();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -109,6 +111,13 @@ export default function Sidebar({ currentPage, onNavigate, notifCount, user, onL
                     >
                       <span className={`shrink-0 transition-[color,transform] duration-200 ${active ? "text-navy-950" : "text-navy-300 group-hover:scale-110 group-hover:text-gold-200"}`} aria-hidden="true">{item.icon}</span>
                       <span className="flex-1 truncate text-left">{t(item.label)}</span>
+                      {(badges[item.id] ?? 0) > 0 && (
+                        <span
+                          className={`min-w-[22px] rounded-full px-1.5 py-0.5 text-center text-[12px] font-bold tabular-nums ${active ? "bg-navy-950 text-gold-200" : "bg-gold-500 text-navy-950"}`}
+                          aria-label={tr("{0} waiting for you", { "0": badges[item.id] })}
+                          title={tr("{0} waiting for you", { "0": badges[item.id] })}
+                        >{badges[item.id] > 99 ? "99+" : badges[item.id]}</span>
+                      )}
                       {item.notifBadge && notifCount > 0 && (
                         <span className="min-w-[22px] rounded-full bg-rose-500 px-1.5 py-0.5 text-center text-[12px] font-bold text-white" aria-label={tr("{0} unread", { "0": notifCount })}>{notifCount}</span>
                       )}

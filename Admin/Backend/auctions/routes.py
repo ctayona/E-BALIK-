@@ -78,7 +78,7 @@ def eligible_items():
     result = service.eligible_items()
     if request.args.get('summary'):
         # The dashboard only needs "how many items are ready to auction" and how long the oldest has waited.
-        items = result.get('items', [])
+        items = [i for i in result.get('items', []) if i.get('recommended')]
         return jsonify({'count': len(items), 'oldest_days': max((i.get('days_in_custody', 0) for i in items), default=0),
                         'min_custody_days': result.get('min_custody_days')}), 200
     return jsonify(result), 200
@@ -236,10 +236,21 @@ def update_fulfillment(auction_id):
     admin = _require_admin()
     db, service = _service()
     action = str((request.get_json(silent=True) or {}).get('action') or '').strip().lower()
+    action = 'collected' if action == 'completed' else action   # the button is "Complete auction"; the stored value stays `collected`
     updated = service.set_fulfillment(auction_id, action)
-    _log_admin_action(db, admin, 'Auction Collected' if action == 'collected' else 'Auction Forfeited', 'Auctions', updated.get('title'), updated.get('item_reference') or auction_id)
-    message = 'Marked as collected.' if action == 'collected' else 'Marked as forfeited. The item is back in custody.'
+    _log_admin_action(db, admin, 'Auction Completed' if action == 'collected' else 'Auction Forfeited', 'Auctions', updated.get('title'), updated.get('item_reference') or auction_id)
+    message = 'The auction is complete. The winner paid and collected the item.' if action == 'collected' else 'Marked as forfeited. The item is back in custody.'
     return jsonify({'success': True, 'message': message}), 200
+
+
+@auctions_bp.route('/auctions/<auction_id>/extend-pickup', methods=['POST'])
+@_handled('give the winner more time')
+def extend_pickup(auction_id):
+    admin = _require_admin()
+    db, service = _service()
+    updated = service.extend_pickup(auction_id)
+    _log_admin_action(db, admin, 'Extend Auction Pickup', 'Auctions', updated.get('title'), updated.get('item_reference') or auction_id)
+    return jsonify({'success': True, 'message': 'The winner has a fresh pickup window and was told.'}), 200
 
 
 @auctions_bp.route('/auctions/<auction_id>/comments/<comment_id>', methods=['PATCH'])

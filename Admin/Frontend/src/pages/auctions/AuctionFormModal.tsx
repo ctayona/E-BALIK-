@@ -57,12 +57,16 @@ export default function AuctionFormModal(props: Props) {
   const auction = props.mode === "edit" ? props.auction : null;
   const hasBids = Boolean(auction && auction.bid_count > 0);
   const scheduled = auction?.status === "scheduled";
+  // After the timer ends (waiting for the administrator, or won and waiting for pickup) only the listing text and photos can still change.
+  const soldLot = Boolean(auction && (auction.stage === "awaiting_admin" || auction.stage === "awaiting_pickup"));
 
   const [items, setItems] = useState<EligibleItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(!editing);
   const [itemsError, setItemsError] = useState("");
   const [query, setQuery] = useState("");
   const [item, setItem] = useState<EligibleItem | null>(null);
+  const [minDays, setMinDays] = useState(30);
+  const [allowEarly, setAllowEarly] = useState(false);
 
   const [title, setTitle] = useState(auction?.title ?? "");
   const [description, setDescription] = useState(auction?.description ?? "");
@@ -86,7 +90,7 @@ export default function AuctionFormModal(props: Props) {
     if (editing) return;
     let active = true;
     fetchEligibleAuctionItems()
-      .then((data) => { if (active) setItems(data.items); })
+      .then((data) => { if (active) { setItems(data.items); setMinDays(data.min_custody_days); } })
       .catch((reason) => { if (active) setItemsError(reason instanceof Error ? reason.message : tr("Unable to load items.")); })
       .finally(() => { if (active) setItemsLoading(false); });
     return () => { active = false; };
@@ -99,6 +103,7 @@ export default function AuctionFormModal(props: Props) {
 
   const chooseItem = (entry: EligibleItem) => {
     setItem(entry);
+    setAllowEarly(false);
     setTitle(entry.name);
     setDescription(entry.description === "No description" ? "" : entry.description);
     setError("");
@@ -129,6 +134,21 @@ export default function AuctionFormModal(props: Props) {
     event.preventDefault();
     if (!editing && !item) { setError(tr("Choose the item to auction.")); return; }
     if (!title.trim()) { setError(tr("Give the auction a title.")); return; }
+    if (props.mode === "edit" && auction && soldLot) {
+      setError("");
+      setBusy(true);
+      try {
+        await updateAdminAuction(auction.id, { title: title.trim(), description: description.trim(), gallery: extraPhotos });
+        props.onSaved();
+        props.onClose();
+      } catch {
+        // The API helper already reported the server's reason in the global result modal; keep the form open.
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    if (!editing && item && !item.recommended && !allowEarly) { setError(tr("This item has been in custody for fewer than {0} days. Tick the box to confirm you want to auction it early.", { "0": minDays })); return; }
     const price = Number(startingPrice);
     const step = Number(increment);
     if (!hasBids && (!(price > 0) || !(step > 0))) { setError(tr("Enter a starting bid and bid increment above zero.")); return; }
@@ -156,6 +176,7 @@ export default function AuctionFormModal(props: Props) {
           ...shared, found_item_reference: item.reference, starting_price: startingPrice, bid_increment: increment, duration_minutes: minutes,
           ...(buyout.trim() ? { buyout_price: buyout.trim() } : {}),
           ...(startMode === "later" ? { starts_at: new Date(startsAt).toISOString() } : {}),
+          ...(!item.recommended ? { allow_early: true } : {}),
         });
       }
       props.onSaved();
@@ -172,7 +193,7 @@ export default function AuctionFormModal(props: Props) {
   return (
     <AdminModal
       title={editing ? tr("Edit {0}", { "0": auction?.reference || tr("auction") }) : tr("New auction")}
-      description={editing ? tr("Change the schedule, rules and photos. Prices lock once bidding starts.") : tr("Items unclaimed for over a month can go to auction. Set the opening price, how long it runs, and the anti-snipe rule.")}
+      description={soldLot ? tr("The bidding is over. You can still correct the title, description and photos. Prices, times and the winner are final.") : editing ? tr("Change the schedule, rules and photos. Prices lock once bidding starts.") : tr("Pick any unclaimed item. Items held for over a month are recommended. Set the opening price, how long it runs, and the anti-snipe rule.")}
       icon={editing ? <Pencil size={19} /> : <Gavel size={20} />}
       tone={editing ? "navy" : "gold"}
       size="xl"
@@ -207,9 +228,10 @@ export default function AuctionFormModal(props: Props) {
               ) : itemsError ? (
                 <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-[14px] text-rose-800">{itemsError}</p>
               ) : items.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-line-strong p-5 text-center text-[14px] leading-6 text-ink-muted">{tr("No items are ready yet. An item becomes eligible after 30 days in custody with no ownership claim.")}</p>
+                <p className="rounded-2xl border border-dashed border-line-strong p-5 text-center text-[14px] leading-6 text-ink-muted">{tr("No unclaimed items are available. An item cannot be auctioned while it has an open ownership claim or a live auction.")}</p>
               ) : (
                 <>
+                  <p className="mb-2 text-[13px] leading-5 text-ink-muted">{tr("Items held for {0} days or more are recommended. Younger items are marked Early: you can still auction them after confirming.", { "0": minDays })}</p>
                   <label className="relative mb-2 block">
                     <span className="sr-only">{tr("Search eligible items")}</span>
                     <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted" aria-hidden="true" />
@@ -224,17 +246,23 @@ export default function AuctionFormModal(props: Props) {
                             <span className="block truncate text-[14.5px] font-semibold text-ink">{entry.name}</span>
                             <span className="block truncate text-[12.5px] text-ink-muted">{entry.reference} · {entry.category || tr("Uncategorized")}</span>
                           </span>
-                          <span className="shrink-0 rounded-full bg-frost-100 px-2.5 py-1 text-[12px] font-semibold tabular-nums text-ink-soft">{tr("{0} days", { "0": entry.days_in_custody })}</span>
+                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-semibold tabular-nums ${entry.recommended ? "bg-frost-100 text-ink-soft" : "bg-amber-100 text-amber-900"}`}>{entry.recommended ? tr("{0} days", { "0": entry.days_in_custody }) : tr("{0} days, early", { "0": entry.days_in_custody })}</span>
                         </button>
                       </li>
                     ))}
                   </ul>
                 </>
               )}
+              {item && !item.recommended && (
+                <label className="mt-3 flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-50 p-3 text-[13.5px] leading-6 text-amber-950">
+                  <input type="checkbox" checked={allowEarly} onChange={(e) => setAllowEarly(e.target.checked)} className="mt-1 size-4 shrink-0" />
+                  <span>{tr("This item has been in custody for {0} days, fewer than the recommended {1}. I want to auction it early.", { "0": item.days_in_custody, "1": minDays })}</span>
+                </label>
+              )}
             </section>
           )}
 
-          <section className="grid gap-4 sm:grid-cols-2" aria-labelledby="auction-price-heading">
+          {!soldLot && <section className="grid gap-4 sm:grid-cols-2" aria-labelledby="auction-price-heading">
             <h3 id="auction-price-heading" className="font-[family-name:var(--font-heading)] text-[16px] font-semibold text-ink sm:col-span-2">{editing ? tr("Pricing") : tr("2. Set the price")}</h3>
             <Field label="Starting bid (₱)" required hint={hasBids ? "Locked because bids have been placed." : undefined}>
               {(id) => <TextInput id={id} inputMode="decimal" value={startingPrice} onChange={(e) => setStartingPrice(e.target.value)} disabled={hasBids} placeholder="350" />}
@@ -254,9 +282,9 @@ export default function AuctionFormModal(props: Props) {
                 {(id) => <TextInput id={id} inputMode="decimal" value={buyout} onChange={(e) => setBuyout(e.target.value)} disabled={hasBids} placeholder={tr("No Buy Now price")} />}
               </Field>
             </div>
-          </section>
+          </section>}
 
-          <section className="space-y-4" aria-labelledby="auction-time-heading">
+          {!soldLot && <section className="space-y-4" aria-labelledby="auction-time-heading">
             <h3 id="auction-time-heading" className="font-[family-name:var(--font-heading)] text-[16px] font-semibold text-ink">{editing ? tr("Schedule") : tr("3. Set the timer")}</h3>
             {editing ? (
               <div className="grid gap-4 sm:grid-cols-2">
@@ -287,9 +315,9 @@ export default function AuctionFormModal(props: Props) {
                 </div>
               </>
             )}
-          </section>
+          </section>}
 
-          <section className="space-y-4" aria-labelledby="auction-snipe-heading">
+          {!soldLot && <section className="space-y-4" aria-labelledby="auction-snipe-heading">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3 id="auction-snipe-heading" className="font-[family-name:var(--font-heading)] text-[16px] font-semibold text-ink">{tr("Anti-snipe")}</h3>
@@ -304,7 +332,7 @@ export default function AuctionFormModal(props: Props) {
                 <Field label="Max extensions" hint="Caps how long it can run on.">{(id) => <TextInput id={id} inputMode="numeric" value={maxExtensions} onChange={(e) => setMaxExtensions(e.target.value)} />}</Field>
               </div>
             )}
-          </section>
+          </section>}
 
           <section className="space-y-4" aria-labelledby="auction-details-heading">
             <h3 id="auction-details-heading" className="font-[family-name:var(--font-heading)] text-[16px] font-semibold text-ink">{tr("Listing")}</h3>

@@ -141,6 +141,7 @@ export interface AdminClaimRow {
   foundImage?: string;
   submitted: string;
   submittedAt?: string;
+  archived?: boolean;
   status: "Under Review" | "Pending" | "Verified" | "Rejected" | "Approved" | "Approved for Pickup" | "Collected" | "Unknown";
 }
 
@@ -176,6 +177,7 @@ export interface AdminFoundItemRow {
   /** Stored found_items.status (unclaimed, review, claimed, ready_to_release, returned...). */
   rawStatus?: string;
   photo?: string;
+  archived?: boolean;
 }
 
 export interface AdminLostItemRow {
@@ -192,6 +194,7 @@ export interface AdminLostItemRow {
   status: "Searching" | "Potential Match" | "Found" | "Resolved" | "Expired";
   /** Stored missing_items.status: missing | found | returned. */
   rawStatus?: string;
+  archived?: boolean;
 }
 
 export interface UserActivityLog {
@@ -323,11 +326,12 @@ export async function reviewAdminAccountVerification(
   status: "verified" | "rejected",
   userCategory: string,
   reviewNote: string,
+  identityChecked = false,
 ) {
   const response = await adminMutationRequest(`${API_URL}/api/admin/account-verifications/${encodeURIComponent(accountId)}`, {
     method: "PATCH",
     headers: getAuthHeaders(),
-    body: JSON.stringify({ status, user_category: userCategory, review_note: reviewNote }),
+    body: JSON.stringify({ status, user_category: userCategory, review_note: reviewNote, identity_checked: identityChecked }),
   }, status === "verified" ? "Verify account identity" : "Reject account verification");
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Unable to review account verification");
@@ -466,6 +470,14 @@ export async function fetchAdminLostItems(): Promise<AdminLostItemRow[]> {
 
   const data = (await response.json()) as { items?: AdminLostItemRow[] };
   return data.items ?? [];
+}
+
+/** How many things wait for an administrator on each menu page: claims, ID verifications, Smart Tags and auctions. */
+export async function fetchAdminNavBadges(): Promise<Record<string, number>> {
+  const response = await fetch(`${API_URL}/api/admin/nav-badges`, { headers: getAuthHeaders() });
+  if (!response.ok) return {};
+  const payload = await response.json().catch(() => ({}));
+  return (payload && typeof payload.badges === "object" && payload.badges) || {};
 }
 
 export type CustodyState = "waiting" | "claim_review" | "claim_approved" | "hold" | "auction" | "auction_review" | "sold_pickup";

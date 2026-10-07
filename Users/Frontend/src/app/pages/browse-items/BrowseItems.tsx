@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, ChevronLeft, ChevronRight, Search, SearchX, X } from "lucide-react";
 import type { NavigationOptions, Page } from "@/app/types";
 import { useAuth } from "@/app/utils/useAuth";
+import { useVerificationPrompt } from "@/app/shared/verification/VerificationRequiredModal";
 import { CX } from "@/app/utils/clay";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 import type { GalleryItem } from "@/app/shared/media/ItemImage";
@@ -39,6 +40,8 @@ function toGallery(item: Item, tab: Tab): GalleryItem {
 export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, options?: NavigationOptions) => void }) {
   const { getPublicMissingItems, searchFoundItems } = useAuth();
   const [tab,      setTab]      = useState<Tab>("missing");
+  // Opening a public report needs a verified account: everyone else gets a pop-up with a button to the Profile page.
+  const { guard, prompt } = useVerificationPrompt(onNavigate, "view this report");
   const [mode] = useViewMode();
   const [items,    setItems]    = useState<Item[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -89,7 +92,7 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
   const hasFilters = Boolean(query || category);
   const galleryItems = useMemo(() => filtered.map((item) => toGallery(item, tab)), [filtered, tab]);
   const currentGallery = useMemo(() => current.map((item) => toGallery(item, tab)), [current, tab]);
-  const openGallery = (item: GalleryItem) => setViewIndex(galleryItems.findIndex((entry) => entry.id === item.id));
+  const openGallery = guard((item: GalleryItem) => setViewIndex(galleryItems.findIndex((entry) => entry.id === item.id)));
   const featured = useMemo(() => galleryItems.filter((item) => item.image).slice(0, 5), [galleryItems]);
 
   function clearFilters() {
@@ -104,6 +107,7 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
 
   return (
     <main className={CX.page}>
+      {prompt}
       <div className={CX.inner}>
 
         {/* Page header */}
@@ -133,7 +137,7 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
           <HeroSlideshow
             items={featured}
             label="Featured items in custody"
-            onOpen={(item) => setViewIndex(galleryItems.findIndex((entry) => entry.id === item.id))}
+            onOpen={openGallery}
             className="mb-5 min-h-[340px]"
           />
         )}

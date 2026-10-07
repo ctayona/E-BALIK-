@@ -43,11 +43,12 @@ def register_blueprints(app):
     from Admin.Backend.system_control.routes import system_control_bp
     from Admin.Backend.smart_tags.routes import smart_tags_bp as admin_smart_tags_bp
     from Admin.Backend.recycle_bin.routes import recycle_bin_bp
+    from Admin.Backend.archive.routes import archive_bp
 
     from Admin.Backend.shared.admin_access import enforce_super_admin_for_deletes
 
     for blueprint in (dashboard_bp, lost_items_bp, found_items_bp, ai_matching_bp, claims_verification_bp,
-                      users_bp, reports_analytics_bp, activity_logs_bp, admin_profile_bp, admin_auctions_bp, system_control_bp, admin_smart_tags_bp, recycle_bin_bp):
+                      users_bp, reports_analytics_bp, activity_logs_bp, admin_profile_bp, admin_auctions_bp, system_control_bp, admin_smart_tags_bp, recycle_bin_bp, archive_bp):
         # Role-based access control: only super administrators may execute DELETE on any admin route.
         if enforce_super_admin_for_deletes not in blueprint.before_request_funcs.get(None, []):
             blueprint.before_request(enforce_super_admin_for_deletes)

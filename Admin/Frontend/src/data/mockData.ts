@@ -48,6 +48,7 @@ export interface Claim {
   foundImage?: string;
   submitted: string;
   submittedAt?: string;
+  archived?: boolean;
   status: "Under Review" | "Pending" | "Verified" | "Rejected" | "Approved" | "Approved for Pickup" | "Collected" | "Unknown";
 }
 

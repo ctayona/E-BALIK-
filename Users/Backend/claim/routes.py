@@ -8,6 +8,7 @@ from app.utils.email_service import send_reference_email_best_effort
 from app.utils.handover import HandoverService, qr_png
 from app.utils.report_guard import ReportRuleError, begin_submission, end_submission
 from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, consent_metadata, dpa_consent_given
+from Users.Backend.shared.uploads import has_valid_signature
 
 claims_bp = Blueprint('claims', __name__)
 ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
@@ -30,18 +31,7 @@ def _signed_url(db, bucket, path):
     return None
 
 
-def _has_valid_signature(content: bytes, mime_type: str) -> bool:
-    if mime_type == 'image/jpeg':
-        return content.startswith(b'\xff\xd8\xff')
-    if mime_type == 'image/png':
-        return content.startswith(b'\x89PNG\r\n\x1a\n')
-    if mime_type == 'image/webp':
-        return len(content) >= 12 and content.startswith(b'RIFF') and content[8:12] == b'WEBP'
-    if mime_type == 'image/gif':
-        return content.startswith((b'GIF87a', b'GIF89a'))
-    if mime_type == 'application/pdf':
-        return content.startswith(b'%PDF-')
-    return False
+_has_valid_signature = has_valid_signature
 
 
 @claims_bp.route('', methods=['GET', 'POST'])

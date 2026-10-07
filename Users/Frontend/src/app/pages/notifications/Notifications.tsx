@@ -14,6 +14,8 @@ interface UserNotification {
   is_read: boolean;
   created_at: string;
   found_item_id?: string;
+  /** The readable reference (FP2031) of the found item; found_item_id is the internal id and means nothing to a person. */
+  found_item_reference?: string;
   missing_report_id?: string;
   notification_type?: string;
   link_label?: string;
@@ -86,7 +88,8 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
   const handleNotificationClick = (notification: UserNotification) => {
     if (!notification.is_read) handleMarkAsRead(notification.notification_id);
     if (notification.link_page === 'claim' && notification.found_item_id && onNavigate) {
-      onNavigate('claim', { foundItemId: notification.found_item_id });
+      // The claim form takes the readable reference. Without it (an older server) the form stays empty rather than showing an internal id.
+      onNavigate('claim', { foundItemId: notification.found_item_reference || '' });
     } else if (notification.link_page === 'profile' && onNavigate) {
       onNavigate('profile');
     } else if (notification.link_page === 'auction-hall' && onNavigate) {

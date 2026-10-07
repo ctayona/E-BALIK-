@@ -241,7 +241,7 @@ function MainApp() {
         {page === "my-reports"   && <MyReports onNavigate={handleNavigate} highlightId={navigationOptions.highlightReportId} initialTab={navigationOptions.reportsTab} />}
         {page === "matches"      && <Matches initialReportId={navigationOptions.reportId} onNavigate={handleNavigate} />}
         {page === "browse-items" && <BrowseItems onNavigate={handleNavigate} />}
-        {page === "claim"        && <Claim foundItemId={navigationOptions.foundItemId} onNavigate={handleNavigate} />}
+        {page === "claim"        && <Claim foundItemId={navigationOptions.foundItemId} missingReportId={navigationOptions.missingReportId} onNavigate={handleNavigate} />}
         {page === "auction-hall" && <AuctionHall onNavigate={handleNavigate} />}
         {page === "my-tags"      && <MyTagsPage />}
         {page === "notifications" && <Notifications onNavigate={handleNavigate} />}

@@ -31,18 +31,23 @@ On a laptop the background timer is **off** on purpose (so test runs cannot send
 
 ### 1.3 Make sure the database is ready
 
-All migrations must have been run in the Supabase SQL Editor, in order, **ending with `20261015_report_lifecycle_and_guard_handover.sql`** (the full list is in `DEPLOYMENT_GUIDE.md`). Check the last three quickly:
+All migrations must have been run in the Supabase SQL Editor, in order, **ending with `20261016_archive_and_bid_steps.sql`** (the full list is in `DEPLOYMENT_GUIDE.md`). Check the last four quickly:
 
 ```sql
 SELECT to_regclass('public.recycle_bin');
 SELECT id, public FROM storage.buckets WHERE id = 'recycle-bin';   -- public must be false
 SELECT column_name FROM information_schema.columns WHERE table_schema = 'public'
   AND ((table_name = 'claims' AND column_name = 'missing_report_id') OR (table_name = 'found_items' AND column_name = 'handover_guard_id'));   -- 2 rows
+SELECT table_name FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'archived_at'
+  AND table_name IN ('missing_items', 'found_items', 'claims', 'auctions');   -- 4 rows
+SELECT pg_get_functiondef('public.auction_place_bid(uuid,uuid,numeric)'::regprocedure) LIKE '%bid_not_on_step%';   -- true
 ```
 
 > **If `20261014` has not been run:** every admin delete is refused with a "setup required" message. That is intentional (the app will not delete something it cannot archive first). Run the migration and try again.
 
 > **If `20261015` has not been run:** the app still works, but a guard account cannot release items (the database refuses it), administrators cannot assign the guard role, a claim cannot be linked to a lost report, and a found report cannot be linked to a guard. Run it before testing sections 2.9, 4.2, 6.1, 6.3 and 6.4.
+
+> **If `20261016` has not been run:** the Archive buttons say "run the latest database update" and change nothing, and the exact-step rule for bids is enforced by the server only (the database enforces it after the migration). Run it before testing sections 8 and 9.
 
 ### 1.4 The test accounts you need
 
@@ -82,6 +87,11 @@ Each row is one test. Tick the **Pass** box in your own copy, or copy the result
 | 2.8 | In Profile, upload a verification ID. In the admin app (**Users**), approve it and pick a role (Student, Faculty, Staff or Visitor). | Student A becomes verified and the features above unlock. | ☐ |
 | 2.9 | Admin app, **Users**: click **Change role** on a normal user and choose **Security guard**, then **Save role**. | A "Role updated" message appears and the user's Access column says Guard. Sign in as that user in the admin app: you land on the release desk only. | ☐ |
 | 2.10 | Sign in as a normal **admin** (not super admin) and open **Change role** on another user. | You can pick User or Security guard. **Admin** is greyed out with "Only super admins can make someone an admin." There is no Change role button on administrators or on yourself. | ☐ |
+| 2.11 | In the user app, open **Profile** and start the ID upload. | Two choices appear: **Take photo** (opens the camera on a phone) and **Upload photo or PDF**. | ☐ |
+| 2.12 | Upload a text file that you renamed to `id.png`. | Refused: "That file is not a real photo or PDF of your ID." Nothing is saved. | ☐ |
+| 2.13 | Admin app, **Users**, tab **Account verification**: open **Verify** on a request, pick a role and press Continue without ticking the box. | A message asks you to open the submitted ID and tick the box that it matches the account. Verification only goes through once it is ticked. | ☐ |
+| 2.14 | While **unverified**, click a report in **Browse** or on the **Dashboard**. | A pop-up says "Verify your ID first" with a **Go to my profile to verify** button that opens the Profile page. The report itself does not open. | ☐ |
+| 2.15 | While unverified, press the submit button on the Found form, the Lost form or the Claim form. | The same pop-up appears (the buttons are no longer greyed out). | ☐ |
 
 ---
 
@@ -110,6 +120,7 @@ Sign in as **Student B** (the finder) and **Student A** (the owner).
 | 4.2 | As Student B: Report Item, then "I found an item". Fill in a similar item (a black wallet) with a photo. Under "Hand it over to campus security" choose the guard in **Which guard received it?** (create one first, see 2.9). | Report is saved and appears under **My Reports**. The guard gets an email and a notification that an item was handed to them. | ☐ |
 | 4.2b | Open the found form again and choose **Another guard (not listed)**. | A box for the guard's name or ID appears, and the report saves with that name. If no guard accounts exist yet, the box is shown straight away. | ☐ |
 | 4.3 | Try an image in a wrong format or over the size limit. | A clear error. Nothing is saved. | ☐ |
+| 4.3b | On a phone, open the Found form, the Lost form and the Claim form. | Each photo area has **Take photo** and **Upload photo** buttons (the Claim ID area says **Upload photo or PDF**). Both work, and the camera is no longer forced. | ☐ |
 | 4.4 | Create reports until you have 6 active ones, then try a 7th. | The 7th is refused with a message about the active report limit (6). | ☐ |
 | 4.5 | Open **My Reports** and click a report. | A details window with image, category, place, date and status. | ☐ |
 | 4.6 | Edit one of your reports. | A short countdown and a confirmation checkbox must be completed before it saves. | ☐ |
@@ -142,6 +153,7 @@ This is the most important flow. Use the found wallet from section 4.
 |---|---|---|---|
 | 6.1.1 | As Student A: **Browse**, **Items in Custody**, note the found wallet's reference. Open **Claims**, stay on the **Submit claim** tab, enter the **Found item reference**, choose your lost wallet report under **Which of your lost reports is this? (optional)**, explain why it is yours, and add the proof photo (and ID if asked). Submit. | A claim is created with a claim reference and status **pending**. An email receipt arrives. | ☐ |
 | 6.1.2 | Open the **Claim history** tab. | Your claim and its status are listed. | ☐ |
+| 6.1.3 | Get a notification that leads to a claim (for example a confirmed match), open **Notifications** and press its claim button. | The claim form opens with the readable found-item reference such as FP2031, not a long code. | ☐ |
 
 ### 6.2 Review it as admin
 
@@ -229,14 +241,37 @@ Read `SMART_TAGS_GUIDE.md` first if `PUBLIC_SITE_URL` is not set. **Do not print
 | 8.1.8 | On a second auction with a Buy Now price, press **Buy Now** (or type a bid at or above that price). | The auction ends at once and you win. | ☐ |
 | 8.1.9 | Back in admin, open the lot and edit it (live or scheduled lots only). | Starting bid and Buy Now are locked once bids exist; the end time can only move later. | ☐ |
 
-### 8.2 After the auction
+### 8.1b Exact bid steps and early auctions
 
 | # | Do this | You should see | Pass |
 |---|---|---|---|
-| 8.2.1 | Let the auction close. It moves to **awaiting** admin review. Open it and **Review result**. | You can approve the result. | ☐ |
-| 8.2.2 | Approve. | The winner gets an email with the pickup deadline. | ☐ |
-| 8.2.3 | Create a lot, let it close without bids. | You can re-auction it (re-auction window). | ☐ |
-| 8.2.4 | Delete a test auction. | The dialog says it moves to the **Recycle bin**. | ☐ |
+| 8.1b.1 | Make an auction with starting bid 100 and increment 100. As a bidder, type 150 and press Place bid. | Blocked: "Bids go up in exact steps of ₱100... The next bid you can place is ₱200." The button stays greyed. | ☐ |
+| 8.1b.2 | Type 200, then place it. Then try 250 and 300. | 200 and 300 work; 250 is blocked. The suggested amounts are always on the 100 ladder. | ☐ |
+| 8.1b.3 | With a Buy Now price of 450, type 450 (or 777). | Allowed at any time: it is a Buy Now and you pay 450. | ☐ |
+| 8.1b.4 | **New auction**: look at the item list. | Items held for 30 days or more are listed first. Younger items are marked **early** (for example "3 days, early"). Nothing is hidden. | ☐ |
+| 8.1b.5 | Pick an early item and try to start the auction. | Blocked until you tick "I want to auction it early". After ticking, it starts normally. | ☐ |
+| 8.1b.6 | Pick an item that has an open claim or a running auction. | It is not in the list at all (the date rule can be overridden; claims and running auctions cannot). | ☐ |
+
+### 8.2 After the auction (the new lifecycle)
+
+| # | Do this | You should see | Pass |
+|---|---|---|---|
+| 8.2.1 | Let the auction close with bids. Open it and press **Review result**. | Status is **Awaiting admin**. You can edit the title, description and photos, but not prices or times. | ☐ |
+| 8.2.2 | Press **Confirm winner**. | The status becomes **Awaiting pickup** (not "Sold"). The winner is told to pay and collect. The auction is **not** finished yet. | ☐ |
+| 8.2.3 | While it is Awaiting pickup, press **Edit**. | Only the listing fields (title, description, photos) can change. | ☐ |
+| 8.2.4 | Press **Give the winner more time**. | The winner gets a notification and a fresh 72 hour window (the warning and forfeit start again). | ☐ |
+| 8.2.5 | Press **Winner flaked: re-auction** on another awaiting-pickup lot. | A new auction opens and the old sale is forfeited. | ☐ |
+| 8.2.6 | After the winner paid and collected, press **Complete auction** and confirm. | The status becomes **Completed**. The item's found report becomes Completed too, and the finder is told it was sold. | ☐ |
+| 8.2.7 | Create a lot and let it close without bids. | **Ended, no bids**; you can re-auction it. | ☐ |
+| 8.2.8 | Delete a test auction (super admin). | The dialog says it moves to the **Recycle bin**. | ☐ |
+
+### 8.3 Archive
+
+| # | Do this | You should see | Pass |
+|---|---|---|---|
+| 8.3.1 | On a **Completed**, **Forfeited**, **Cancelled** or **Ended, no bids** auction, press **Archive** and type CONFIRM. | It leaves the working tabs and appears in the **Archived** tab. Nothing is deleted. | ☐ |
+| 8.3.2 | Look at a Live, Awaiting admin or Awaiting pickup auction. | There is no Archive button (live work cannot be hidden). | ☐ |
+| 8.3.3 | In the **Archived** tab, press **Restore from archive**. | It goes back to the working list. | ☐ |
 
 (The 48-hour warning and 72-hour forfeit are tested in section 12.)
 
@@ -259,6 +294,8 @@ Sign in to the admin app as **super admin** unless stated.
 | 9.8 | **Users** | Search a user; change a role; suspend a user for a number of days with a reason; lift it. | Role changes apply. A suspended user cannot sign in until the date. | ☐ |
 | 9.9 | Users | Use **Change role** to make someone a **Security guard**, then change them back to **User**. | A guard can use only the release desk; a user again has no staff access. | ☐ |
 | 9.9b | **Release desk** | Open it as admin. | Type or scan a Handover PIN to release an item, same as the guard. | ☐ |
+| 9.14 | **Reports** (Lost reports, Found reports) and **Claims and verification** | On a finished record (a returned lost report, a released found report, a collected or rejected claim) press **Archive** and type CONFIRM. | It moves to the page's **Archived** tab. Open or in-progress records have no Archive button. **Restore from archive** brings it back. | ☐ |
+| 9.15 | Admin menu | Look beside **Claims and verification**, **Users**, **Smart tags** and **Auctions**. | A small gold number shows how many items wait for an administrator (claims to review, IDs to verify, tags to approve, auction results to confirm). It disappears when nothing is waiting and refreshes about every minute. | ☐ |
 | 9.10 | **Notifications** | Open it. | Admin notifications are listed. | ☐ |
 | 9.11 | **Activity logs** | Open it. | Your recent actions appear (claims approved, roles changed, deletes). | ☐ |
 | 9.12 | Language switch | Switch the admin app to Tagalog, then back. | Labels change language. | ☐ |
@@ -408,6 +445,7 @@ Copy this table into a note and fill it in.
 | 6.4 Reports finish together | | | | | | |
 | 7 Smart Tags | | | | | | |
 | 8 Auctions | | | | | | |
+| 8.1b to 8.3 Bid steps, lifecycle, Archive | | | | | | |
 | 9 Admin tools | | | | | | |
 | 10 Emails | | | | | | |
 | 11 Recycle bin | | | | | | |
@@ -426,7 +464,7 @@ Copy this table into a note and fill it in.
 ## 15. Known limits of this guide
 
 - It was written from the code and from earlier automated checks (the backend test suite and browser checks with simulated data). The steps in this guide have **not** been walked through end to end on the live system.
-- The recycle bin, migrations `20261014` and `20261015`, and the file copies
+- The recycle bin, migrations `20261014` to `20261016`, and the file copies
 - Evidence retention and bin expiry cannot be sped up safely (test 12.3.7).
 - Email appearance differs by mail app. Gmail is the one to check; others are to be confirmed.
 - The 20-minute, 60-minute, 8-hour and 12-hour sign-out limits are checked by waiting or by the shortcut in section 3.

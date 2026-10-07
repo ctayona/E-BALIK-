@@ -81,9 +81,10 @@ Server/manual_migrations/20261012_handover_pins_and_auction_timeouts.sql
 Server/manual_migrations/20261013_guard_role_reminders_and_retention.sql
 Server/manual_migrations/20261014_recycle_bin.sql
 Server/manual_migrations/20261015_report_lifecycle_and_guard_handover.sql
+Server/manual_migrations/20261016_archive_and_bid_steps.sql
 ```
 
-The last eleven are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo, the Mission Control storage tools staff approval of Smart Tags, Handover PINs, the automatic auction pickup deadlines, the guard role, email preferences, claim and Smart Tag reminders, evidence retention and the recycle bin. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, `20261010`, `20261011`, `20261012`, `20261013`, `20261014`, then `20261015`). **Until `20261014` is run, no admin delete works** (the app refuses to delete anything it cannot archive first) and the file-retention rule waits. The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
+The last twelve are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo, the Mission Control storage tools staff approval of Smart Tags, Handover PINs, the automatic auction pickup deadlines, the guard role, email preferences, claim and Smart Tag reminders, evidence retention and the recycle bin. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, `20261010`, `20261011`, `20261012`, `20261013`, `20261014`, `20261015`, then `20261016`). **Until `20261014` is run, no admin delete works** (the app refuses to delete anything it cannot archive first) and the file-retention rule waits. The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
 
 ```sql
 SELECT to_regclass('public.auctions') AS auctions,

@@ -133,12 +133,18 @@ class BidTests(unittest.TestCase):
 class CreateAuctionTests(unittest.TestCase):
     payload = {'found_item_reference': 'FP1001', 'starting_price': '350', 'bid_increment': '25', 'duration_minutes': 1440}
 
-    def test_item_in_custody_less_than_a_month_is_rejected(self):
+    def test_item_in_custody_less_than_a_month_needs_the_administrators_confirmation(self):
         service, _ = make_service(rows={'found_items': [item_row(days_in_custody=12)]})
         with self.assertRaises(AuctionError) as caught:
             service.create_auction(self.payload, [], 'admin-1')
         self.assertEqual(caught.exception.status, 409)
-        self.assertIn('30 days', caught.exception.message)
+        self.assertEqual(caught.exception.extra['code'], 'early_auction')
+        self.assertIn('Confirm', caught.exception.message)
+
+    def test_an_administrator_may_auction_an_item_early_when_they_confirm(self):
+        service, _ = make_service(rows={'found_items': [item_row(days_in_custody=12)]})
+        created = service.create_auction({**self.payload, 'allow_early': True}, [], 'admin-1')
+        self.assertEqual(created['item_reference'], 'FP1001')
 
     def test_claimed_item_is_rejected(self):
         service, _ = make_service(rows={'found_items': [item_row(status='claimed')]})

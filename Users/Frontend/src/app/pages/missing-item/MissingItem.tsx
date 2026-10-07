@@ -2,6 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { ArrowLeft, ArrowRight, BadgeCheck, CalendarRange, ChevronDown, ClipboardList, FileStack, Filter, ImagePlus, Lightbulb, MapPin, RefreshCw, Search, SearchCheck, Tag, UserRound, X } from "lucide-react";
 import { useAuth } from "@/app/utils/useAuth";
+import PhotoSourceButtons from "@/app/shared/PhotoSourceButtons";
+import { useVerificationPrompt } from "@/app/shared/verification/VerificationRequiredModal";
 import { CX } from "@/app/utils/clay";
 import type { NavigationOptions, Page } from "@/app/types";
 import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
@@ -54,6 +56,7 @@ type MatchSummary = {
 export default function MissingItem({ initialSearchTerm = "", focused = false, onBack }: { initialSearchTerm?: string; focused?: boolean; onBack?: (page: Page, options?: NavigationOptions) => void }) {
   const { createMissingItem, getMissingItems, getMissingMatchSummaries, searchFoundItems, isLoading, user } = useAuth();
   const verified = isVerified(useCurrentUser());
+  const { guard, ensure, prompt } = useVerificationPrompt(onBack, "report a lost item");
   const [activeTab, setActiveTab] = useState<"intake" | "reports" | "search">("intake");
   const [itemName, setItemName] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0]);
@@ -156,10 +159,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
-    if (!verified) {
-      setError("Verify your account first. Open My Profile and upload an ID.");
-      return;
-    }
+    if (!ensure()) return;
     if (!authorized) {
       setError("Please authorize matching and notifications before continuing.");
       return;
@@ -268,6 +268,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
 
   return (
     <main className={CX.page}>
+      {prompt}
       <div className="mx-auto w-full max-w-[1100px]">
         <header className="mb-6 flex items-start gap-4">
           <span className="flex size-14 shrink-0 items-center justify-center rounded-[18px] bg-[linear-gradient(145deg,#3b5394,#1f3160)] text-tide-200 shadow-[0_14px_30px_-14px_rgba(17,27,66,0.9)]">
@@ -341,6 +342,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
                     )}
                   </button>
                   <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(event) => selectImage(event.target.files?.[0])} />
+                  <PhotoSourceButtons className="mt-3" onFile={selectImage} />
                 </div>
               </section>
 
@@ -365,7 +367,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
                   <UserRound size={15} className="shrink-0 text-iris-600" aria-hidden="true" />
                   <span className="min-w-0 truncate">Reporting as <span className="font-semibold text-ink">{user?.email}</span>{user?.campus_id ? ` · ${user.campus_id}` : ""}</span>
                 </p>
-                <button type="submit" disabled={isLoading || !verified} className={`${CX.btnNavy} shrink-0 px-6`}>
+                <button type="submit" disabled={isLoading} className={`${CX.btnNavy} shrink-0 px-6`}>
                   <BadgeCheck size={17} aria-hidden="true" />{isLoading ? "Saving…" : "Submit missing report"}
                 </button>
               </div>
@@ -464,7 +466,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
                 items={galleryResults}
                 mode={mode}
                 showKind={false}
-                onOpen={(_item, index) => setResultIndex(index)}
+                onOpen={guard((_item: unknown, index: number) => setResultIndex(index))}
                 badge={(item) => {
                   const pct = scoreOf.get(item.id) ?? 0;
                   const tone = pct >= 75 ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : pct >= 55 ? "bg-gold-50 text-gold-800 ring-gold-200" : "bg-white/95 text-ink-soft ring-line";

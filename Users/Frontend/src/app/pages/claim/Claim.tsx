@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Clock3, FileText, ImagePlus, Mail, MapPin, Phone, ShieldCheck, Trash2, Upload, XCircle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "@/app/utils/useAuth";
+import PhotoSourceButtons from "@/app/shared/PhotoSourceButtons";
 import type { Page } from "@/app/types";
 import { CX, SPRING } from "@/app/utils/clay";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
@@ -13,6 +14,7 @@ import VerificationGate from "@/app/shared/verification/VerificationGate";
 import HandoverQr from "@/app/shared/claims/HandoverQr";
 import { isVerified, useCurrentUser } from "@/app/utils/system";
 import { isCompletedReport } from "@/app/utils/reportLifecycle";
+import { useVerificationPrompt } from "@/app/shared/verification/VerificationRequiredModal";
 
 type ClaimRecord = {
   claim_id: string; claim_reference?: string; fpost_id?: string; claim_reason?: string;
@@ -21,13 +23,14 @@ type ClaimRecord = {
   found_items?: { fpost_id?: string; item_name?: string; category?: string; location?: string; found_date?: string };
 };
 
-export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: string; onNavigate?: (page: Page) => void }) {
+export default function Claim({ foundItemId = "", missingReportId = "", onNavigate }: { foundItemId?: string; missingReportId?: string; onNavigate?: (page: Page) => void }) {
   // All state & logic preserved exactly
   const { cancelClaim, createClaim, getClaims, getMissingItems, isLoading } = useAuth();
   const verified = isVerified(useCurrentUser());
+  const { ensure, prompt } = useVerificationPrompt(onNavigate, "file a claim");
   const [reference,    setReference]    = useState(foundItemId);
   const [myLostReports, setMyLostReports] = useState<Array<{ mpost_id: string; item_name: string; last_location?: string }>>([]);
-  const [lostReportId,  setLostReportId]  = useState("");
+  const [lostReportId,  setLostReportId]  = useState(missingReportId);
   const [reason,       setReason]       = useState("");
   const [proof,        setProof]        = useState<File | null>(null);
   const [proofPreview, setProofPreview] = useState("");
@@ -63,8 +66,11 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
     let active = true;
     void getMissingItems().then((result) => {
       if (!active) return;
-      setMyLostReports(((result.items || []) as Array<{ mpost_id: string; item_name: string; last_location?: string; status?: string }>)
-        .filter((item) => !isCompletedReport("Missing", item.status)));
+      const open = ((result.items || []) as Array<{ mpost_id: string; item_name: string; last_location?: string; status?: string }>)
+        .filter((item) => !isCompletedReport("Missing", item.status));
+      setMyLostReports(open);
+      // Arriving from Matches with a lost report already chosen: keep it only if it is still one of the open reports.
+      setLostReportId((current) => (open.some((item) => item.mpost_id === current) ? current : ""));
     });
     return () => { active = false; };
   }, [getMissingItems]);
@@ -101,10 +107,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
-    if (!verified) {
-      setError("Verify your account first. Open My Profile and upload an ID.");
-      return;
-    }
+    if (!ensure()) return;
     if (!reference.trim() || !reason.trim() || !proof || !identityDocument) {
       setError("Found item reference, claim reason, ownership proof, and a valid ID are required."); return;
     }
@@ -181,6 +184,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
 
   return (
     <main className={CX.page}>
+      {prompt}
       <div className={CX.inner}>
 
         {/* Page header */}
@@ -303,6 +307,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
                     )}
                   </div>
                   <input id="claim-proof" type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={(e) => chooseProof(e.target.files?.[0])} />
+                  <PhotoSourceButtons onFile={chooseProof} />
                   {proof && <p className="text-[12px] text-ink-muted">Selected: {proof.name}</p>}
                 </div>
 
@@ -317,13 +322,14 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
                     {identityDocument ? <><FileText size={24} className="text-gold-700" /><span className="text-[13px] font-semibold text-navy-800">{identityDocument.name}</span><span className="text-[12px] text-ink-muted">Click to replace document</span></> : <><Upload size={22} className="text-gold-700" /><span className="text-[13px] font-semibold text-navy-800">Upload a clear photo or PDF of your ID</span><span className="text-[12px] text-ink-muted">JPG, PNG, WEBP, or PDF · 10 MB maximum</span></>}
                   </label>
                   <input id="claim-identity-document" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={(event) => chooseIdentityDocument(event.target.files?.[0])} />
+                  <PhotoSourceButtons allowPdf onFile={chooseIdentityDocument} />
                   <p className="text-[12px] leading-4 text-ink-muted">ID documents are private and available only to authorized administrators for claim review.</p>
                 </div>
 
                 {/* Submit */}
                 <motion.button
                   type="submit"
-                  disabled={isLoading || !verified}
+                  disabled={isLoading}
                   whileHover={{ y: -2, scale: 1.01 }}
                   whileTap={{ scale: 0.98 }}
                   transition={SPRING}

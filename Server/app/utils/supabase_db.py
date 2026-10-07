@@ -11,6 +11,7 @@ from uuid import UUID
 
 from app.utils.matching import match_percentage
 from app.utils.report_lifecycle import ReportLifecycle
+from app.utils.archive import flag_archived
 from app.utils.crypto_service import CryptoService
 from app.utils.claim_status import normalize_claim_status
 
@@ -1152,6 +1153,7 @@ class SupabaseDB:
                     'status': 'Resolved' if report_status in {'returned', 'resolved', 'closed'} else 'Found' if report_status == 'found' else 'Potential Match' if report_status == 'matched' else 'Searching',
                     'rawStatus': report_status or 'missing',
                 })
+            flag_archived(self.client, mapped, 'missing_items', 'mpost_id')
             return mapped
         except Exception as e:
             logger.error(f"✗ Error listing admin missing items: {e}")
@@ -1220,6 +1222,7 @@ class SupabaseDB:
                     'rawStatus': report_status or 'unclaimed',
                     'photo': item.get('image_url') or '',
                 })
+            flag_archived(self.client, mapped, 'found_items', 'fpost_id')
             return mapped
         except Exception as e:
             logger.error(f"✗ Error listing admin found items: {e}")
@@ -1660,6 +1663,7 @@ class SupabaseDB:
                         'collected': 'Collected',
                     }.get(normalize_claim_status(claim.get('status')), 'Unknown'),
                 })
+            flag_archived(self.client, mapped, 'claims', 'claim_id')
             return mapped
         except Exception as e:
             logger.error(f"✗ Error listing admin claims: {e}")
@@ -1988,7 +1992,19 @@ class SupabaseDB:
             response = self.client.table('user_notifications').select(
                 'notification_id, title, message, notification_type, is_read, found_item_id, missing_report_id, link_label, link_page, created_at, read_at'
             ).eq('user_account_id', user_account_id).order('created_at', desc=True).limit(limit).execute()
-            return response.data or []
+            notifications = response.data or []
+            # The claim form wants the readable reference (FP2031), not the internal id the notification stores.
+            item_ids = list({str(n['found_item_id']) for n in notifications if n.get('found_item_id')})
+            references: Dict[str, str] = {}
+            if item_ids:
+                try:
+                    rows = self.client.table('found_items').select('item_id,fpost_id').in_('item_id', item_ids).execute().data or []
+                    references = {str(row['item_id']): row.get('fpost_id') or '' for row in rows}
+                except Exception as lookup_error:
+                    logger.warning('Notification references unavailable: %s', lookup_error)
+            for notification in notifications:
+                notification['found_item_reference'] = references.get(str(notification.get('found_item_id') or ''), '')
+            return notifications
         except Exception as e:
             logger.error(f"✗ Error fetching notifications: {e}")
             return []

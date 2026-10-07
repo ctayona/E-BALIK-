@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import type { Claim } from "../../data/mockData";
 import { deleteAdminClaim, fetchAdminClaimHistory, fetchAdminClaims, updateAdminClaimStatus, type AdminClaimHistoryRow, type AdminClaimRow } from "../../utils/api";
 import { canDelete } from "../../utils/permissions";
-import { CheckCircle2, ClipboardCheck, Eye, FilePlus2, ShieldCheck, Trash2, XCircle, ZoomIn } from "lucide-react";
+import { setArchived } from "../../utils/archive";
+import { Archive, ArchiveRestore, CheckCircle2, ClipboardCheck, Eye, FilePlus2, ShieldCheck, Trash2, XCircle, ZoomIn } from "lucide-react";
 import ClaimFormModal from "./ClaimFormModal";
 import { BTN, INPUT, PageHeader, RolePill } from "../../components/ui/primitives";
 import AdminModal from "../../components/ui/AdminModal";
@@ -306,7 +307,9 @@ export default function ClaimsVerification() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [historyError, setHistoryError] = useState("");
-  const [activeTab, setActiveTab] = useState<"claims" | "all" | "closed" | "history">("claims");
+  const [activeTab, setActiveTab] = useState<"claims" | "all" | "closed" | "archived" | "history">("claims");
+  const [archiveTarget, setArchiveTarget] = useState<Claim | null>(null);
+  const [archiveBusy, setArchiveBusy] = useState(false);
   const [claimantFilter, setClaimantFilter] = useState("");
   const [foundItemFilter, setFoundItemFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | Claim["status"]>("All");
@@ -356,6 +359,7 @@ export default function ClaimsVerification() {
       foundImage: item.foundImage,
       submitted: item.submitted ? new Date(item.submitted).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Unknown",
       submittedAt: item.submittedAt || item.submitted,
+      archived: Boolean(item.archived),
       status: normalizeClaimStatus(item.status),
     }));
 
@@ -449,9 +453,13 @@ export default function ClaimsVerification() {
   const claimantValue = claimantFilter.trim().toLocaleLowerCase();
   const foundItemValue = foundItemFilter.trim().toLocaleLowerCase();
   const dateRangeInvalid = Boolean(dateFrom && dateTo && dateFrom > dateTo);
-  const closedClaims = claims.filter((claim) => claim.status === "Collected" || claim.status === "Rejected");
-  const activeClaims = claims.filter((claim) => claim.status !== "Collected" && claim.status !== "Rejected");
-  const tabClaims = activeTab === "claims" ? claims : activeTab === "closed" ? closedClaims : activeClaims;
+  // Archived claims only appear in the Archived tab; the other tabs are about claims still in play.
+  const workingClaims = claims.filter((claim) => !claim.archived);
+  const archivedClaims = claims.filter((claim) => claim.archived);
+  const closedClaims = workingClaims.filter((claim) => claim.status === "Collected" || claim.status === "Rejected");
+  const activeClaims = workingClaims.filter((claim) => claim.status !== "Collected" && claim.status !== "Rejected");
+  const tabClaims = activeTab === "claims" ? workingClaims : activeTab === "closed" ? closedClaims : activeTab === "archived" ? archivedClaims : activeClaims;
+  const isClosed = (claim: Claim) => claim.status === "Collected" || claim.status === "Rejected";
   const filteredClaims = tabClaims.filter((claim) => {
     if (statusFilter !== "All" && claim.status !== statusFilter) return false;
     if (claimantValue && !claim.claimant.toLocaleLowerCase().includes(claimantValue)) return false;
@@ -543,6 +551,20 @@ export default function ClaimsVerification() {
     window.dispatchEvent(new CustomEvent("ebalik-claims-updated"));
   };
 
+  const confirmArchive = async () => {
+    if (!archiveTarget || archiveBusy) return;
+    setArchiveBusy(true);
+    try {
+      await setArchived("claim", archiveTarget.id, !archiveTarget.archived);
+      await refreshClaims();
+    } catch {
+      // Reported by the API helper.
+    } finally {
+      setArchiveBusy(false);
+      setArchiveTarget(null);
+    }
+  };
+
   const collect = async (id: string) => {
     await updateAdminClaimStatus(id, "collected");
     await refreshClaims();
@@ -623,9 +645,10 @@ export default function ClaimsVerification() {
           if (tab !== "history") clearFilters();
         }}
         options={[
-          { value: "claims", label: "All claims", count: claims.length },
+          { value: "claims", label: "All claims", count: workingClaims.length },
           { value: "all", label: "Active", count: activeClaims.length },
           { value: "closed", label: "Closed and completed", count: closedClaims.length },
+          { value: "archived", label: "Archived", count: archivedClaims.length },
           { value: "history", label: "Change history", count: history.length },
         ]}
       />
@@ -742,7 +765,7 @@ export default function ClaimsVerification() {
           ]}
           isEmpty={!loadError && visibleClaims.length === 0}
           empty={tabClaims.length === 0
-            ? activeTab === "closed" ? tr("No claims have been closed or completed yet.") : tr("No active claims need review.")
+            ? activeTab === "archived" ? tr("Nothing is archived. Finished claims you archive appear here.") : activeTab === "closed" ? tr("No claims have been closed or completed yet.") : tr("No active claims need review.")
             : t("common.noMatches")}
           footer={
             <div className="flex flex-col gap-3 border-t border-line px-4 py-3 text-[13px] text-ink-muted sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -779,6 +802,8 @@ export default function ClaimsVerification() {
                 {activeTab !== "closed" && claim.status === "Approved for Pickup" && (
                   <IconAction label={`${t("claims.complete")} ${claim.claimReference || claim.id}`} tone="success" onClick={() => setCollectionTarget(claim)} icon={<ShieldCheck size={17} aria-hidden="true" />} />
                 )}
+                {isClosed(claim) && !claim.archived && <IconAction label={`${tr("Archive")} ${claim.claimReference || claim.id}`} onClick={() => setArchiveTarget(claim)} icon={<Archive size={16} aria-hidden="true" />} />}
+                {claim.archived && <IconAction label={`${tr("Restore from archive")} ${claim.claimReference || claim.id}`} tone="success" onClick={() => setArchiveTarget(claim)} icon={<ArchiveRestore size={16} aria-hidden="true" />} />}
                 {isSuperAdmin && (
                   <IconAction label={`${t("common.delete")} ${claim.claimReference || claim.id}`} tone="danger" onClick={() => { setDeleteTarget(claim); setDeleteConfirmValue(""); }} icon={<Trash2 size={16} aria-hidden="true" />} />
                 )}
@@ -786,6 +811,17 @@ export default function ClaimsVerification() {
             </tr>
           ))}
         </DataTable>
+      )}
+
+      {archiveTarget && (
+        <ConfirmActionDialog
+          title={archiveTarget.archived ? tr("restore claim {0} from the archive?", { "0": archiveTarget.claimReference || archiveTarget.id }) : tr("archive claim {0}?", { "0": archiveTarget.claimReference || archiveTarget.id })}
+          description={archiveTarget.archived ? tr("It goes back to the working list.") : tr("It moves out of the working list into the Archived tab. Nothing is deleted and you can restore it any time.")}
+          confirmLabel={archiveTarget.archived ? tr("Restore") : tr("Archive")}
+          busy={archiveBusy}
+          onCancel={() => { if (!archiveBusy) setArchiveTarget(null); }}
+          onConfirm={() => void confirmArchive()}
+        />
       )}
 
       {deleteTarget && isSuperAdmin && (

@@ -3,6 +3,7 @@ import { ArrowRight, GitCompareArrows, LibraryBig, PackageCheck, PackagePlus, Qr
 import type { NavigationOptions, Page } from "@/app/types";
 import type { User } from "@/app/utils/useAuth";
 import { useAuth } from "@/app/utils/useAuth";
+import { useVerificationPrompt } from "@/app/shared/verification/VerificationRequiredModal";
 import { isCompletedReport } from "@/app/utils/reportLifecycle";
 import { CX } from "@/app/utils/clay";
 import { SkeletonBlock } from "@/app/shared/LoadingSkeleton";
@@ -79,7 +80,9 @@ export default function Dashboard({ user, onNavigate }: {
     onNavigate("missing-item", { searchTerm });
   }
 
-  const open = (items: GalleryItem[]) => (_item: GalleryItem, index: number) => setViewing({ items, index });
+  // Opening a public report needs a verified account: everyone else gets a pop-up with a button to the Profile page.
+  const { guard, prompt } = useVerificationPrompt(onNavigate, "view this report");
+  const open = (items: GalleryItem[]) => guard((_item: GalleryItem, index: number) => setViewing({ items, index }));
 
   const heroOverlay = (
     <div className="text-white">
@@ -128,6 +131,7 @@ export default function Dashboard({ user, onNavigate }: {
 
   return (
     <main className={CX.page}>
+      {prompt}
       <div className={`${CX.inner} space-y-8 sm:space-y-10`}>
         {loading ? (
           <SkeletonBlock className="h-[520px] w-full rounded-[28px]" />
