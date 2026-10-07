@@ -165,26 +165,44 @@ class GuardRoleTests(unittest.TestCase):
         pin = handover.HandoverService(db).issue(CLAIM)
         self.assertEqual(client.post('/api/admin/claims/handover/lookup', json={'pin': pin}).status_code, 200)
 
-    def test_only_super_admins_can_assign_guard_and_it_is_a_valid_level(self):
+    def test_role_assignment_rules(self):
+        """Admins can make someone a guard (and take it away); only super admins deal with administrators; nobody touches a super admin."""
         app = Flask(__name__)
         app.config.update(SUPABASE_URL='x', SUPABASE_SERVICE_KEY='x')
         app.register_blueprint(user_routes.users_bp, url_prefix='/api/admin')
+        people = {
+            OWNER: {'account_id': OWNER, 'access_level': 'user', 'is_active': True, 'email': 'o@umak.edu.ph'},
+            'guard-1': {'account_id': 'guard-1', 'access_level': 'guard', 'is_active': True, 'email': 'g@umak.edu.ph'},
+            'admin-2': {'account_id': 'admin-2', 'access_level': 'admin', 'is_active': True, 'email': 'a2@umak.edu.ph'},
+            'boss-1': {'account_id': 'boss-1', 'access_level': 'super_admin', 'is_active': True, 'email': 'b@umak.edu.ph'},
+            'sus-1': {'account_id': 'sus-1', 'access_level': 'user', 'is_active': False, 'email': 's@umak.edu.ph'},
+        }
         db = MagicMock()
-        db.set_user_access_level.return_value = {'email': 'g@umak.edu.ph', 'access_level': 'guard'}
+        db.get_user_by_account_id.side_effect = lambda account_id: people.get(account_id)
+        db.set_user_access_level.side_effect = lambda target, level, actor_id: {'email': people[target]['email'], 'access_level': level}
+        actor = {'level': 'super_admin'}
 
         def require(required_level='admin'):
             if required_level == 'super_admin' and actor['level'] != 'super_admin':
                 raise PermissionError('Super administrator access required')
             return {'account_id': ADMIN_ID, 'email': 'a@umak.edu.ph', 'access_level': actor['level']}
-        actor = {'level': 'super_admin'}
+
+        def change(target, level):
+            return client.patch(f'/api/admin/users/{target}/access-level', json={'access_level': level}).status_code
         with patch.object(user_routes, '_require_admin', side_effect=require), patch.object(user_routes, 'get_db', return_value=db):
             client = app.test_client()
-            ok = client.patch(f'/api/admin/users/{OWNER}/access-level', json={'access_level': 'guard'})
-            bad = client.patch(f'/api/admin/users/{OWNER}/access-level', json={'access_level': 'owner'})
+            self.assertEqual((change(OWNER, 'guard'), change(OWNER, 'owner'), change('admin-2', 'user'), change(OWNER, 'admin')), (200, 400, 200, 200))
+            self.assertEqual(change('boss-1', 'user'), 403)
+            self.assertEqual(change(ADMIN_ID, 'guard'), 400)   # nobody changes their own level
             actor['level'] = 'admin'
-            denied = client.patch(f'/api/admin/users/{OWNER}/access-level', json={'access_level': 'guard'})
-        self.assertEqual((ok.status_code, bad.status_code, denied.status_code), (200, 400, 403))
-        db.set_user_access_level.assert_called_once()
+            db.set_user_access_level.reset_mock()
+            self.assertEqual((change(OWNER, 'guard'), change('guard-1', 'user')), (200, 200))
+            self.assertEqual((change(OWNER, 'admin'), change('admin-2', 'user'), change('admin-2', 'guard'), change('boss-1', 'guard')), (403, 403, 403, 403))
+            self.assertEqual(change('sus-1', 'guard'), 409)
+            self.assertEqual(change('nobody', 'guard'), 404)
+            self.assertEqual(db.set_user_access_level.call_count, 2)
+        names = [call.args[1] for call in db.create_user_notification.call_args_list]
+        self.assertIn('You are now a guard', names)
 
 
 class StaffLoginTests(unittest.TestCase):
@@ -770,7 +788,7 @@ class AnalyticsRangeTests(unittest.TestCase):
         self.assertEqual(len(result['lost_by_month']), analytics.MONTHS_MAX)
 
     def test_the_collector_applies_the_range_to_lost_reports_and_found_items(self):
-        today = date.today()
+        today = datetime.now(timezone.utc).date()
         store = {
             'missing_items': [{'category': 'Keys', 'last_seen_date': today.isoformat(), 'last_location': 'Library'},
                               {'category': 'Bags', 'last_seen_date': (today - timedelta(days=200)).isoformat(), 'last_location': 'Gym'}],

@@ -12,6 +12,7 @@ import { showSubmitError } from "@/app/utils/submitErrors";
 import VerificationGate from "@/app/shared/verification/VerificationGate";
 import HandoverQr from "@/app/shared/claims/HandoverQr";
 import { isVerified, useCurrentUser } from "@/app/utils/system";
+import { isCompletedReport } from "@/app/utils/reportLifecycle";
 
 type ClaimRecord = {
   claim_id: string; claim_reference?: string; fpost_id?: string; claim_reason?: string;
@@ -22,9 +23,11 @@ type ClaimRecord = {
 
 export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: string; onNavigate?: (page: Page) => void }) {
   // All state & logic preserved exactly
-  const { cancelClaim, createClaim, getClaims, isLoading } = useAuth();
+  const { cancelClaim, createClaim, getClaims, getMissingItems, isLoading } = useAuth();
   const verified = isVerified(useCurrentUser());
   const [reference,    setReference]    = useState(foundItemId);
+  const [myLostReports, setMyLostReports] = useState<Array<{ mpost_id: string; item_name: string; last_location?: string }>>([]);
+  const [lostReportId,  setLostReportId]  = useState("");
   const [reason,       setReason]       = useState("");
   const [proof,        setProof]        = useState<File | null>(null);
   const [proofPreview, setProofPreview] = useState("");
@@ -55,6 +58,16 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
 
   useEffect(() => { setReference(foundItemId); if (foundItemId) setActiveTab("submit"); }, [foundItemId]);
   useEffect(() => { void loadClaims(); }, [getClaims]);
+  // Optional link: which of the claimant's own open lost reports this item is. The report is completed with the claim once the item is collected.
+  useEffect(() => {
+    let active = true;
+    void getMissingItems().then((result) => {
+      if (!active) return;
+      setMyLostReports(((result.items || []) as Array<{ mpost_id: string; item_name: string; last_location?: string; status?: string }>)
+        .filter((item) => !isCompletedReport("Missing", item.status)));
+    });
+    return () => { active = false; };
+  }, [getMissingItems]);
   useEffect(() => {
     if (!confirmationOpen || countdown <= 0) return;
     const timer = window.setTimeout(() => setCountdown((value) => value - 1), 1000);
@@ -125,6 +138,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
       identity_document: identityDocument,
       identity_document_type: identityDocumentType,
       dpa_consent: privacy,
+      missing_report_id: lostReportId || undefined,
     });
     setConfirmationOpen(false);
     if (!result.success) {
@@ -138,7 +152,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
       reference: result.claim?.claim_reference || result.claim?.claim_id || undefined,
       details: ["Track the review status in Claim history.", "Bring the same ID when collecting the item in person."],
     });
-    setReason(""); setProof(null); setProofPreview(""); setIdentityDocument(null);
+    setReason(""); setProof(null); setProofPreview(""); setIdentityDocument(null); setLostReportId("");
     await loadClaims();
   }
 
@@ -241,6 +255,20 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
                     className={`${CX.input} h-[50px] w-full`}
                   />
                 </div>
+
+                {/* Which lost report this is (optional): it is completed together with the claim */}
+                {myLostReports.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="claim-lost-report" className="text-[12px] font-bold text-navy-800">Which of your lost reports is this? <span className="font-medium text-ink-muted">(optional)</span></label>
+                    <select id="claim-lost-report" value={lostReportId} onChange={(e) => setLostReportId(e.target.value)} className={`${CX.input} h-[50px] w-full`}>
+                      <option value="">Not linked to a report</option>
+                      {myLostReports.map((report) => (
+                        <option key={report.mpost_id} value={report.mpost_id}>{report.item_name} · {report.mpost_id}{report.last_location ? ` · ${report.last_location}` : ""}</option>
+                      ))}
+                    </select>
+                    <p className="text-[12px] text-ink-muted">When the item is released to you, this report is marked Completed automatically.</p>
+                  </div>
+                )}
 
                 {/* Reason */}
                 <div className="flex flex-col gap-2">

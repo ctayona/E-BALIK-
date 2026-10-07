@@ -31,14 +31,18 @@ On a laptop the background timer is **off** on purpose (so test runs cannot send
 
 ### 1.3 Make sure the database is ready
 
-All migrations must have been run in the Supabase SQL Editor, in order, **ending with `20261014_recycle_bin.sql`** (the full list is in `DEPLOYMENT_GUIDE.md`). Check the last two quickly:
+All migrations must have been run in the Supabase SQL Editor, in order, **ending with `20261015_report_lifecycle_and_guard_handover.sql`** (the full list is in `DEPLOYMENT_GUIDE.md`). Check the last three quickly:
 
 ```sql
 SELECT to_regclass('public.recycle_bin');
 SELECT id, public FROM storage.buckets WHERE id = 'recycle-bin';   -- public must be false
+SELECT column_name FROM information_schema.columns WHERE table_schema = 'public'
+  AND ((table_name = 'claims' AND column_name = 'missing_report_id') OR (table_name = 'found_items' AND column_name = 'handover_guard_id'));   -- 2 rows
 ```
 
 > **If `20261014` has not been run:** every admin delete is refused with a "setup required" message. That is intentional (the app will not delete something it cannot archive first). Run the migration and try again.
+
+> **If `20261015` has not been run:** the app still works, but a guard account cannot release items (the database refuses it), administrators cannot assign the guard role, a claim cannot be linked to a lost report, and a found report cannot be linked to a guard. Run it before testing sections 2.9, 4.2, 6.1, 6.3 and 6.4.
 
 ### 1.4 The test accounts you need
 
@@ -50,7 +54,7 @@ Create these once. Registration is in section 2.
 | **Student B** | Second normal user who finds things | Register in the user app (use a different email) |
 | **Admin** | Staff who reviews claims and items | Register, then a super admin sets the role to Admin in **Users** |
 | **Super admin** | Full control, Recycle bin, System control | Your existing super admin account |
-| **Guard** | Release desk only | Register, then a super admin sets the role to Guard in **Users** |
+| **Guard** | Release desk only | Register, then an admin or super admin uses **Change role** in **Users** and picks Security guard |
 
 Tips:
 - A UMak student email (`name.k12345@umak.edu.ph` style) is detected as **Student** automatically; other `@umak.edu.ph` emails are **Faculty**; any other email is **Others**.
@@ -76,6 +80,8 @@ Each row is one test. Tick the **Pass** box in your own copy, or copy the result
 | 2.6 | Open **Profile**. | You see your verification status, role and what is unlocked. | ☐ |
 | 2.7 | While **unverified**, try to submit a found report, a lost report, a claim, or a bid. | A message explains that you must be verified first. Submit is disabled. | ☐ |
 | 2.8 | In Profile, upload a verification ID. In the admin app (**Users**), approve it and pick a role (Student, Faculty, Staff or Visitor). | Student A becomes verified and the features above unlock. | ☐ |
+| 2.9 | Admin app, **Users**: click **Change role** on a normal user and choose **Security guard**, then **Save role**. | A "Role updated" message appears and the user's Access column says Guard. Sign in as that user in the admin app: you land on the release desk only. | ☐ |
+| 2.10 | Sign in as a normal **admin** (not super admin) and open **Change role** on another user. | You can pick User or Security guard. **Admin** is greyed out with "Only super admins can make someone an admin." There is no Change role button on administrators or on yourself. | ☐ |
 
 ---
 
@@ -101,7 +107,8 @@ Sign in as **Student B** (the finder) and **Student A** (the owner).
 | # | Do this | You should see | Pass |
 |---|---|---|---|
 | 4.1 | As Student A: **Dashboard**, then Report Item, then "I lost an item". Fill the form with a photo (for example a black wallet), category, place, date. Accept the privacy consent. | Report is saved with a report ID and appears under **My Reports**. | ☐ |
-| 4.2 | As Student B: Report Item, then "I found an item". Fill in a similar item (a black wallet) with a photo. | Report is saved and appears under **My Reports**. | ☐ |
+| 4.2 | As Student B: Report Item, then "I found an item". Fill in a similar item (a black wallet) with a photo. Under "Hand it over to campus security" choose the guard in **Which guard received it?** (create one first, see 2.9). | Report is saved and appears under **My Reports**. The guard gets an email and a notification that an item was handed to them. | ☐ |
+| 4.2b | Open the found form again and choose **Another guard (not listed)**. | A box for the guard's name or ID appears, and the report saves with that name. If no guard accounts exist yet, the box is shown straight away. | ☐ |
 | 4.3 | Try an image in a wrong format or over the size limit. | A clear error. Nothing is saved. | ☐ |
 | 4.4 | Create reports until you have 6 active ones, then try a 7th. | The 7th is refused with a message about the active report limit (6). | ☐ |
 | 4.5 | Open **My Reports** and click a report. | A details window with image, category, place, date and status. | ☐ |
@@ -109,6 +116,7 @@ Sign in as **Student B** (the finder) and **Student A** (the owner).
 | 4.7 | Delete one of your own test reports. | Same countdown and checkbox. The report disappears from your list. | ☐ |
 | 4.8 | Open **Browse**. Check both tabs (Missing Items and Items in Custody), search, filter by category, switch between tile and list. | Items show with photo, category, place. **No email or campus ID is visible anywhere.** | ☐ |
 | 4.9 | Open the **Dashboard**. | Recent Found and Recent Missing panels load real data; clicking one opens its details. | ☐ |
+| 4.10 | Open **My Reports**. | The tabs are All, Missing, Found and **Completed**. A new report is under In progress; the Completed tab is empty until an item is released (section 6.4). | ☐ |
 
 ---
 
@@ -132,7 +140,7 @@ This is the most important flow. Use the found wallet from section 4.
 
 | # | Do this | You should see | Pass |
 |---|---|---|---|
-| 6.1.1 | As Student A: **Browse**, **Items in Custody**, note the found wallet's reference. Open **Claims**, stay on the **Submit claim** tab, enter the **Found item reference**, explain why it is yours, and add the proof photo (and ID if asked). Submit. | A claim is created with a claim reference and status **pending**. An email receipt arrives. | ☐ |
+| 6.1.1 | As Student A: **Browse**, **Items in Custody**, note the found wallet's reference. Open **Claims**, stay on the **Submit claim** tab, enter the **Found item reference**, choose your lost wallet report under **Which of your lost reports is this? (optional)**, explain why it is yours, and add the proof photo (and ID if asked). Submit. | A claim is created with a claim reference and status **pending**. An email receipt arrives. | ☐ |
 | 6.1.2 | Open the **Claim history** tab. | Your claim and its status are listed. | ☐ |
 
 ### 6.2 Review it as admin
@@ -158,10 +166,28 @@ This is the most important flow. Use the found wallet from section 4.
 | 6.3.7 | Try 13 wrong PINs within one minute. | After 12 attempts you are told to slow down. | ☐ |
 | 6.3.8 | As Guard, try to open the admin page for Users or Claims by its address. | Refused. The guard role cannot see anything but the desk. | ☐ |
 | 6.3.9 | In admin Claims, on another approved claim, use **Complete & close reports**. | The claim and the related reports close without needing the PIN. | ☐ |
+| 6.3.10 | Sign in as admin or super admin and open **Release desk** in the menu. | The same PIN screen the guard uses, plus "Items handed to guards" listing what finders gave to each guard. | ☐ |
+| 6.3.11 | Sign in as the guard and look under the PIN box. | "Items handed to you" lists only the items finders gave to this guard that the office still holds. | ☐ |
 
 Also check in admin that you can **reissue** a PIN for an approved claim (the old PIN stops working, the owner is emailed the new one).
 
 ---
+### 6.4 Everything finishes together
+
+After the release in 6.3 (item collected):
+
+| # | Do this | You should see | Pass |
+|---|---|---|---|
+| 6.4.1 | As Student A, open **My Reports**, then the **Completed** tab. | The lost wallet report is there, marked Completed. It is gone from All and Missing. Opening it shows a green note and only a Close button (no Edit or Delete). | ☐ |
+| 6.4.2 | Open **Notifications**. | "Your lost report is completed". Its button opens My Reports on the Completed tab. | ☐ |
+| 6.4.3 | As Student B (the finder), open **My Reports**, **Completed**. | The found wallet report is there, and a notification says the item reached its owner. | ☐ |
+| 6.4.4 | As Student A, open **Matches** and **Dashboard**. | The completed lost report is not offered for matching and is not listed as a missing report. | ☐ |
+| 6.4.5 | Repeat 6.1 to 6.3 but leave the lost-report choice empty, with a lost report that closely matches the found item (same category, place and date). | After the release that lost report is still completed automatically (it is the one strong match). A lost report that does not match is left open. | ☐ |
+| 6.4.6 | As Student A, try to edit or delete the completed lost report by repeating the request from the browser, or as Student B try to delete a found report that has a claim. | Refused with a clear message: the report is completed, or someone has claimed the item. | ☐ |
+| 6.4.7 | Admin app, **Reports**, tab **Items in custody**. | The released wallet is no longer listed. Items with a claim to review, approved claims and items old enough to auction show their own status and a next-step button. | ☐ |
+
+---
+
 
 ## 7. Smart Tags (QR stickers)
 
@@ -226,11 +252,13 @@ Sign in to the admin app as **super admin** unless stated.
 | 9.2 | Dashboard | Choose a custom start and end date. | Charts match the dates. | ☐ |
 | 9.3 | Dashboard | Look at the location hotspots. | Busiest locations are listed. | ☐ |
 | 9.4 | Dashboard | Download the CSV, and open the print report. | CSV opens in Excel with no formulas running; the print view is readable. | ☐ |
-| 9.5 | **Reports and analytics** | Open it. | Reports load. | ☐ |
-| 9.6 | **Lost items** and **Found items** | Search, filter, open an item, change status. | Lists respond; changes are saved. | ☐ |
+| 9.5 | **Analytics** | Open it (this page was called Reports and analytics). | Reports and charts load. | ☐ |
+| 9.6 | **Reports** | Open it. Use the tabs **Lost reports**, **Found reports** and **Items in custody**. In each, search, filter, open an item and change its status. | One page with three tabs; lists respond and changes are saved. The old Lost items and Found items menu entries are gone. | ☐ |
+| 9.6b | **Reports**, tab **Items in custody** | Look at the summary, filter by Needs review, Waiting for pickup, In auction, Waiting for the owner and On hold, and click a next-step button. | Each item shows its state, days held and who received it. **Review claim** opens Claims; **Create auction** (items waiting 30+ days) opens Auctions. Export CSV downloads what is on screen. | ☐ |
 | 9.7 | **Chain of custody** | Open an item's history. | Each handover step is listed in order. | ☐ |
 | 9.8 | **Users** | Search a user; change a role; suspend a user for a number of days with a reason; lift it. | Role changes apply. A suspended user cannot sign in until the date. | ☐ |
-| 9.9 | Users | Set a role to **Guard**. | That person can use only the release desk. | ☐ |
+| 9.9 | Users | Use **Change role** to make someone a **Security guard**, then change them back to **User**. | A guard can use only the release desk; a user again has no staff access. | ☐ |
+| 9.9b | **Release desk** | Open it as admin. | Type or scan a Handover PIN to release an item, same as the guard. | ☐ |
 | 9.10 | **Notifications** | Open it. | Admin notifications are listed. | ☐ |
 | 9.11 | **Activity logs** | Open it. | Your recent actions appear (claims approved, roles changed, deletes). | ☐ |
 | 9.12 | Language switch | Switch the admin app to Tagalog, then back. | Labels change language. | ☐ |
@@ -269,10 +297,10 @@ Create **disposable test records** first (a found item, a lost report, an accoun
 
 | # | Do this | You should see | Pass |
 |---|---|---|---|
-| 11.1 | Delete a test **found item** in admin. | The dialog says it moves to the Recycle bin. It disappears from Found items. | ☐ |
+| 11.1 | Delete a test **found item** in admin (**Reports**, tab **Found reports**). | The dialog says it moves to the Recycle bin. It disappears from Found reports. | ☐ |
 | 11.2 | Open **Recycle bin**. | The item is listed with its type, who deleted it, and days left (30). | ☐ |
 | 11.3 | Use the type filter and the search box. | The list narrows. | ☐ |
-| 11.4 | Click **Restore**, type `CONFIRM`. | The item is back in Found items, with its photo and its claims. | ☐ |
+| 11.4 | Click **Restore**, type `CONFIRM`. | The item is back in Found reports, with its photo and its claims. | ☐ |
 | 11.5 | Delete it again, then click **Delete permanently**. Type `CONFIRM` and a **wrong** 6-digit code. | An error. The item stays in the bin. | ☐ |
 | 11.6 | Repeat with the **right** current code from Google Authenticator. | The item is gone for good. | ☐ |
 | 11.7 | Try the same code again on another item. | Refused: each code works once. Wait for the next code. | ☐ |
@@ -377,6 +405,7 @@ Copy this table into a note and fill it in.
 | 4 Reports and browse | | | | | | |
 | 5 AI matching | | | | | | |
 | 6 Claims, PIN, guard | | | | | | |
+| 6.4 Reports finish together | | | | | | |
 | 7 Smart Tags | | | | | | |
 | 8 Auctions | | | | | | |
 | 9 Admin tools | | | | | | |
@@ -397,7 +426,7 @@ Copy this table into a note and fill it in.
 ## 15. Known limits of this guide
 
 - It was written from the code and from earlier automated checks (the backend test suite and browser checks with simulated data). The steps in this guide have **not** been walked through end to end on the live system.
-- The recycle bin, migration `20261014`, and the file copies have been tested with simulated storage only. Test them on staging first (section 11).
+- The recycle bin, migrations `20261014` and `20261015`, and the file copies
 - Evidence retention and bin expiry cannot be sped up safely (test 12.3.7).
 - Email appearance differs by mail app. Gmail is the one to check; others are to be confirmed.
 - The 20-minute, 60-minute, 8-hour and 12-hour sign-out limits are checked by waiting or by the shortcut in section 3.

@@ -48,7 +48,7 @@ Users/
   Backend/shared/              account.py (Home + Profile), request_auth.py (report pages)
 Admin/
   Frontend/                    Admin web app (own package.json and node_modules)
-    src/pages/<page>/          dashboard, lost-items, found-items, ai-matching, claims-verification,
+    src/pages/<page>/          dashboard, reports (lost, found and custody tabs), lost-items, found-items, ai-matching, claims-verification,
                                chain-of-custody, users, reports-analytics, notifications,
                                activity-logs, admin-profile
     src/components/            Cross-page admin components
@@ -80,7 +80,7 @@ Each endpoint lives in the backend folder of the page that uses it. Where severa
 | `GET /api/found-items/public` | `home` | (older landing list; unused now) |
 | `GET /api/public/board` | `home` | Landing (newest missing reports, found items and totals; safe fields only, no login) |
 | `/api/auth/profile`, `/api/auth/profile/document-upload` | `profile` | Profile |
-| `POST/GET /api/found-items`, `GET /api/found-items/matches` | `found_item` | Found Item (list also My Reports) |
+| `POST/GET /api/found-items`, `GET /api/found-items/matches`, `GET /api/found-items/guards` | `found_item` | Found Item (list also My Reports; guards = who can receive an item) |
 | `POST/GET /api/missing-items`, `GET /api/missing-items/matches` | `missing_item` | Missing Item (list also Dashboard, Matches, My Reports) |
 | `PUT/DELETE /api/found-items/<id>`, `PUT/DELETE /api/missing-items/<id>` | `my_reports` | My Reports |
 | `GET /api/found-items/search` | `matches` | Matches, Dashboard, Browse Items, Missing Item |
@@ -373,6 +373,18 @@ Run `Server/manual_migrations/20261007_report_integrity_and_reactions.sql` after
 - **Re-auction rule:** only after a winner was confirmed and has not collected (`ended` plus `awaiting_pickup`). Before that the admin confirms the winner or cancels.
 - **Winner email:** `AUCTION_EMAIL_MODE=auto` (default) sends through SendGrid when `SENDGRID_API_KEY` is set and only logs otherwise. The result is stored in `winner_email_mode` (`sendgrid`, `mock` or `sendgrid_failed`); the admin sees it and can use `POST /api/admin/auctions/<id>/resend-winner-email`.
 
+## Report lifecycle, custody view and guard handover
+
+Run `Server/manual_migrations/20261015_report_lifecycle_and_guard_handover.sql` after `20261014` (the code degrades without it, see `Server/DATABASE_SETUP.md`).
+
+- **One rule for "finished":** an item goes report -> custody -> claim or auction -> release. When it is released, every report about it is finished. Found reports end as `returned` (set by the claim status function, or by `AuctionService.set_fulfillment('collected')` for a sold item); lost reports end as `returned` too. People see `returned`, `resolved`, `closed` (and for found reports `claimed`, `collected`) as **Completed** (`Users/Frontend/src/app/utils/reportLifecycle.ts`, mirrored by `COMPLETED_MISSING` / `COMPLETED_FOUND` in `Server/app/utils/report_lifecycle.py`).
+- **Who closes what** (`Server/app/utils/report_lifecycle.py`, `ReportLifecycle`; every call is idempotent and never raises, so a failure cannot undo a release): (1) the database trigger `close_reports_after_claim_collection` closes the claimant's lost report named in `claims.missing_report_id` or confirmed by an administrator as a match, and notifies its owner; (2) `complete_for_claim` (called by `SupabaseDB.update_claim_status` after `collected`, which covers the admin status button and the guard/admin Handover PIN release) repeats that without needing the trigger, and if nothing was linked closes the claimant's single best open lost report that is a **strong match (75%+)**, and tells the finder; (3) `complete_for_found_item` (admin sets a found item to `returned`) closes confirmed matches; (4) `complete_for_auction` (winner collected) finishes the found report and tells the finder; (5) `housekeeping.process_report_sync` re-checks claims collected in the last 60 days in the scheduled run, so anything missed is closed without notices. Notifications use `notification_type = 'report_completed'` and `link_page = 'my-reports'`, which opens My Reports on the Completed tab.
+- **Claim form:** optional **Which of your lost reports is this?** (`POST /api/claims` field `missing_report_id` = `mpost_id`, must be the claimant's own open report, else 400 `invalid_missing_report`).
+- **My Reports:** tabs All / Missing / Found show reports still in progress; **Completed** shows finished ones (read-only). `PUT/DELETE /api/found-items/<id>` and `/api/missing-items/<id>` refuse (409 `report_completed`) a completed report, and refuse deleting a found report that has claims or is in an auction (409 `report_in_use`). Matches and the Dashboard skip completed lost reports.
+- **Admin Reports page** (`Admin/Frontend/src/pages/reports/`): one page with three tabs, **Lost reports** (the old Lost items page), **Found reports** (the old Found items page) and **Items in custody** (`CustodyView.tsx`). The old nav names are still accepted by `App.tsx` (`lost-items`, `found-items`, `items-in-custody` open the matching tab, and stored bookmarks keep working). The former "Reports and analytics" page is now called **Analytics**. `GET /api/admin/found-items/custody` (`Server/app/utils/custody.py`) returns every held item with a state (waiting for the owner, claim to review, approved and waiting for pickup, on hold, in auction, auction result to confirm, sold and waiting for pickup), days held, who received it and whether it is old enough to auction (30 days). It never returns who turned the item in.
+- **Guards:** `PATCH /api/admin/users/<id>/access-level` now works for **administrators** when the change is between `user` and `guard`; making or changing an `admin` stays with super administrators, nobody changes themselves or a super administrator, and a suspended account cannot be promoted (the database function enforces the same). The Users page has one **Change role** action (`RoleModal.tsx`) instead of two hidden icons. `admin_update_claim_status` admits a guard **only** to record a collection (before migration 20261015 the database refused guards, so the release desk worked for admins only).
+- **Handing an item to a specific guard:** `GET /api/found-items/guards` lists active guards (name only). The found form has **Which guard received it?** (or "Another guard (not listed)" to type a name); `POST /api/found-items` accepts `handover_guard_id`, stores the guard's own name in `guard_name_or_id`, and notifies the guard (in the app and by email). `GET /api/admin/claims/handover/assigned` lists the held items handed to a guard (a guard sees theirs, administrators see everyone's); it is shown on the guard's Release desk and on the new **Release desk** page in the admin console (same PIN screen as the guard's), available to administrators and super administrators.
+
 ## Recycle bin (Recycle bin page, super admin only)
 
 Run `Server/manual_migrations/20261014_recycle_bin.sql` after `20261013`. Code: `Server/app/utils/recycle_bin.py`, `Admin/Backend/recycle_bin/routes.py`, `Admin/Backend/shared/authenticator.py`, `Admin/Frontend/src/pages/recycle-bin/RecycleBin.tsx`.
@@ -611,6 +623,8 @@ showInfoModal({ variant: "success" | "error" | "warning" | "info", title, messag
 10. Do not commit or reset unrelated user changes.
 
 ## Known Gaps And Recommended Next Work
+
+- Polishing backlog (priorities 3 and 4 from the 2026-10-08 list): auction lifecycle (awaiting pickup stays editable, Complete Auction button), admin override when choosing an auction item, Archive actions on admin management pages, unverified-user ID modal, exact bid increments, mobile camera/upload choice, claim notification reference display, admin nav badges.
 
 - Replace repeated modal JSX with a shared accessible modal component.
 - Add keyboard focus trapping and Escape-key close behavior to modals.

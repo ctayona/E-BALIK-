@@ -10,10 +10,11 @@ import InfoModalHost from "./components/info-modal/InfoModalHost";
 import { showInfoModal } from "./components/info-modal/infoModalStore";
 import { useT, tr } from "./utils/preferences";
 import type { StringKey } from "./i18n/strings";
+import type { ReportsTab } from "./pages/reports/Reports";
 
 const Dashboard = lazy(() => import("./pages/dashboard/Dashboard"));
-const LostItems = lazy(() => import("./pages/lost-items/LostItems"));
-const FoundItems = lazy(() => import("./pages/found-items/FoundItems"));
+const Reports = lazy(() => import("./pages/reports/Reports"));
+const ReleaseDesk = lazy(() => import("./pages/guard-desk/ReleaseDesk"));
 const AIMatching = lazy(() => import("./pages/ai-matching/AIMatching"));
 const Auctions = lazy(() => import("./pages/auctions/Auctions"));
 const SmartTags = lazy(() => import("./pages/smart-tags/SmartTags"));
@@ -28,12 +29,12 @@ const SystemControl = lazy(() => import("./pages/system-control/SystemControl"))
 const GuardDesk = lazy(() => import("./pages/guard-desk/GuardDesk"));
 const RecycleBin = lazy(() => import("./pages/recycle-bin/RecycleBin"));
 
-type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "admin-profile";
+type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "admin-profile";
 
 const PAGE_META: Record<Page, StringKey> = {
   "dashboard": "nav.dashboard",
-  "lost-items": "nav.lostItems",
-  "found-items": "nav.foundItems",
+  "report-hub": "nav.reportsHub",
+  "release-desk": "nav.releaseDesk",
   "ai-matching": "nav.aiMatching",
   "auctions": "nav.auctions",
   "smart-tags": "nav.smartTags",
@@ -49,12 +50,23 @@ const PAGE_META: Record<Page, StringKey> = {
 };
 
 const ADMIN_PAGE_STORAGE_KEY = "ebalik_admin_last_page";
+const REPORT_TAB_STORAGE_KEY = "ebalik_admin_reports_tab";
+
+/** Places other screens (and old bookmarks) can ask for. The lost, found and custody lists now live on one Reports page. */
+type NavTarget = Page | "lost-items" | "found-items" | "items-in-custody";
+const REPORT_TAB_FOR: Partial<Record<NavTarget, ReportsTab>> = { "lost-items": "lost", "found-items": "found", "items-in-custody": "custody" };
 
 export default function App() {
   const [user, setUser] = useState<AdminUser | null>(() => getStoredAdmin());
   const [page, setPage] = useState<Page>(() => {
-    const stored = localStorage.getItem(ADMIN_PAGE_STORAGE_KEY) as Page | null;
+    const stored = localStorage.getItem(ADMIN_PAGE_STORAGE_KEY) as NavTarget | null;
+    if (stored && REPORT_TAB_FOR[stored]) return "report-hub";
     return stored && PAGE_META[stored as Page] ? stored as Page : "dashboard";
+  });
+  const [reportTab, setReportTab] = useState<ReportsTab>(() => {
+    const stored = localStorage.getItem(ADMIN_PAGE_STORAGE_KEY) as NavTarget | null;
+    const saved = localStorage.getItem(REPORT_TAB_STORAGE_KEY);
+    return (stored && REPORT_TAB_FOR[stored]) || (saved === "found" || saved === "custody" ? saved : "lost");
   });
   const [notifCount, setNotifCount] = useState<number>(() => getUnreadNotificationCount());
   const t = useT();
@@ -125,9 +137,16 @@ export default function App() {
     );
   }
 
-  const navigate = (p: Page) => {
-    setPage(p);
-    localStorage.setItem(ADMIN_PAGE_STORAGE_KEY, p);
+  const navigate = (target: NavTarget) => {
+    const tab = REPORT_TAB_FOR[target];
+    const next: Page = tab ? "report-hub" : target as Page;
+    if (tab) changeReportTab(tab);
+    setPage(next);
+    localStorage.setItem(ADMIN_PAGE_STORAGE_KEY, next);
+  };
+  const changeReportTab = (tab: ReportsTab) => {
+    setReportTab(tab);
+    localStorage.setItem(REPORT_TAB_STORAGE_KEY, tab);
   };
 
   const pageTitle = t(PAGE_META[page]);
@@ -135,8 +154,8 @@ export default function App() {
   const renderPage = () => {
     switch (page) {
       case "dashboard": return <Dashboard onNavigate={(target) => navigate(target)} />;
-      case "lost-items": return <LostItems />;
-      case "found-items": return <FoundItems />;
+      case "report-hub": return <Reports tab={reportTab} onTabChange={changeReportTab} onNavigate={(target) => navigate(target)} />;
+      case "release-desk": return <ReleaseDesk />;
       case "ai-matching": return <AIMatching />;
       case "auctions": return <Auctions />;
       case "smart-tags": return <SmartTags />;

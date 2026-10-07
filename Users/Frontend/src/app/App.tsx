@@ -238,7 +238,7 @@ function MainApp() {
         {page === "report-item"  && <ReportItem onNavigate={handleNavigate} />}
         {page === "found-item"   && <FoundItem focused={navigationOptions.mode === "form"} onBack={handleNavigate} />}
         {page === "missing-item" && <MissingItem focused={navigationOptions.mode === "form"} initialSearchTerm={navigationOptions.searchTerm} onBack={handleNavigate} />}
-        {page === "my-reports"   && <MyReports onNavigate={handleNavigate} highlightId={navigationOptions.highlightReportId} />}
+        {page === "my-reports"   && <MyReports onNavigate={handleNavigate} highlightId={navigationOptions.highlightReportId} initialTab={navigationOptions.reportsTab} />}
         {page === "matches"      && <Matches initialReportId={navigationOptions.reportId} onNavigate={handleNavigate} />}
         {page === "browse-items" && <BrowseItems onNavigate={handleNavigate} />}
         {page === "claim"        && <Claim foundItemId={navigationOptions.foundItemId} onNavigate={handleNavigate} />}

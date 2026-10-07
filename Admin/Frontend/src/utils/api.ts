@@ -468,6 +468,37 @@ export async function fetchAdminLostItems(): Promise<AdminLostItemRow[]> {
   return data.items ?? [];
 }
 
+export type CustodyState = "waiting" | "claim_review" | "claim_approved" | "hold" | "auction" | "auction_review" | "sold_pickup";
+
+export interface AdminCustodyRow {
+  reference: string;
+  item: string;
+  category: string;
+  storage: string;
+  guard: string;
+  photo: string;
+  daysHeld: number;
+  state: CustodyState;
+  stateLabel: string;
+  openClaims: number;
+  auctionEligible: boolean;
+}
+
+export interface AdminCustodyOverview {
+  items: AdminCustodyRow[];
+  summary: { total: number; needsReview: number; awaitingPickup: number; inAuction: number; waiting: number; onHold: number; auctionEligible: number; minCustodyDays: number };
+}
+
+/** Every found item the office still holds, with what is happening to each one. */
+export async function fetchAdminCustody(): Promise<AdminCustodyOverview> {
+  const response = await fetch(`${API_URL}/api/admin/found-items/custody`, { headers: getAuthHeaders() });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(typeof error.error === "string" ? error.error : "Unable to load the items in custody");
+  }
+  return (await response.json()) as AdminCustodyOverview;
+}
+
 export async function fetchAdminFoundItems(): Promise<AdminFoundItemRow[]> {
   const response = await fetch(`${API_URL}/api/admin/found-items`, {
     headers: getAuthHeaders(),
@@ -731,6 +762,25 @@ export async function lookupHandoverPin(pin: string): Promise<HandoverClaim> {
 /** Release the item to its owner. Returns the confirmation message. */
 export async function releaseByHandoverPin(pin: string): Promise<string> {
   return (await handoverRequest<{ message?: string }>("release", pin)).message ?? tr("The item was released to its owner.");
+}
+
+export interface AssignedHandover {
+  reference: string;
+  item: string;
+  category: string;
+  storage: string;
+  foundDate: string;
+  handedOverAt: string;
+  guard: string;
+  status: string;
+}
+
+/** Items finders handed to a guard that are still in custody. A guard sees their own; administrators see every guard's. */
+export async function fetchAssignedHandovers(): Promise<{ items: AssignedHandover[]; setupRequired: boolean }> {
+  const response = await fetch(`${API_URL}/api/admin/claims/handover/assigned`, { headers: getAuthHeaders() });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : tr("Unable to load the items handed to guards."));
+  return { items: (payload.items ?? []) as AssignedHandover[], setupRequired: Boolean(payload.setup_required) };
 }
 
 /** Make a new PIN for an approved claim and email it to the claimant. */

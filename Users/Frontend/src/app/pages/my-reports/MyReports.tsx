@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { CalendarDays, FileStack, GitCompareArrows, Layers, MapPin, Pencil, ShieldCheck, Tag, Trash2, Search, AlertTriangle } from "lucide-react";
+import { CalendarDays, CheckCircle2, FileStack, GitCompareArrows, Layers, MapPin, Pencil, ShieldCheck, Tag, Trash2, Search, AlertTriangle } from "lucide-react";
 import type { NavigationOptions, Page } from "@/app/types";
 import { useAuth } from "@/app/utils/useAuth";
+import { isCompletedReport, reportStatusLabel } from "@/app/utils/reportLifecycle";
 import { CX } from "@/app/utils/clay";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
@@ -16,17 +17,17 @@ type Report = {
   location: string; date: string; image?: string; status: string;
   kind: "Missing" | "Found"; distinctive_marks?: string; turnover_location?: string;
 };
-type Filter = "all" | "missing" | "found";
+type Filter = "all" | "missing" | "found" | "completed";
 
 const toGallery = (report: Report): GalleryItem => ({
   id: report.id, title: report.name, kind: report.kind === "Found" ? "found" : "missing", image: report.image || undefined,
   category: report.category, location: report.location, date: report.date, description: report.description,
-  heldAt: report.turnover_location, status: report.status,
+  heldAt: report.turnover_location, status: reportStatusLabel(report.kind, report.status),
 });
 
 function StatusPill({ status }: { status: string }) {
   const value = (status || "").toLowerCase();
-  const tone = ["claimed", "returned", "resolved", "collected", "closed"].includes(value)
+  const tone = value === "completed"
     ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
     : ["unclaimed", "active", "missing"].includes(value)
       ? "bg-white/95 text-navy-800 ring-line"
@@ -34,14 +35,14 @@ function StatusPill({ status }: { status: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ring-1 ${tone}`}>{status || "unknown"}</span>;
 }
 
-export default function MyReports({ onNavigate, highlightId }: { onNavigate: (page: Page, options?: NavigationOptions) => void; highlightId?: string }) {
+export default function MyReports({ onNavigate, highlightId, initialTab }: { onNavigate: (page: Page, options?: NavigationOptions) => void; highlightId?: string; initialTab?: Filter }) {
   const { getFoundItems, getMissingItems, updateFoundItem, updateMissingItem, deleteFoundItem, deleteMissingItem } = useAuth();
   const [mode] = useViewMode();
   const formId = useId();
 
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState<Filter>("all");
+  const [active, setActive] = useState<Filter>(initialTab === "completed" ? "completed" : "all");
   const [selected, setSelected] = useState<Report | null>(null);
   const [draft, setDraft] = useState<Report | null>(null);
   const [editing, setEditing] = useState(false);
@@ -129,12 +130,20 @@ export default function MyReports({ onNavigate, highlightId }: { onNavigate: (pa
 
   function openDeleteConfirmation() { setConfirmCountdown(5); setConfirmChecked(false); setConfirmDelete(true); }
 
+  // Finished reports (the item was released to its owner) live in the Completed tab; the other tabs only show reports still in progress.
+  const finished = useMemo(() => reports.filter((r) => isCompletedReport(r.kind, r.status)), [reports]);
+  const inProgress = useMemo(() => reports.filter((r) => !isCompletedReport(r.kind, r.status)), [reports]);
   const counts = useMemo(() => ({
-    all: reports.length,
-    missing: reports.filter((r) => r.kind === "Missing").length,
-    found: reports.filter((r) => r.kind === "Found").length,
-  }), [reports]);
-  const visibleReports = useMemo(() => reports.filter((r) => active === "all" || r.kind.toLowerCase() === active), [reports, active]);
+    all: inProgress.length,
+    missing: inProgress.filter((r) => r.kind === "Missing").length,
+    found: inProgress.filter((r) => r.kind === "Found").length,
+    completed: finished.length,
+  }), [inProgress, finished]);
+  const visibleReports = useMemo(
+    () => (active === "completed" ? finished : inProgress.filter((r) => active === "all" || r.kind.toLowerCase() === active)),
+    [finished, inProgress, active],
+  );
+  const selectedCompleted = Boolean(selected && isCompletedReport(selected.kind, selected.status));
   const visibleGallery = useMemo(() => visibleReports.map(toGallery), [visibleReports]);
   const confirming = (confirmDelete || confirmEdit) && Boolean(selected);
 
@@ -153,11 +162,12 @@ export default function MyReports({ onNavigate, highlightId }: { onNavigate: (pa
           </button>
         </header>
 
-        <dl className="mb-6 grid grid-cols-3 gap-3">
+        <dl className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
           {[
-            { label: "All reports", value: counts.all, icon: FileStack, tone: "bg-iris-50 text-iris-600" },
+            { label: "In progress", value: counts.all, icon: FileStack, tone: "bg-iris-50 text-iris-600" },
             { label: "Missing", value: counts.missing, icon: Search, tone: "bg-tide-50 text-tide-700" },
             { label: "Found", value: counts.found, icon: ShieldCheck, tone: "bg-gold-50 text-gold-700" },
+            { label: "Completed", value: counts.completed, icon: CheckCircle2, tone: "bg-emerald-50 text-emerald-700" },
           ].map(({ label, value, icon: Icon, tone }) => (
             <div key={label} className={`${CX.card} flex items-center gap-3 p-3 sm:p-4`}>
               <span className={`hidden size-11 shrink-0 items-center justify-center rounded-2xl sm:flex ${tone}`}><Icon size={19} aria-hidden="true" /></span>
@@ -172,7 +182,7 @@ export default function MyReports({ onNavigate, highlightId }: { onNavigate: (pa
         {/* Filters + view */}
         <div className="glass sticky top-[calc(76px+env(safe-area-inset-top))] z-20 mb-5 flex items-center justify-between gap-2 rounded-[20px] p-2">
           <div role="tablist" aria-label="Report type" className="no-scrollbar flex min-w-0 gap-1 overflow-x-auto">
-            {(["all", "missing", "found"] as const).map((tab) => (
+            {(["all", "missing", "found", "completed"] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -183,7 +193,7 @@ export default function MyReports({ onNavigate, highlightId }: { onNavigate: (pa
                   active === tab ? "bg-[linear-gradient(180deg,#2b4282_0%,#1f3160_100%)] text-white shadow-[0_8px_18px_-10px_rgba(17,27,66,0.8)]" : "text-ink-soft hover:bg-white/80"
                 }`}
               >
-                {tab === "all" ? "All" : tab === "missing" ? "Missing" : "Found"}
+                {tab === "all" ? "All" : tab === "missing" ? "Missing" : tab === "found" ? "Found" : "Completed"}
                 <span className={`rounded-full px-1.5 text-[12px] tabular-nums ${active === tab ? "bg-white/20" : "bg-frost-100 text-ink-muted"}`}>{counts[tab]}</span>
               </button>
             ))}
@@ -199,14 +209,20 @@ export default function MyReports({ onNavigate, highlightId }: { onNavigate: (pa
             mode={mode}
             onOpen={(_item, index) => openReport(visibleReports[index])}
             badge={(item) => <StatusPill status={item.status || ""} />}
-            empty={
+            empty={active === "completed" ? (
+              <div className="glass flex flex-col items-center gap-3 rounded-[22px] px-6 py-14 text-center">
+                <span className="flex size-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"><CheckCircle2 size={26} aria-hidden="true" /></span>
+                <p className="text-[16px] font-semibold text-ink">Nothing completed yet</p>
+                <p className="max-w-[44ch] text-[14px] text-ink-muted">When an item is released to its owner, the lost and found reports about it move here.</p>
+              </div>
+            ) : (
               <div className="glass flex flex-col items-center gap-3 rounded-[22px] px-6 py-14 text-center">
                 <span className="flex size-14 items-center justify-center rounded-2xl bg-frost-100 text-iris-600"><FileStack size={26} aria-hidden="true" /></span>
                 <p className="text-[16px] font-semibold text-ink">No reports in this view yet</p>
                 <p className="max-w-[44ch] text-[14px] text-ink-muted">Reports you submit for found or lost items will appear here.</p>
                 <button type="button" onClick={() => onNavigate("report-item")} className={CX.btnGold}>Report an item</button>
               </div>
-            }
+            )}
           />
         )}
       </div>
@@ -224,7 +240,7 @@ export default function MyReports({ onNavigate, highlightId }: { onNavigate: (pa
         hero={!editing && selected?.image ? (
           <div className="relative">
             <ItemImage item={toGallery(selected)} className="h-[200px] w-full sm:h-[240px]" />
-            <span className="absolute bottom-3 left-3"><StatusPill status={selected.status} /></span>
+            <span className="absolute bottom-3 left-3"><StatusPill status={reportStatusLabel(selected.kind, selected.status)} /></span>
           </div>
         ) : undefined}
         footer={editing ? (
@@ -232,6 +248,8 @@ export default function MyReports({ onNavigate, highlightId }: { onNavigate: (pa
             <button type="button" onClick={() => setEditing(false)} className={CX.btnGhost}>Cancel</button>
             <button type="submit" form={formId} disabled={saving} className={CX.btnNavy}>{saving ? "Saving…" : "Save changes"}</button>
           </>
+        ) : selectedCompleted ? (
+          <button type="button" onClick={() => setSelected(null)} className={CX.btnNavy}>Close</button>
         ) : (
           <>
             <button type="button" onClick={openDeleteConfirmation} className={`${CX.btnGhost} border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800 sm:mr-auto`}>
@@ -282,6 +300,14 @@ export default function MyReports({ onNavigate, highlightId }: { onNavigate: (pa
           </form>
         ) : (
           <div className="space-y-4">
+            {selectedCompleted && (
+              <p className="flex items-start gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50 p-3.5 text-[14px] leading-6 text-emerald-900">
+                <CheckCircle2 size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+                {selected.kind === "Found"
+                  ? "Completed. This item reached its owner (or was sold and collected), so this report is closed. Thank you for turning it in."
+                  : "Completed. The item was released to you, so this report is closed."}
+              </p>
+            )}
             {selected.description && <p className="whitespace-pre-line text-[15px] leading-7 text-ink-soft">{selected.description}</p>}
             <dl className="grid gap-3 sm:grid-cols-2">
               {[

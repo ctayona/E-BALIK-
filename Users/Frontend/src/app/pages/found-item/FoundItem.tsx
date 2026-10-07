@@ -17,6 +17,7 @@ import { isVerified, useCurrentUser } from "@/app/utils/system";
 
 const CATEGORIES = ["Bags & Luggage", "Electronics", "Accessories", "Personal Effects", "Documents & Cards", "Clothing", "Keys", "Valuables", "Others"];
 const FOUND_LOCATIONS = ["Main Building Lobby", "Student Center", "Library", "ICT Building", "Faculty Hall", "Cafeteria", "Gym", "Other"];
+const OTHER_GUARD = "__other__";
 const TURNOVER_LOCATIONS = ["Main Security Office", "Main Building Security Desk", "Student Center Security Desk", "Library Security Desk", "Gym Security Desk", "Other Security Post"];
 
 type Report = {
@@ -41,7 +42,7 @@ type MatchSummary = {
 };
 
 export default function FoundItem({ focused = false, onBack }: { focused?: boolean; onBack?: (page: Page, options?: NavigationOptions) => void }) {
-  const { createFoundItem, getFoundItems, getFoundMatchSummaries, isLoading, user } = useAuth();
+  const { createFoundItem, getFoundItems, getFoundMatchSummaries, getGuards, isLoading, user } = useAuth();
   const verified = isVerified(useCurrentUser());
   const [activeTab, setActiveTab] = useState<"intake" | "reports">("intake");
   const [title, setTitle] = useState("");
@@ -52,6 +53,9 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
   const [distinctiveMarks, setDistinctiveMarks] = useState("");
   const [turnoverLocation, setTurnoverLocation] = useState(TURNOVER_LOCATIONS[0]);
   const [guardNameOrId, setGuardNameOrId] = useState("");
+  const [guards, setGuards] = useState<Array<{ id: string; name: string }>>([]);
+  const [guardsLoading, setGuardsLoading] = useState(true);
+  const [guardId, setGuardId] = useState("");
   const [image, setImage] = useState<File | undefined>();
   const [imagePreview, setImagePreview] = useState("");
   const [confirmationOpen, setConfirmationOpen] = useState(false);
@@ -120,11 +124,29 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
     setError("");
   }
 
+  // The finder picks the guard who received the item. Typing a name is the fallback when the guard is not listed (or no guard has an account yet).
+  useEffect(() => {
+    let active = true;
+    void getGuards().then((result) => {
+      if (active) setGuards(result.guards);
+    }).finally(() => {
+      if (active) setGuardsLoading(false);
+    });
+    return () => { active = false; };
+  }, [getGuards]);
+  const typingGuardName = guardId === OTHER_GUARD || (!guardsLoading && guards.length === 0);
+  const chosenGuard = guards.find((guard) => guard.id === guardId);
+  const guardLabel = typingGuardName ? guardNameOrId.trim() : chosenGuard?.name || "";
+
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
     if (!verified) {
       setError("Verify your account first. Open My Profile and upload an ID.");
+      return;
+    }
+    if (!guardLabel) {
+      setError(typingGuardName ? "Enter the name or ID number of the guard who received the item." : "Choose the guard who received the item.");
       return;
     }
     setCountdown(5);
@@ -154,7 +176,8 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
       location,
       found_date: dateFound,
       turnover_location: turnoverLocation,
-      guard_name_or_id: guardNameOrId,
+      guard_name_or_id: typingGuardName ? guardNameOrId.trim() : "",
+      handover_guard_id: !typingGuardName && chosenGuard ? chosenGuard.id : undefined,
       dpa_consent: privacy,
       image,
     });
@@ -169,12 +192,13 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
       title: "Found report published",
       message: "Thank you. The report is recorded and the item is logged as turned over for safekeeping. Owners can now match against it.",
       reference: created?.fpost_id,
-      details: [`Turned over at ${turnoverLocation}${guardNameOrId ? ` to ${guardNameOrId}` : ""}.`],
+      details: [`Turned over at ${turnoverLocation}${guardLabel ? ` to ${guardLabel}` : ""}.`],
     });
     setTitle("");
     setDescription("");
     setDistinctiveMarks("");
     setGuardNameOrId("");
+    setGuardId("");
     setImage(undefined);
     setImagePreview("");
     if (fileRef.current) fileRef.current.value = "";
@@ -289,7 +313,14 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
               </div>
               <div className="mt-5 grid gap-5 md:grid-cols-2">
                 <SelectField label="Security guard location" value={turnoverLocation} onChange={setTurnoverLocation} options={TURNOVER_LOCATIONS} />
-                <Field label="Guard name or ID number" value={guardNameOrId} onChange={setGuardNameOrId} placeholder="Guard Santos / SG-014" required />
+                <div className="space-y-4">
+                  {guards.length > 0 && (
+                    <GuardSelect guards={guards} value={guardId} onChange={setGuardId} />
+                  )}
+                  {typingGuardName && (
+                    <Field label={guards.length > 0 ? "Guard name or ID number" : "Guard name or ID number"} value={guardNameOrId} onChange={setGuardNameOrId} placeholder="Guard Santos / SG-014" required />
+                  )}
+                </div>
               </div>
             </section>
 
@@ -446,6 +477,24 @@ function Field({ label, value, onChange, placeholder, type = "text", icon, requi
     <div>
       <FieldLabel htmlFor={id} label={label} required={required} icon={icon} />
       <input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} required={required} className={`${CX.input} w-full`} />
+    </div>
+  );
+}
+
+function GuardSelect({ guards, value, onChange }: { guards: Array<{ id: string; name: string }>; value: string; onChange: (value: string) => void }) {
+  const id = useId();
+  return (
+    <div>
+      <FieldLabel htmlFor={id} label="Which guard received it?" required icon={<UserRound size={15} />} />
+      <div className="relative">
+        <select id={id} value={value} onChange={(event) => onChange(event.target.value)} required className={`${CX.input} w-full appearance-none pr-10`}>
+          <option value="">Choose a guard</option>
+          {guards.map((guard) => <option key={guard.id} value={guard.id}>{guard.name}</option>)}
+          <option value={OTHER_GUARD}>Another guard (not listed)</option>
+        </select>
+        <ChevronDown size={17} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+      </div>
+      <p className={CX.helper}>The guard is told that you handed the item to them.</p>
     </div>
   );
 }

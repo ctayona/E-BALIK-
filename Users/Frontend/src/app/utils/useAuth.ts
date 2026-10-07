@@ -314,12 +314,19 @@ export function useAuth() {
     found_date: string;
     turnover_location: string;
     guard_name_or_id: string;
+    handover_guard_id?: string;
     dpa_consent: boolean;
     image?: File;
   }) => {
     const response = await foundItemsApi.create(data);
     if (response.error) return { success: false, error: response.error, errorCode: response.errorCode };
     return { success: true, item: response.data?.item };
+  }, []);
+
+  const getGuards = useCallback(async () => {
+    const response = await foundItemsApi.guards();
+    if (response.error) return { success: false, error: response.error, guards: [] as Array<{ id: string; name: string }> };
+    return { success: true, guards: ((response.data as { guards?: Array<{ id: string; name: string }> } | undefined)?.guards || []) };
   }, []);
 
   const getFoundItems = useCallback(async () => {
@@ -381,6 +388,7 @@ export function useAuth() {
     identity_document: File;
     identity_document_type: string;
     dpa_consent: boolean;
+    missing_report_id?: string;
   }) => {
     const response = await claimsApi.create(data);
     if (response.error) return { success: false, error: response.error, errorCode: response.errorCode };
@@ -653,6 +661,7 @@ export function useAuth() {
     getMissingItems,
     getClaims,
     createClaim,
+    getGuards,
     cancelClaim,
     getMissingMatchSummaries,
     updateMissingItem,

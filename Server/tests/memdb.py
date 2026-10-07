@@ -35,6 +35,7 @@ class MemTable:
     # builder
     def select(self, *_a, count=None, **_k):
         self.want_count = bool(count)
+        self.columns = [c.strip() for c in str(_a[0]).split(',')] if _a and _a[0] != '*' else []
         return self
 
     def insert(self, payload):
@@ -109,10 +110,17 @@ class MemTable:
         store = self.client.store
         rows = store.setdefault(self.name, [])
         missing = self.client.missing_columns.get(self.name, ())
+        if self.op == 'select':
+            bad = [c for c in getattr(self, 'columns', []) if c in missing]
+            if bad:
+                raise Exception(f'column {self.name}.{bad[0]} does not exist (42703)')
         if self.op == 'insert':
             new = self.payload if isinstance(self.payload, list) else [self.payload]
             out = []
             for row in new:
+                bad = [k for k in row if k in missing]
+                if bad:
+                    raise Exception(f'Could not find the {bad[0]} column of {self.name} in the schema cache (PGRST204)')
                 self._check_unique(rows, row)
                 full = {**row}
                 if self.name == 'auctions' and 'auction_id' not in full:

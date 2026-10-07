@@ -13,6 +13,55 @@ from Users.Backend.shared.request_auth import _authenticated_account_id, _public
 found_item_bp = Blueprint('user_found_item', __name__)
 
 
+def _active_guards(db):
+    """Guard accounts that can receive an item. Includes the email so the guard can be told; routes must not return it."""
+    rows = db.client.table('user_profiles').select('account_id,fname,lname,email,is_active').eq('access_level', 'guard').limit(200).execute().data or []
+    return [row for row in rows if row.get('is_active') is not False]
+
+
+def _full_name(profile):
+    return f"{profile.get('fname') or ''} {profile.get('lname') or ''}".strip() or 'Guard'
+
+
+@found_item_bp.route('/found-items/guards', methods=['GET'])
+def list_guards():
+    """The guards a finder can hand an item to: name only, never an email or campus ID."""
+    try:
+        _authenticated_account_id()
+        db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        guards = sorted(({'id': str(row['account_id']), 'name': _full_name(row)} for row in _active_guards(db)), key=lambda guard: guard['name'].lower())
+        return jsonify({'guards': guards}), 200
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except Exception as error:
+        current_app.logger.error(f'Guard list error: {error}')
+        return jsonify({'error': 'Unable to load the guards'}), 500
+
+
+def _tell_guard(db, guard, item, fpost_id, item_name, turnover_location, finder_name):
+    """Let the guard know an item was handed to them (in the app and by email). Best effort: the report is already saved."""
+    try:
+        db.create_user_notification(
+            str(guard['account_id']), 'An item was handed to you',
+            f'{finder_name or "A finder"} reported {item_name} ({fpost_id}) and says they turned it over to you at {turnover_location}. Please keep it safe for the Lost and Found Office.',
+            found_item_id=item.get('item_id'), notification_type='guard_handover', link_label='Open release desk', link_page='guard-desk',
+        )
+    except Exception as error:
+        current_app.logger.warning('Guard notification for %s failed: %s', fpost_id, error)
+    try:
+        send_reference_email_best_effort(
+            to_email=guard.get('email'),
+            recipient_name=_full_name(guard),
+            subject='An item was handed to you on E-Balik',
+            summary='A finder reported that they turned an item over to you. Please keep it safe and give it to the Lost and Found Office.',
+            reference_label='Found item reference',
+            reference=fpost_id,
+            details={'Item': item_name, 'Turned in at': turnover_location},
+        )
+    except Exception as error:
+        current_app.logger.warning('Guard email for %s failed: %s', fpost_id, error)
+
+
 @found_item_bp.route('/found-items', methods=['POST'])
 def create_found_item():
     """Store a verified found-item turnover report for the authenticated user."""
@@ -28,8 +77,9 @@ def create_found_item():
         found_date = str(data.get('found_date') or '').strip()
         turnover_location = str(data.get('turnover_location') or '').strip()
         guard_name_or_id = str(data.get('guard_name_or_id') or '').strip()
+        handover_guard_id = str(data.get('handover_guard_id') or '').strip()
 
-        if not item_name or not location or not category or not found_date or not turnover_location or not guard_name_or_id:
+        if not item_name or not location or not category or not found_date or not turnover_location or not (guard_name_or_id or handover_guard_id):
             return jsonify({'error': 'Complete the item and security turnover details'}), 400
         if not dpa_consent_given(data):
             return jsonify({'error': DPA_REQUIRED_MESSAGE, 'code': 'dpa_required'}), 400
@@ -46,6 +96,14 @@ def create_found_item():
         reporter = db.get_user_by_account_id(account_id)
         if not reporter:
             return jsonify({'error': 'Authenticated account profile was not found'}), 401
+
+        # The finder picks the guard who received the item; the readable name is stored from the guard's own profile, not from the form.
+        guard = None
+        if handover_guard_id:
+            guard = next((row for row in _active_guards(db) if str(row['account_id']) == handover_guard_id), None)
+            if not guard:
+                return jsonify({'error': 'That guard is not available any more. Choose another guard.', 'code': 'guard_unavailable'}), 400
+            guard_name_or_id = _full_name(guard)
 
         slot = begin_submission(f'found:{account_id}')
         check_new_report(
@@ -83,6 +141,7 @@ def create_found_item():
             'image_url': image_url,
             'turnover_location': turnover_location,
             'guard_name_or_id': guard_name_or_id,
+            'handover_guard_id': str(guard['account_id']) if guard else None,
             'custody_status': 'turned_over',
             'status': 'unclaimed',
         })
@@ -97,6 +156,8 @@ def create_found_item():
             result='success',
             metadata=consent_metadata(),
         )
+        if guard:
+            _tell_guard(db, guard, item, fpost_id, item_name, turnover_location, user_full_name)
         email_sent = send_reference_email_best_effort(
             to_email=reporter.get('email'),
             recipient_name=user_full_name,

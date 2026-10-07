@@ -584,3 +584,18 @@ ALTER TABLE public.recycle_bin ENABLE ROW LEVEL SECURITY;
 INSERT INTO storage.buckets (id, name, public, file_size_limit)
 VALUES ('recycle-bin', 'recycle-bin', false, 26214400)
 ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================================
+-- Report lifecycle and guard handover
+-- Mirrors manual_migrations/20261015_report_lifecycle_and_guard_handover.sql (run that file on an existing database; it also replaces the
+-- functions admin_update_claim_status, close_reports_after_claim_collection and admin_set_user_access_level).
+-- claims.missing_report_id: the claimant's own lost report that the claim is for. It is completed (status 'returned', shown as "Completed")
+-- when the claim is collected, together with any report an administrator confirmed as a match.
+-- found_items.handover_guard_id: the guard the finder handed the item to (guard_name_or_id keeps the readable name).
+-- ============================================================================
+ALTER TABLE public.claims
+    ADD COLUMN IF NOT EXISTS missing_report_id UUID REFERENCES public.missing_items(item_id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_claims_missing_report ON public.claims (missing_report_id) WHERE missing_report_id IS NOT NULL;
+ALTER TABLE public.found_items
+    ADD COLUMN IF NOT EXISTS handover_guard_id UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_found_items_handover_guard ON public.found_items (handover_guard_id) WHERE handover_guard_id IS NOT NULL;

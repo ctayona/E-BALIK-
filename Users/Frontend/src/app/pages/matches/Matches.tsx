@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, CalendarDays, ChevronDown, GitCompareArrows, MapPin, Search, SearchX, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/app/utils/useAuth";
+import { isCompletedReport } from "@/app/utils/reportLifecycle";
 import type { Page } from "@/app/types";
 import { CX } from "@/app/utils/clay";
 import { ReportGridSkeleton, SkeletonBlock } from "@/app/shared/LoadingSkeleton";
@@ -57,7 +58,8 @@ export default function Matches({
     setReportsLoading(true);
     void getMissingItems().then((result) => {
       if (!active) return;
-      const items = (result.items || []) as MissingReport[];
+      // A completed report (the item was already released to you) has nothing left to match.
+      const items = ((result.items || []) as MissingReport[]).filter((item) => !isCompletedReport("Missing", (item as { status?: string }).status));
       setReports(items);
       if (initialReportId && items.some((item) => item.mpost_id === initialReportId)) setSelected(initialReportId);
       else if (items[0]) setSelected(items[0].mpost_id);

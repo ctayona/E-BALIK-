@@ -3,9 +3,9 @@ import umakLogo from "../imports/UMak Logo.png";
 import { AdminUser } from "../utils/api";
 import { useT, tr } from "../utils/preferences";
 import type { StringKey } from "../i18n/strings";
-import { ArchiveRestore, Gavel, QrCode, SlidersHorizontal } from "lucide-react";
+import { ArchiveRestore, ClipboardList, Gavel, KeyRound, QrCode, SlidersHorizontal } from "lucide-react";
 
-type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "admin-profile";
+type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "admin-profile";
 
 interface SidebarProps {
   currentPage: Page;
@@ -26,12 +26,7 @@ const navItems = [
   { id: "dashboard" as Page, group: "Overview", label: "nav.dashboard" as StringKey, icon: (
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="currentColor" opacity=".6"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="currentColor" opacity=".6"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="currentColor" opacity=".4"/></svg>
   )},
-  { id: "lost-items" as Page, group: "Items", label: "nav.lostItems" as StringKey, icon: (
-    <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2"/><path d="m21 21-3-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-  )},
-  { id: "found-items" as Page, group: "Items", label: "nav.foundItems" as StringKey, icon: (
-    <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="currentColor"/></svg>
-  )},
+  { id: "report-hub" as Page, group: "Items", label: "nav.reportsHub" as StringKey, icon: <ClipboardList size={18} aria-hidden="true" /> },
   { id: "ai-matching" as Page, group: "Items", label: "nav.aiMatching" as StringKey, icon: (
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><rect x="2" y="6" width="8" height="12" rx="2" stroke="currentColor" strokeWidth="2"/><rect x="14" y="6" width="8" height="12" rx="2" stroke="currentColor" strokeWidth="2"/><path d="M10 12h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
   )},
@@ -40,6 +35,7 @@ const navItems = [
   { id: "claims" as Page, group: "Claims & people", label: "nav.claims" as StringKey, icon: (
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/></svg>
   )},
+  { id: "release-desk" as Page, group: "Claims & people", label: "nav.releaseDesk" as StringKey, icon: <KeyRound size={18} aria-hidden="true" /> },
   { id: "chain-of-custody" as Page, group: "Items", label: "nav.custody" as StringKey, icon: (
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
   )},

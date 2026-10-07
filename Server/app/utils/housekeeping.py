@@ -8,6 +8,7 @@
    account verification is reviewed. They are not deleted straight away: they are copied into the recycle bin (see recycle_bin.py), where a
    super admin can restore them, and are purged for good when the bin period ends. Nothing is removed from the claim until the copy exists.
 4. Recycle bin expiry: entries older than RECYCLE_BIN_DAYS (default 30) are purged: their files and snapshot are removed.
+5. Report sync: the lost report behind a recently collected claim is closed if the release itself missed it (report_lifecycle.py).
 
 Every step claims its row with a conditional update before it sends anything, so overlapping runs never send twice, and every step
 degrades quietly (logs, changes nothing) on a database that has not run migration 20261013 yet.
@@ -20,6 +21,7 @@ from typing import Any, Dict, List, Optional
 from app.utils import email_prefs
 from app.utils.crypto_service import CryptoService
 from app.utils.recycle_bin import RecycleBin
+from app.utils.report_lifecycle import ReportLifecycle
 
 logger = logging.getLogger(__name__)
 
@@ -366,11 +368,17 @@ def process_recycle_bin(db, now: Optional[datetime] = None) -> Dict[str, int]:
     return RecycleBin(db).purge_expired(now)
 
 
+# ------------------------------------------------------------------------------------------------ 5. lost reports of collected items
+def process_report_sync(db, now: Optional[datetime] = None) -> Dict[str, int]:
+    """Close the lost reports behind recently collected claims that were missed (see report_lifecycle.py). Safe to repeat."""
+    return ReportLifecycle(db).reconcile(now=now)
+
+
 # ------------------------------------------------------------------------------------------------ all together
 def run_housekeeping(db, now: Optional[datetime] = None) -> Dict[str, Any]:
     """Every step, each isolated so one failure cannot stop the others."""
     result: Dict[str, Any] = {}
-    for name, step in (('claim_pickups', process_claim_pickups), ('tag_reminders', process_tag_expiry_reminders), ('evidence', purge_old_evidence), ('recycle_bin', process_recycle_bin)):
+    for name, step in (('claim_pickups', process_claim_pickups), ('tag_reminders', process_tag_expiry_reminders), ('evidence', purge_old_evidence), ('recycle_bin', process_recycle_bin), ('report_sync', process_report_sync)):
         try:
             result[name] = step(db, now)
         except Exception as error:

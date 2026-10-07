@@ -91,6 +91,8 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
       onNavigate('profile');
     } else if (notification.link_page === 'auction-hall' && onNavigate) {
       onNavigate('auction-hall');
+    } else if (notification.link_page === 'my-reports' && onNavigate) {
+      onNavigate('my-reports', { reportsTab: 'completed' });
     } else if (opensSmartTags(notification) && onNavigate) {
       onNavigate('my-tags');
     }
@@ -263,6 +265,14 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
                         className={`${CX.btnNavy} mt-3 px-4 py-2 text-[12px]`}
                       >
                         {notification.link_label || 'View my Smart Tags'}
+                      </button>
+                    )}
+                    {notification.link_page === 'my-reports' && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleNotificationClick(notification); }}
+                        className={`${CX.btnNavy} mt-3 px-4 py-2 text-[12px]`}
+                      >
+                        {notification.link_label || 'View completed reports'}
                       </button>
                     )}
                     {notification.link_page === 'profile' && (

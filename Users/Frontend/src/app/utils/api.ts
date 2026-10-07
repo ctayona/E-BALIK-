@@ -307,6 +307,7 @@ export const foundItemsApi = {
     image?: File;
     turnover_location: string;
     guard_name_or_id: string;
+    handover_guard_id?: string;
     dpa_consent: boolean;
   }) {
     const formData = new FormData();
@@ -321,6 +322,10 @@ export const foundItemsApi = {
   },
   async list() {
     return apiCall('/api/found-items', { requiresAuth: true });
+  },
+  /** The guards a finder can hand an item to (name only). */
+  async guards() {
+    return apiCall('/api/found-items/guards', { requiresAuth: true });
   },
   async publicList() {
     return apiCall('/api/found-items/public');
@@ -390,10 +395,12 @@ export const claimsApi = {
     identity_document: File;
     identity_document_type: string;
     dpa_consent: boolean;
+    missing_report_id?: string;
   }) {
     const formData = new FormData();
     formData.append('dpa_consent', String(data.dpa_consent));
     formData.append('fpost_id', data.fpost_id);
+    if (data.missing_report_id) formData.append('missing_report_id', data.missing_report_id);
     formData.append('claim_reason', data.claim_reason);
     formData.append('proof_image', data.proof_image);
     formData.append('identity_document', data.identity_document);

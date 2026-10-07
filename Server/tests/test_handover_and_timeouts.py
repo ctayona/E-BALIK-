@@ -565,8 +565,8 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_the_collector_pages_through_rows_and_tolerates_unmigrated_columns(self):
         store = {
-            'missing_items': [{'category': 'Keys', 'last_seen_date': date.today().isoformat(), 'created_at': date.today().isoformat(), 'last_location': 'Library'}],
-            'found_items': [{'status': 'returned', 'created_at': date.today().isoformat(), 'location': 'Library'}, {'status': 'unclaimed', 'created_at': date.today().isoformat()}],
+            'missing_items': [{'category': 'Keys', 'last_seen_date': datetime.now(timezone.utc).date().isoformat(), 'created_at': datetime.now(timezone.utc).date().isoformat(), 'last_location': 'Library'}],
+            'found_items': [{'status': 'returned', 'created_at': datetime.now(timezone.utc).date().isoformat(), 'location': 'Library'}, {'status': 'unclaimed', 'created_at': datetime.now(timezone.utc).date().isoformat()}],
             'claims': [{'claim_id': 'a', 'status': 'collected'}, {'claim_id': 'b', 'status': 'approved_for_pickup'}],
         }
         result = analytics.collect_visual_analytics(make_db(store))

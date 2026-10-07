@@ -10,6 +10,7 @@ from urllib.parse import unquote
 from uuid import UUID
 
 from app.utils.matching import match_percentage
+from app.utils.report_lifecycle import ReportLifecycle
 from app.utils.crypto_service import CryptoService
 from app.utils.claim_status import normalize_claim_status
 
@@ -275,7 +276,14 @@ class SupabaseDB:
             safe_claim['proof_image_url'] = CryptoService.encrypt(safe_claim['proof_image_url'])
         if safe_claim.get('identity_document_name'):
             safe_claim['identity_document_name'] = CryptoService.encrypt(safe_claim['identity_document_name'])
-        response = self.client.table('claims').insert(safe_claim).execute()
+        try:
+            response = self.client.table('claims').insert(safe_claim).execute()
+        except Exception as insert_error:
+            if 'missing_report_id' not in safe_claim or 'missing_report_id' not in str(insert_error):
+                raise
+            # Migration 20261015 has not been run yet: the claim is still saved, without the link to the lost report.
+            safe_claim.pop('missing_report_id')
+            response = self.client.table('claims').insert(safe_claim).execute()
         created = response.data[0] if response.data else {}
         return self._decrypt_claim_sensitive_fields(created) or created
 
@@ -487,10 +495,17 @@ class SupabaseDB:
                 'account_id', 'fpost_id', 'reporter_account_id', 'reporter_email',
                 'reporter_campus_id', 'reporter_name', 'item_name', 'category', 'description',
                 'location', 'found_date', 'image_url', 'turnover_location',
-                'guard_name_or_id', 'custody_status', 'status'
+                'guard_name_or_id', 'handover_guard_id', 'custody_status', 'status'
             }
             payload = {key: value for key, value in item_data.items() if key in allowed_fields and value is not None}
-            response = self.client.table('found_items').insert(payload).execute()
+            try:
+                response = self.client.table('found_items').insert(payload).execute()
+            except Exception as insert_error:
+                if 'handover_guard_id' not in payload or 'handover_guard_id' not in str(insert_error):
+                    raise
+                # Migration 20261015 has not been run yet: keep the guard's name (guard_name_or_id) and save the report without the link.
+                payload.pop('handover_guard_id')
+                response = self.client.table('found_items').insert(payload).execute()
             logger.info(f"✓ Found item created: {payload.get('item_name')}")
             return response.data[0] if response.data else {}
         except Exception as e:
@@ -1434,6 +1449,8 @@ class SupabaseDB:
         if not item:
             return {}
         response = self.client.table('found_items').update(update).eq('item_id', item['item_id']).execute()
+        if update.get('status') == 'returned' and str(item.get('status') or '').lower() != 'returned':
+            ReportLifecycle(self).complete_for_found_item(item['item_id'])
         return response.data[0] if response.data else {}
 
     def delete_admin_found_item(self, reference: str, admin_account_id: str) -> bool:
@@ -1751,6 +1768,9 @@ class SupabaseDB:
                 updated_claim = updated_claim[0] if updated_claim else None
             if not updated_claim:
                 raise RuntimeError(f"No claim row was updated for claim_id={claim_id}")
+            if normalized == 'collected':
+                # The item is released: finish the reports around it (the lost report, and tell the finder). Never undoes the release.
+                ReportLifecycle(self).complete_for_claim(claim_id)
             return updated_claim
         except Exception as e:
             try:

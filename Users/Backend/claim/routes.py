@@ -92,6 +92,14 @@ def claims():
             return jsonify({'error': 'This found item is no longer accepting claims'}), 409
         if db.get_pending_claim(str(found_item['item_id']), account_id):
             return jsonify({'error': 'You already have a pending claim for this item'}), 409
+        # Optional: which of the claimant's own lost reports this item is. It is completed together with the claim once the item is collected.
+        missing_report_ref = str(request.form.get('missing_report_id') or '').strip()
+        missing_report_uuid = None
+        if missing_report_ref:
+            own_report = next((r for r in db.get_missing_items_by_account(account_id) if str(r.get('mpost_id')) == missing_report_ref), None)
+            if not own_report or str(own_report.get('status') or '').strip().lower() not in ('missing', 'found', 'open'):
+                return jsonify({'error': 'Choose one of your own lost reports that is still open, or leave it empty.', 'code': 'invalid_missing_report'}), 400
+            missing_report_uuid = own_report['item_id']
 
         proof_filename = secure_filename(proof.filename) or 'claim-proof-image'
         proof_path = f"{account_id}/{uuid.uuid4().hex}-{proof_filename}"
@@ -106,7 +114,7 @@ def claims():
                 identity_bytes,
                 {'content-type': identity_document.mimetype, 'upsert': 'false'},
             )
-            claim = db.create_claim({
+            claim_row = {
                 'found_item_id': found_item['item_id'],
                 'claimant_account_id': account_id,
                 'claim_reason': claim_reason,
@@ -115,7 +123,10 @@ def claims():
                 'identity_document_type': identity_document_type,
                 'identity_document_name': identity_filename,
                 'status': 'pending',
-            })
+            }
+            if missing_report_uuid:
+                claim_row['missing_report_id'] = missing_report_uuid
+            claim = db.create_claim(claim_row)
         except Exception:
             for bucket_name, uploaded_path in ((identity_bucket, identity_path), (proof_bucket, proof_path)):
                 try:

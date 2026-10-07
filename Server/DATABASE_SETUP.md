@@ -119,6 +119,21 @@ SELECT proname FROM pg_proc WHERE proname = 'auction_finalize';
 Note: once the gate is live, every existing account that is not verified can no
 longer report items, file claims or bid until an admin verifies it.
 
+### Report lifecycle and guard handover
+
+Run `manual_migrations/20261015_report_lifecycle_and_guard_handover.sql` after `20261014`. It is additive and safe to re-run. It adds
+`claims.missing_report_id` and `found_items.handover_guard_id`, lets a **guard** record a collection (before this, the database refused a guard
+account that scanned a Handover PIN, so the release desk only worked for administrators), lets **administrators** (not only super administrators)
+make someone a guard, and makes the collection trigger close the claimant's named lost report and tell its owner. **The app works without it**:
+claims are saved without the lost-report link, found reports without the guard link, and the "Items handed to you" list shows a notice, but a
+guard account cannot release items and administrators cannot assign the guard role until it runs. Verify with:
+
+```sql
+SELECT column_name FROM information_schema.columns WHERE table_schema = 'public'
+  AND ((table_name = 'claims' AND column_name = 'missing_report_id') OR (table_name = 'found_items' AND column_name = 'handover_guard_id'));   -- 2 rows
+SELECT position('''guard''' in pg_get_functiondef(oid)) > 0 AS guards_allowed FROM pg_proc WHERE proname = 'admin_update_claim_status';           -- true
+```
+
 ### Recycle bin
 
 Run `manual_migrations/20261014_recycle_bin.sql` after `20261013`. It is additive and safe to re-run. It creates the table `recycle_bin` (RLS on,

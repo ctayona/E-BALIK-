@@ -3,6 +3,7 @@ import { ArrowRight, GitCompareArrows, LibraryBig, PackageCheck, PackagePlus, Qr
 import type { NavigationOptions, Page } from "@/app/types";
 import type { User } from "@/app/utils/useAuth";
 import { useAuth } from "@/app/utils/useAuth";
+import { isCompletedReport } from "@/app/utils/reportLifecycle";
 import { CX } from "@/app/utils/clay";
 import { SkeletonBlock } from "@/app/shared/LoadingSkeleton";
 import HeroSlideshow from "@/app/shared/media/HeroSlideshow";
@@ -51,7 +52,7 @@ export default function Dashboard({ user, onNavigate }: {
     void Promise.all([searchFoundItems({}), getMissingItems(), getPublicMissingItems()]).then(([foundResult, mineResult, campusResult]) => {
       if (!active) return;
       setFound((foundResult.items || []).map(toFound).sort(byNewest));
-      setMyMissing((mineResult.items || []).map(toMissing).sort(byNewest));
+      setMyMissing((mineResult.items || []).filter((item: { status?: string }) => !isCompletedReport("Missing", item.status)).map(toMissing).sort(byNewest));
       setCampusMissing((campusResult.items || []).map(toMissing).sort(byNewest));
     }).finally(() => {
       if (active) setLoading(false);

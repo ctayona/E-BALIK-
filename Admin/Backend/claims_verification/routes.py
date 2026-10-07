@@ -209,6 +209,42 @@ def handover_release():
         return jsonify({'error': 'Unable to release the item'}), 500
 
 
+@claims_verification_bp.route('/claims/handover/assigned', methods=['GET'])
+def handover_assigned():
+    """Items finders handed to a guard that are still in custody. A guard sees their own; administrators see every guard's."""
+    try:
+        staff = _require_admin(required_level='guard')
+        db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        query = db.client.table('found_items').select(
+            'item_id,fpost_id,item_name,category,turnover_location,found_date,created_at,status,guard_name_or_id,handover_guard_id'
+        ).not_.is_('handover_guard_id', 'null').in_('status', ['unclaimed', 'pending', 'review', 'ready_to_release'])
+        if staff['access_level'] == 'guard':
+            query = query.eq('handover_guard_id', staff['account_id'])
+        try:
+            rows = query.order('created_at', desc=True).limit(100).execute().data or []
+        except Exception as error:
+            if 'handover_guard_id' in str(error):
+                return jsonify({'items': [], 'setup_required': True}), 200   # migration 20261015 has not been run yet
+            raise
+        return jsonify({'items': [{
+            'reference': row.get('fpost_id'),
+            'item': row.get('item_name') or 'Item',
+            'category': row.get('category') or '',
+            'storage': row.get('turnover_location') or '',
+            'foundDate': row.get('found_date') or '',
+            'handedOverAt': row.get('created_at') or '',
+            'guard': row.get('guard_name_or_id') or '',
+            'status': row.get('status') or 'unclaimed',
+        } for row in rows]}), 200
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except PermissionError as error:
+        return jsonify({'error': str(error)}), 403
+    except Exception as error:
+        current_app.logger.exception('Assigned handovers failed: %s', error)
+        return jsonify({'error': 'Unable to load the items handed to guards'}), 500
+
+
 @claims_verification_bp.route('/claims/<claim_id>/handover-pin', methods=['POST'])
 def reissue_handover_pin(claim_id):
     """Create a new PIN for an approved claim (claims approved before PINs existed, or a lost email) and email it."""

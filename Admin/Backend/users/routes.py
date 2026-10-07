@@ -244,36 +244,70 @@ def update_user_status(account_id):
 
 @users_bp.route('/users/<account_id>/access-level', methods=['PATCH'])
 def update_user_access_level(account_id):
+    """Change a person's role. Administrators may make someone a guard (or a user again); only super administrators may
+    make someone an administrator or change one. The database function enforces the same rules."""
     try:
-        actor = _require_admin(required_level='super_admin')
+        actor = _require_admin()
         payload = request.get_json(silent=True) or {}
         access_level = str(payload.get('access_level') or '').strip().lower()
         if access_level not in {'user', 'guard', 'admin'}:
             return jsonify({'error': 'Access level must be user, guard or admin'}), 400
+        if str(account_id) == str(actor['account_id']):
+            return jsonify({'error': 'You cannot change your own access level'}), 400
 
         db = get_db(
             url=current_app.config['SUPABASE_URL'],
             service_key=current_app.config['SUPABASE_SERVICE_KEY']
         )
+        target = db.get_user_by_account_id(account_id)
+        if not target:
+            return jsonify({'error': 'User not found'}), 404
+        target_level = str(target.get('access_level') or 'user').strip().lower()
+        if target_level == 'super_admin':
+            return jsonify({'error': 'Super administrator access can only be changed manually in the database'}), 403
+        if actor['access_level'] != 'super_admin' and (access_level == 'admin' or target_level == 'admin'):
+            return jsonify({'error': 'Only a super administrator can make someone an administrator or change an administrator'}), 403
+        if access_level != 'user' and target.get('is_active') is False:
+            return jsonify({'error': 'This account is suspended. Reactivate it before giving it staff access.'}), 409
+
         updated = db.set_user_access_level(account_id, access_level, actor['account_id'])
         db.log_user_activity(
             account_id=actor['account_id'],
-            user_name=actor.get('email') or 'Super Admin',
+            user_name=actor.get('email') or 'Admin',
             action='Change User Access Level',
             module='Users',
             target_name=updated.get('email') or account_id,
             target_id=account_id,
             result='success',
-            metadata={'access_level': access_level},
+            metadata={'access_level': access_level, 'previous_access_level': target_level},
         )
+        if access_level == 'guard' and target_level != 'guard':
+            _tell_new_guard(db, account_id)
         return jsonify({'user': updated}), 200
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except PermissionError as error:
         return jsonify({'error': str(error)}), 403
     except Exception as error:
-        current_app.logger.exception('Super admin access update failed for %s: %s', account_id, error)
+        message = str(error)
+        if 'Super administrator access' in message or 'Administrator access required' in message:
+            return jsonify({'error': 'You are not allowed to make that change'}), 403
+        if 'suspended' in message:
+            return jsonify({'error': 'This account is suspended. Reactivate it before giving it staff access.'}), 409
+        current_app.logger.exception('Access level update failed for %s: %s', account_id, error)
         return jsonify({'error': 'Unable to update user access level'}), 500
+
+
+def _tell_new_guard(db, account_id):
+    """Tell a newly promoted guard where to sign in. Best effort: the role is already saved."""
+    try:
+        db.create_user_notification(
+            str(account_id), 'You are now a guard',
+            'An administrator gave you guard access. Sign in to the E-Balik admin console to use the release desk, where you scan or type Handover PINs and see the items handed to you.',
+            notification_type='role_changed', link_label='Open E-Balik', link_page='dashboard',
+        )
+    except Exception as error:
+        current_app.logger.warning('Guard role notice failed for %s: %s', account_id, error)
 
 
 VERIFIED_CATEGORIES = {'Student', 'Faculty', 'Staff', 'Visitor'}

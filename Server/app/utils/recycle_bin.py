@@ -34,11 +34,13 @@ LIST_LIMIT = 300
 SPECS: Dict[str, Dict[str, Any]] = {
     'claim': {
         'tables': [('claims', 'claim_id')], 'optional': [],
-        'checks': [('claims', 'found_item_id', 'found_items', 'item_id', 'fail'), ('claims', 'claimant_account_id', 'user_profiles', 'account_id', 'fail')],
+        'checks': [('claims', 'found_item_id', 'found_items', 'item_id', 'fail'), ('claims', 'claimant_account_id', 'user_profiles', 'account_id', 'fail'),
+                   ('claims', 'missing_report_id', 'missing_items', 'item_id', 'null')],
     },
     'found_item': {
         'tables': [('found_items', 'item_id'), ('claims', 'claim_id')], 'optional': [('ai_matches', 'match_id')],
-        'checks': [('found_items', 'account_id', 'user_profiles', 'account_id', 'fail'), ('claims', 'claimant_account_id', 'user_profiles', 'account_id', 'skip')],
+        'checks': [('found_items', 'account_id', 'user_profiles', 'account_id', 'fail'), ('claims', 'claimant_account_id', 'user_profiles', 'account_id', 'skip'),
+                   ('found_items', 'handover_guard_id', 'user_profiles', 'account_id', 'null'), ('claims', 'missing_report_id', 'missing_items', 'item_id', 'null')],
     },
     'missing_item': {
         'tables': [('missing_items', 'item_id')], 'optional': [('ai_matches', 'match_id')],
@@ -46,7 +48,8 @@ SPECS: Dict[str, Dict[str, Any]] = {
     },
     'user': {
         'tables': [('user_profiles', 'account_id'), ('found_items', 'item_id'), ('missing_items', 'item_id'), ('claims', 'claim_id')], 'optional': [('ai_matches', 'match_id')],
-        'checks': [('claims', 'claimant_account_id', 'user_profiles', 'account_id', 'skip')],
+        'checks': [('claims', 'claimant_account_id', 'user_profiles', 'account_id', 'skip'), ('claims', 'missing_report_id', 'missing_items', 'item_id', 'null'),
+                   ('found_items', 'handover_guard_id', 'user_profiles', 'account_id', 'null')],
     },
     'auction': {
         'tables': [('auctions', 'auction_id'), ('auction_bids', 'bid_id'), ('auction_comments', 'comment_id'), ('auction_reactions', None)], 'optional': [],

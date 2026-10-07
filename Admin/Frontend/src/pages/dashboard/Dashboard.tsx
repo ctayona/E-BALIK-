@@ -7,7 +7,7 @@ import { fetchAdminAuctions, fetchAuctionReadySummary } from "../../utils/auctio
 import { isSuperAdmin } from "../../utils/permissions";
 import { useTheme, tr } from "../../utils/preferences";
 
-type DeskPage = "claims" | "ai-matching" | "lost-items" | "found-items" | "users" | "activity-logs" | "auctions";
+type DeskPage = "claims" | "ai-matching" | "lost-items" | "found-items" | "items-in-custody" | "users" | "activity-logs" | "auctions";
 import { AdminMetricSkeleton, SkeletonBlock, AdminTableSkeleton } from "../../components/LoadingSkeleton";
 import AnalyticsSection from "./AnalyticsSection";
 import HandoverPinCard from "./HandoverPinCard";
@@ -194,7 +194,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
 
   const inventory = [
     { label: tr("Lost reports"), value: summary?.total_lost_reports ?? 0, page: "lost-items" as DeskPage },
-    { label: tr("Found items in custody"), value: summary?.found_items ?? 0, page: "found-items" as DeskPage },
+    { label: tr("Found items in custody"), value: summary?.found_items ?? 0, page: "items-in-custody" as DeskPage },
     { label: tr("Returned to owners"), value: summary?.successfully_returned ?? 0, page: "claims" as DeskPage },
     { label: tr("Registered users"), value: summary?.total_users ?? 0, page: "users" as DeskPage },
   ];

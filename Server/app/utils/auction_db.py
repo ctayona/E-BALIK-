@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from app.utils.auction_email import format_peso, send_auction_final_warning_email, send_auction_forfeited_email, send_auction_won_email
 from app.utils.profanity import find_profanity
+from app.utils.report_lifecycle import ReportLifecycle
 
 logger = logging.getLogger(__name__)
 
@@ -1063,6 +1064,9 @@ class AuctionService:
                 # The winner never collected: put the item back in custody so it can be claimed or auctioned again.
                 self.client.table('found_items').update({'status': 'unclaimed', 'custody_status': 'turned_over', 'updated_at': _iso(now)}) \
                     .eq('item_id', row['found_item_id']).eq('status', 'auctioned').execute()
+            if action == 'collected' and row.get('found_item_id'):
+                # Sold and handed over: the found report is finished too (it moves to Completed for the person who turned it in).
+                ReportLifecycle(self.db).complete_for_auction(row['found_item_id'])
         except AuctionError:
             raise
         except Exception as error:

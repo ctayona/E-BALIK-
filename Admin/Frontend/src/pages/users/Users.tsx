@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Eye, Pencil, ShieldCheck, ShieldMinus, ShieldPlus, Trash2, UserCheck, UserPlus, UserRound, UserX } from "lucide-react";
+import { Eye, Pencil, Trash2, UserCheck, UserCog, UserPlus, UserRound, UserX } from "lucide-react";
 import type { User } from "../../data/mockData";
 import { deleteAdminUser, fetchAdminAccountVerifications, fetchAdminUsers, getStoredAdmin, updateAdminUserAccessLevel, updateAdminUserStatus, type AdminAccountVerificationRequest } from "../../utils/api";
 import { canDelete } from "../../utils/permissions";
@@ -7,6 +7,7 @@ import { useT } from "../../utils/preferences";
 import { downloadCsv } from "../../utils/csv";
 import UserFormModal from "./UserFormModal";
 import AccountVerificationTab from "./AccountVerificationTab";
+import RoleModal from "./RoleModal";
 import AdminModal from "../../components/ui/AdminModal";
 import { BTN, PageHeader, RolePill } from "../../components/ui/primitives";
 import { DataTable, DetailGrid, ExportButton, FilterSelect, IconAction, RowActions, SearchField, SegmentedFilter, StatusPill, TableFooter, Toolbar, usePagination, type Tone } from "../../components/ui/management";
@@ -27,7 +28,7 @@ const AVATAR_GRADIENTS = [
 ];
 const ALL = "__all__";
 
-type ConfirmState = { type: "suspend" | "activate" | "access" | "guard" | "delete"; userId: string; title: string; description: string; confirmText: string };
+type ConfirmState = { type: "suspend" | "activate" | "delete"; userId: string; title: string; description: string; confirmText: string };
 
 function VerificationPill({ status }: { status?: User["verification"] }) {
   if (status === "verified") return <StatusPill tone="mint">Verified</StatusPill>;
@@ -54,6 +55,7 @@ export default function Users() {
   const [viewUser, setViewUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [accessBusy, setAccessBusy] = useState<string | null>(null);
+  const [roleTarget, setRoleTarget] = useState<User | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmState | null>(null);
   const [activeTab, setActiveTab] = useState<"users" | "verification">("users");
   const [suspendTarget, setSuspendTarget] = useState<User | null>(null);
@@ -135,40 +137,32 @@ export default function Users() {
     }
   };
 
-  const changeAccess = async (user: User, nextLevel: "user" | "guard" | "admin" = user.accessLevel === "admin" ? "user" : "admin") => {
+  const ROLE_NAME = { user: "a normal user", guard: "a security guard", admin: "an admin" } as const;
+  const changeAccess = async (user: User, nextLevel: "user" | "guard" | "admin") => {
     setAccessBusy(user.id);
     try {
       const response = await updateAdminUserAccessLevel(user.id, nextLevel);
       setUsers((current) => current.map((row) => row.id === user.id ? { ...row, accessLevel: response.user.access_level } : row));
+      setRoleTarget(null);
+      showInfoModal({
+        variant: "success",
+        title: "Role updated",
+        message: tr("{0} is now {1}.", { "0": user.name, "1": tr(ROLE_NAME[response.user.access_level]) }),
+        details: response.user.access_level === "guard" ? [tr("They sign in with their usual email and password and land on the release desk.")] : undefined,
+        replaceAuto: true,
+      });
     } catch (error) {
-      showInfoModal({ variant: "error", title: "Access level not changed", message: error instanceof Error ? error.message : "Unable to change user access.", replaceAuto: true });
+      showInfoModal({ variant: "error", title: "Role not changed", message: error instanceof Error ? error.message : "Unable to change this role.", replaceAuto: true });
     } finally {
       setAccessBusy(null);
     }
   };
 
+  // Administrators may make someone a guard; only super admins may make or change an admin, and nobody changes a super admin or themselves.
+  const canChangeRole = (user: User) => user.accessLevel !== "super_admin" && user.id !== currentAdminId && (isSuperAdmin || user.accessLevel !== "admin");
+
   const askStatus = (user: User) => user.status === "Active" ? setSuspendTarget(user) : setConfirmAction(
     { type: "activate", userId: user.id, title: tr("reactivate {0}?", { "0": user.name }), description: tr("{0} can sign in and use E-Balik again.", { "0": user.name }), confirmText: "Reactivate account" });
-
-  const askAccess = (user: User) => setConfirmAction({
-    type: "access",
-    userId: user.id,
-    title: user.accessLevel === "admin" ? tr("remove admin access from {0}?", { "0": user.name }) : tr("make {0} an admin?", { "0": user.name }),
-    description: user.accessLevel === "admin"
-      ? "They keep their user account but lose access to this console."
-      : "They can create, view and edit records in this console. Only super admins can delete.",
-    confirmText: user.accessLevel === "admin" ? "Remove admin access" : "Make admin",
-  });
-
-  const askGuard = (user: User) => setConfirmAction({
-    type: "guard",
-    userId: user.id,
-    title: user.accessLevel === "guard" ? tr("remove guard access from {0}?", { "0": user.name }) : tr("make {0} a guard?", { "0": user.name }),
-    description: user.accessLevel === "guard"
-      ? "They go back to a normal user account and lose the release desk."
-      : "A guard can only sign in to the release desk and release items by Handover PIN. They cannot open any other page, and they are signed out after 20 minutes of inactivity.",
-    confirmText: user.accessLevel === "guard" ? "Remove guard access" : "Make guard",
-  });
 
   const askDelete = (user: User) => setConfirmAction({
     type: "delete",
@@ -267,20 +261,12 @@ export default function Users() {
               <RowActions>
                 <IconAction label={`${t("common.view")} ${user.name}`} onClick={() => setViewUser(user)} icon={<Eye size={17} aria-hidden="true" />} />
                 {canEdit(user) && <IconAction label={`${t("common.edit")} ${user.name}`} tone="gold" onClick={() => setUserForm({ user })} icon={<Pencil size={16} aria-hidden="true" />} />}
-                {isSuperAdmin && user.accessLevel !== "super_admin" && (
+                {canChangeRole(user) && (
                   <IconAction
-                    label={user.accessLevel === "admin" ? tr("Remove admin access from {0}", { "0": user.name }) : tr("Make {0} an admin", { "0": user.name })}
+                    label={tr("Change role for {0}", { "0": user.name })}
                     disabled={accessBusy === user.id}
-                    onClick={() => askAccess(user)}
-                    icon={user.accessLevel === "admin" ? <ShieldMinus size={17} aria-hidden="true" /> : <ShieldPlus size={17} aria-hidden="true" />}
-                  />
-                )}
-                {isSuperAdmin && (user.accessLevel === "user" || user.accessLevel === "guard") && (
-                  <IconAction
-                    label={user.accessLevel === "guard" ? tr("Remove guard access from {0}", { "0": user.name }) : tr("Make {0} a guard", { "0": user.name })}
-                    disabled={accessBusy === user.id}
-                    onClick={() => askGuard(user)}
-                    icon={<ShieldCheck size={17} aria-hidden="true" />}
+                    onClick={() => setRoleTarget(user)}
+                    icon={<UserCog size={17} aria-hidden="true" />}
                   />
                 )}
                 {canEdit(user) && user.id !== currentAdminId && (
@@ -323,6 +309,7 @@ export default function Users() {
               </button>
             )}
             <button type="button" onClick={() => setViewUser(null)} className={BTN.ghost}>{t("common.close")}</button>
+            {canChangeRole(viewUser) && <button type="button" onClick={() => { setRoleTarget(viewUser); setViewUser(null); }} className={BTN.ghost}><UserCog size={16} aria-hidden="true" />{tr("Change role")}</button>}
             {canEdit(viewUser) && <button type="button" onClick={() => { setUserForm({ user: viewUser }); setViewUser(null); }} className={BTN.primary}><Pencil size={16} aria-hidden="true" />{t("common.edit")}</button>}
           </>}
         >
@@ -380,9 +367,18 @@ export default function Users() {
               }
             } else if (actionType === "suspend") await setStatus(user.id, "suspended");
             else if (actionType === "activate") await setStatus(user.id, "active");
-            else if (actionType === "guard") await changeAccess(user, user.accessLevel === "guard" ? "user" : "guard");
-            else await changeAccess(user);
           }}
+        />
+      )}
+
+      {roleTarget && (
+        <RoleModal
+          key={roleTarget.id}
+          user={roleTarget}
+          isSuperAdmin={isSuperAdmin}
+          busy={accessBusy === roleTarget.id}
+          onClose={() => { if (accessBusy !== roleTarget.id) setRoleTarget(null); }}
+          onSave={(role) => void changeAccess(roleTarget, role)}
         />
       )}
 

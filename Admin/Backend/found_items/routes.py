@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, request
 from app.utils.recycle_bin import BinError, retention_days
 from app.utils import get_db
+from app.utils.custody import load_overview
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
 
 found_items_bp = Blueprint('admin_found_items', __name__)
@@ -50,6 +51,22 @@ def list_found_items():
     except Exception as error:
         current_app.logger.error(f'Admin found items list error: {error}')
         return jsonify({'error': 'Unable to load found items'}), 500
+
+
+@found_items_bp.route('/found-items/custody', methods=['GET'])
+def custody_overview():
+    """Items the office is still holding, with what is happening to each (claims, auctions, who received it)."""
+    try:
+        _require_admin()
+        db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        return jsonify(load_overview(db.client)), 200
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except PermissionError as error:
+        return jsonify({'error': str(error)}), 403
+    except Exception as error:
+        current_app.logger.error(f'Custody overview error: {error}')
+        return jsonify({'error': 'Unable to load the items in custody'}), 500
 
 
 @found_items_bp.route('/found-items', methods=['POST'])
