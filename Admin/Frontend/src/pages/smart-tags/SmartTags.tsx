@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Ban, CalendarClock, Check, Copy, Database, Download, Eye, Hourglass, Layers, Nfc, Package, QrCode, Radio, RefreshCw, RotateCw, ShieldCheck, ShieldOff, Tags, TriangleAlert } from "lucide-react";
+import { Ban, CalendarClock, Check, ClipboardCheck, Copy, Database, Download, Eye, Hourglass, Layers, Nfc, Package, Pencil, QrCode, Radio, RefreshCw, RotateCw, ShieldCheck, ShieldOff, Tags, TriangleAlert } from "lucide-react";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import AdminModal from "../../components/ui/AdminModal";
@@ -9,6 +9,8 @@ import {
   SmartTagSetupError, deactivateSmartTag, deactivateTagBatch, fetchSmartTagPhoto, fetchSmartTagQr, fetchSmartTags, fetchTagBatches, generateSmartTagBatch, reactivateSmartTag, reactivateTagBatch, renewSmartTag,
   type AdminSmartTag, type GeneratedBatch, type SmartTagList, type TagBatch, type TagFilter, type TagType, type TagTypeOption,
 } from "../../utils/smartTagsApi";
+import AdminTagEditModal from "./AdminTagEditModal";
+import VerificationModal from "./VerificationModal";
 import { downloadCsv } from "../../utils/csv";
 import { formatDateTime } from "../../utils/countdown";
 import { canDelete } from "../../utils/permissions";
@@ -33,6 +35,7 @@ const daysTone = (days: number): Tone => (days <= 7 ? "rose" : days <= 30 ? "gol
 function tagState(tag: AdminSmartTag): { label: string; tone: Tone } {
   if (tag.is_disabled) return { label: "Deactivated", tone: "rose" };
   if (tag.status === "blank") return { label: "Blank", tone: "slate" };
+  if (tag.status === "pending_verification") return { label: "Pending approval", tone: "gold" };
   if (tag.status === "expired") return { label: "Expired", tone: "rose" };
   if (tag.status === "lost") return { label: "Lost", tone: "gold" };
   return { label: "Active", tone: "mint" };
@@ -40,6 +43,7 @@ function tagState(tag: AdminSmartTag): { label: string; tone: Tone } {
 
 /** When a tag stops working: a countdown for registered tags, the planned period for blank ones. */
 function ValidityCell({ tag }: { tag: AdminSmartTag }) {
+  if (tag.status === "pending_verification" && !tag.valid_until) return <span className="text-[13px] text-ink-muted">{tr("Starts when approved")}</span>;
   if (tag.status === "blank") return <span className="text-[13px] text-ink-muted">{tag.validity_months ? tr("{0} after registering", { "0": monthsLabel(tag.validity_months) }) : tr("No expiry")}</span>;
   if (!tag.valid_until) return <span className="text-[13px] text-ink-muted">{tr("No expiry")}</span>;
   return (
@@ -216,7 +220,7 @@ function BatchModal({ maxBatch, tagTypes, onClose, onCreated }: { maxBatch: numb
   );
 }
 
-function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew }: { tag: AdminSmartTag; canBan: boolean; onClose: () => void; onDeactivate: () => void; onReactivate: () => void; onRenew: () => void }) {
+function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew, onEdit }: { tag: AdminSmartTag; canBan: boolean; onClose: () => void; onDeactivate: () => void; onReactivate: () => void; onRenew: () => void; onEdit: () => void }) {
   const [qr, setQr] = useState("");
   const [qrError, setQrError] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -228,7 +232,7 @@ function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew }:
     if (!tag.has_photo) { setPhotoState("none"); return undefined; }
     let active = true;
     setPhotoState("loading");
-    fetchSmartTagPhoto(tag.tag_id).then((url) => { if (active) { setPhoto(url ?? ""); setPhotoState(url ? "ready" : "error"); } }).catch(() => { if (active) setPhotoState("error"); });
+    fetchSmartTagPhoto(tag.tag_id).then(({ url }) => { if (active) { setPhoto(url ?? ""); setPhotoState(url ? "ready" : "error"); } }).catch(() => { if (active) setPhotoState("error"); });
     return () => { active = false; };
   }, [tag.tag_id, tag.has_photo]);
 
@@ -253,7 +257,8 @@ function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew }:
         {canBan && tag.status !== "blank" && (tag.is_disabled
           ? <button type="button" onClick={onReactivate} className={`${BTN.ghost} sm:mr-auto`}><ShieldCheck size={16} aria-hidden="true" />{tr("Reactivate")}</button>
           : <button type="button" onClick={onDeactivate} className={`${BTN.danger} sm:mr-auto`}><Ban size={16} aria-hidden="true" />{tr("Deactivate tag")}</button>)}
-        {tag.owner && tag.status !== "blank" && <button type="button" onClick={onRenew} className={BTN.ghost}><RotateCw size={16} aria-hidden="true" />{tr("Renew")}</button>}
+        {tag.owner && tag.status !== "blank" && <button type="button" onClick={onEdit} className={BTN.ghost}><Pencil size={16} aria-hidden="true" />{tr("Edit")}</button>}
+        {tag.owner && tag.status !== "blank" && tag.status !== "pending_verification" && <button type="button" onClick={onRenew} className={BTN.ghost}><RotateCw size={16} aria-hidden="true" />{tr("Renew")}</button>}
         {qr && <a href={qr} download={`smart-tag-${tag.tag_id}.png`} className={BTN.ghost}><Download size={16} aria-hidden="true" />{tr("Download QR")}</a>}
         <button type="button" onClick={onClose} className={BTN.primary}>{tr("Close")}</button>
       </>}
@@ -310,6 +315,8 @@ export default function SmartTags() {
   const [banReason, setBanReason] = useState("");
   const [reviving, setReviving] = useState<AdminSmartTag | null>(null);
   const [renewing, setRenewing] = useState<AdminSmartTag | null>(null);
+  const [reviewing, setReviewing] = useState<AdminSmartTag | null>(null);
+  const [editing, setEditing] = useState<AdminSmartTag | null>(null);
   const [renewMonths, setRenewMonths] = useState("12");
   const [batches, setBatches] = useState<TagBatch[]>([]);
   const [batchBan, setBatchBan] = useState<TagBatch | null>(null);
@@ -408,6 +415,17 @@ export default function SmartTags() {
         </dl>
       </section>
 
+      {(stats?.pending ?? 0) > 0 && (
+        <section className="flex flex-wrap items-center gap-3 rounded-2xl border border-gold-400/60 bg-gold-50 p-4 dark:border-gold-500/40 dark:bg-gold-500/10" role="status">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950" aria-hidden="true"><ClipboardCheck size={19} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="font-[family-name:var(--font-heading)] text-[16px] font-semibold text-ink">{tr("{0} tag(s) are waiting for your approval", { "0": stats?.pending ?? 0 })}</p>
+            <p className="text-[13px] text-ink-muted">{tr("Compare each one with the real item before approving it.")}</p>
+          </div>
+          {filter !== "pending" && <button type="button" onClick={() => setFilter("pending")} className={BTN.gold}><ClipboardCheck size={16} aria-hidden="true" />{tr("Review now")}</button>}
+        </section>
+      )}
+
       {data?.url_check && !data.url_check.ok && (
         <section role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-300 bg-rose-50 p-4 text-rose-900">
           <TriangleAlert size={20} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -430,6 +448,7 @@ export default function SmartTags() {
         options={[
           { value: "all", label: "All", count: stats?.total },
           { value: "blank", label: "Blank", count: stats?.blank },
+          { value: "pending", label: "Pending approval", count: stats?.pending },
           { value: "claimed", label: "Claimed", count: stats?.claimed },
           { value: "lost", label: "Lost", count: stats?.lost },
           { value: "expired", label: "Expired", count: stats?.expired },
@@ -466,11 +485,12 @@ export default function SmartTags() {
               <td><div className="font-mono text-[13.5px] font-semibold tracking-wide text-ink">{SPACED(tag.tag_id)}</div><div className="text-[12.5px] text-ink-muted">{TYPE_LABEL[tag.tag_type] ?? "QR Code"} · {tag.batch_label || "—"}</div></td>
               <td>{tag.item_name ? <span className="font-semibold text-ink">{tag.item_name}</span> : <span className="text-ink-muted">{tr("Not registered")}</span>}</td>
               <td>{tag.owner ? <><div className="font-medium text-ink">{tag.owner.name || "—"}</div><div className="max-w-[220px] truncate text-[12.5px] text-ink-muted" title={tag.owner.email}>{tag.owner.email}</div></> : <span className="text-ink-muted">—</span>}</td>
-              <td><div className="flex flex-wrap items-center gap-1.5"><StatusPill tone={state.tone}>{state.label}</StatusPill>{tag.found_notice_count > 0 && <StatusPill tone="iris">{`${tag.found_notice_count}×`}</StatusPill>}</div></td>
+              <td><div className="flex flex-wrap items-center gap-1.5"><StatusPill tone={state.tone}>{tr(state.label)}</StatusPill>{tag.status === "pending_verification" && tag.is_reregistration && <StatusPill tone="slate">{tr("New photo")}</StatusPill>}{tag.found_notice_count > 0 && <StatusPill tone="iris">{`${tag.found_notice_count}×`}</StatusPill>}</div></td>
               <td className="whitespace-nowrap text-[13px] text-ink-muted">{tag.claimed_at ? formatDateTime(tag.claimed_at) : "—"}</td>
               <td><ValidityCell tag={tag} /></td>
               <RowActions>
-                <IconAction label={`${tr("View")} ${tag.tag_id}`} onClick={() => setViewing(tag)} icon={<Eye size={17} aria-hidden="true" />} />
+                {tag.status === "pending_verification" && <IconAction label={`${tr("Review")} ${tag.tag_id}`} tone="gold" onClick={() => setReviewing(tag)} icon={<ClipboardCheck size={17} aria-hidden="true" />} />}
+                <IconAction label={`${tr("View")} ${tag.tag_id}`} onClick={() => (tag.status === "pending_verification" ? setReviewing(tag) : setViewing(tag))} icon={<Eye size={17} aria-hidden="true" />} />
                 <IconAction label={`${tr("QR code")} ${tag.tag_id}`} tone="gold" onClick={() => setViewing(tag)} icon={<QrCode size={16} aria-hidden="true" />} />
                 {superAdmin && tag.status !== "blank" && (tag.is_disabled
                   ? <IconAction label={`${tr("Reactivate")} ${tag.tag_id}`} tone="success" onClick={() => setReviving(tag)} icon={<ShieldCheck size={17} aria-hidden="true" />} />
@@ -491,8 +511,12 @@ export default function SmartTags() {
           onDeactivate={() => { const t = viewing; setViewing(null); setBanReason(""); setBanning(t); }}
           onReactivate={() => { const t = viewing; setViewing(null); setReviving(t); }}
           onRenew={() => { const t = viewing; setViewing(null); setRenewMonths(String(t.validity_months ?? 12)); setRenewing(t); }}
+          onEdit={() => { const t = viewing; setViewing(null); setEditing(t); }}
         />
       )}
+
+      {reviewing && <VerificationModal tag={tags.find((t) => t.tag_id === reviewing.tag_id) ?? reviewing} onClose={() => setReviewing(null)} onDone={() => { void load(); void loadBatches(); }} />}
+      {editing && <AdminTagEditModal tag={tags.find((t) => t.tag_id === editing.tag_id) ?? editing} onClose={() => setEditing(null)} onSaved={() => { void load(); void loadBatches(); }} />}
 
       {renewing && (
         <AdminModal

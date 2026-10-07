@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
-import { Eye, EyeOff, Mail, Phone, UserRound } from "lucide-react";
+import { Eye, EyeOff, Mail, Phone, ShieldAlert, UserRound } from "lucide-react";
+import Modal from "@/app/shared/modal/Modal";
 import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
 import ItemTypePicker from "@/app/shared/tags/ItemTypePicker";
 import LivePhotoField from "@/app/shared/tags/LivePhotoField";
@@ -54,6 +55,7 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
   const [consent, setConsent] = useState(mode === "edit");
   const [problem, setProblem] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
+  const [review, setReview] = useState<{ values: TagDetailsInput; photo: File } | null>(null);
 
   const fullName = `${user?.fname ?? ""} ${user?.lname ?? ""}`.trim() || "Your name";
   const shown = [showName && fullName, showEmail && (user?.email || "your email"), showPhone && (phone || "your phone number")].filter(Boolean) as string[];
@@ -64,18 +66,24 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
     if (showPhone && !phone.trim()) { setProblem("Add a phone number, or switch \"Show my phone number\" off."); return; }
     if (mode === "claim" && !photo) { setProblem("Take a photo of your item with the sticker attached before registering."); return; }
     setProblem("");
-    onSubmit({ item_name: name.trim(), item_description: description.trim(), show_name: showName, show_email: showEmail, show_phone: showPhone, contact_phone: phone.trim() }, consent, photo);
+    const values: TagDetailsInput = { item_name: name.trim(), item_description: description.trim(), show_name: showName, show_email: showEmail, show_phone: showPhone, contact_phone: phone.trim() };
+    // Registering is final for the item name, so the user must confirm before anything is sent.
+    if (mode === "claim" && photo) { setReview({ values, photo }); return; }
+    onSubmit(values, consent, photo);
   };
 
   return (
     <form onSubmit={submit} className="space-y-5" noValidate>
-      <ItemTypePicker value={name} onChange={setName} />
+      <ItemTypePicker value={name} onChange={setName} locked={mode === "edit" && initial?.item_name_locked !== false && Boolean(initial?.item_name)} />
       <div>
         <label htmlFor="tag-item-desc" className={CX.label}>Description <span className="font-normal text-ink-muted">(optional)</span></label>
         <textarea id="tag-item-desc" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={500} rows={3} placeholder="Brand, colour, stickers, scratches. Anyone who scans the tag can read this." className={`${CX.input} w-full resize-y py-3 leading-6`} />
       </div>
 
       <LivePhotoField file={photo} existingUrl={initial?.photo_url} onChange={setPhoto} required={mode === "claim"} />
+      {mode === "edit" && photo && initial?.status !== "pending_verification" && (
+        <p className="-mt-2 flex items-start gap-2 rounded-2xl border border-[#f5c451] bg-[#fef3c7] px-4 py-3 text-[13.5px] leading-6 text-[#78350f]" role="status"><ShieldAlert size={16} className="mt-1 shrink-0" aria-hidden="true" />Saving a new photo needs staff approval. Your tag stops working and finders see nothing until staff approve it.</p>
+      )}
 
       <fieldset className="space-y-2.5">
         <legend className={CX.label}>What may a finder see?</legend>
@@ -100,6 +108,31 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
       {mode === "claim" && <DataPrivacyConsent checked={consent} onChange={setConsent} purpose="register this Smart Tag and share the details I chose with anyone who scans it" />}
 
       {(problem || error) && <p role="alert" className={CX.alertError}>{problem || error}</p>}
+
+      <Modal
+        open={Boolean(review)}
+        onClose={() => setReview(null)}
+        size="sm"
+        tone="gold"
+        icon={<ShieldAlert size={21} />}
+        eyebrow="Before you register"
+        title="Confirm your details"
+        footer={<>
+          <button type="button" onClick={() => setReview(null)} className={CX.btnGhost}>Go back and check</button>
+          <button type="button" data-autofocus onClick={() => { const pending = review; setReview(null); if (pending) onSubmit(pending.values, consent, pending.photo); }} className={CX.btnGold}>Confirm Registration</button>
+        </>}
+      >
+        {review && (
+          <div className="space-y-4">
+            <p className="rounded-2xl border border-gold-300 bg-gold-50 px-4 py-3.5 text-[14.5px] leading-6 text-ink-soft">Please confirm your details are accurate. To prevent fraud, you will not be able to change the Item Name once this tag is registered, and changing the photo later will require staff re-approval.</p>
+            <div className="flex items-center gap-3 rounded-2xl border border-line bg-frost-50 p-3">
+              <img src={URL.createObjectURL(review.photo)} alt="" className="size-16 shrink-0 rounded-xl border border-line object-cover" onLoad={(event) => URL.revokeObjectURL(event.currentTarget.src)} />
+              <div className="min-w-0"><p className="text-[12.5px] font-medium text-ink-muted">Item</p><p className="truncate text-[16px] font-semibold text-ink">{review.values.item_name}</p></div>
+            </div>
+            <p className="text-[13px] leading-5 text-ink-muted">After you confirm, bring the item and its sticker to the Lost and Found Office. The tag starts working once staff have checked it.</p>
+          </div>
+        )}
+      </Modal>
 
       <div className="sticky bottom-0 z-10 -mx-1 flex flex-col-reverse gap-2 border-t border-line bg-white/85 px-1 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl sm:flex-row sm:justify-end">
         {onCancel && <button type="button" onClick={onCancel} disabled={busy} className={CX.btnGhost}>Cancel</button>}

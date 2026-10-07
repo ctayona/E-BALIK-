@@ -114,13 +114,16 @@ class ExpiryTests(unittest.TestCase):
     def blank(self, months=12, **extra):
         return {'tag_id': TAG, 'status': 'blank', 'owner_account_id': None, 'is_disabled': False, 'validity_months': months, 'batch_id': str(uuid.uuid4()), **extra}
 
-    def test_the_validity_clock_starts_when_the_owner_registers(self):
+    def test_the_validity_clock_starts_when_staff_approve_the_tag(self):
         service, _, store = make_service([self.blank(12)])
         view = service.claim(TAG, OWNER, CLAIM)
+        self.assertEqual((view['status'], store['smart_tags'][0].get('valid_until')), ('pending_verification', None))  # registering only submits it
+        service.approve(TAG, ADMIN)
         saved = store['smart_tags'][0]
         until = datetime.fromisoformat(saved['valid_until'])
-        self.assertEqual(until, tags.add_months(datetime.fromisoformat(saved['claimed_at']), 12))
-        self.assertIn(view['days_left'], (364, 365))
+        self.assertEqual(until.date(), tags.add_months(datetime.now(timezone.utc), 12).date())
+        self.assertEqual(saved['status'], 'active')
+        self.assertIn(service.my_tags(OWNER)[0]['days_left'], (364, 365))
         self.assertEqual(view['validity_months'], 12)
 
     def test_a_tag_without_a_validity_period_gets_no_expiry_date(self):

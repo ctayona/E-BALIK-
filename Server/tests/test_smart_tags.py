@@ -279,10 +279,10 @@ class ClaimTests(unittest.TestCase):
     def blank(self, **extra):
         return {'tag_id': TAG, 'status': 'blank', 'owner_account_id': None, 'is_disabled': False, **extra}
 
-    def test_claiming_a_blank_tag_makes_it_active_and_owned(self):
+    def test_claiming_a_blank_tag_submits_it_for_approval_and_owns_it(self):
         service, db, store = make_service([self.blank()])
         view = service.claim(TAG.lower(), OWNER, CLAIM)
-        self.assertEqual((view['status'], view['item_name'], view['show_email'], view['show_phone']), ('active', 'My black Dell laptop', True, False))
+        self.assertEqual((view['status'], view['item_name'], view['show_email'], view['show_phone']), ('pending_verification', 'My black Dell laptop', True, False))
         self.assertEqual(store['smart_tags'][0]['owner_account_id'], OWNER)
         db.log_user_activity.assert_called_once()
 
@@ -468,7 +468,7 @@ class AdminServiceTests(unittest.TestCase):
         ]
         service, _, _ = make_service(rows)
         everything = service.admin_list('all')
-        self.assertEqual(everything['stats'], {'total': 5, 'blank': 2, 'claimed': 3, 'lost': 1, 'expired': 0, 'disabled': 1})
+        self.assertEqual(everything['stats'], {'total': 5, 'blank': 2, 'claimed': 3, 'lost': 1, 'expired': 0, 'pending': 0, 'disabled': 1})
         ids = lambda status: sorted(t['tag_id'] for t in service.admin_list(status)['tags'])
         self.assertEqual(ids('blank'), ['BLANKTAG0001', 'BLANKTAG0002'])
         self.assertEqual(ids('claimed'), ['BANNEDTAG001', 'CLAIMEDTAG01', 'LOSTTAG00001'])
@@ -577,8 +577,8 @@ class UserRouteTests(unittest.TestCase):
             again = client.post(f'/api/tags/{TAG}/claim', data=upload(), content_type='multipart/form-data')
             lost = client.patch(f'/api/tags/{TAG}', json={'status': 'lost'})
             mine = client.get('/api/tags/mine')
-        self.assertEqual((claimed.status_code, again.status_code, lost.status_code), (201, 409, 200))
-        self.assertEqual(mine.get_json()['tags'][0]['status'], 'lost')
+        self.assertEqual((claimed.status_code, again.status_code, lost.status_code), (201, 409, 409))  # cannot be marked lost until staff approve it
+        self.assertEqual(mine.get_json()['tags'][0]['status'], 'pending_verification')
 
     def test_a_missing_table_answers_503_with_setup_required(self):
         db = MagicMock()

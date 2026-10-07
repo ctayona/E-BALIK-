@@ -2,7 +2,7 @@
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-export type PublicTagStatus = "blank" | "active" | "lost" | "expired" | "disabled" | "inactive";
+export type PublicTagStatus = "blank" | "pending_verification" | "active" | "lost" | "expired" | "disabled" | "inactive";
 
 export interface PublicTag {
   tag_id: string;
@@ -18,7 +18,7 @@ export interface PublicTag {
 
 export interface OwnerTag {
   tag_id: string;
-  status: "active" | "lost" | "blank" | "expired";
+  status: "active" | "lost" | "blank" | "expired" | "pending_verification";
   tag_type?: "qr" | "rfid" | "nfc";
   validity_months?: number | null;
   /** When the tag stops working. Null for tags that never expire. */
@@ -27,6 +27,13 @@ export interface OwnerTag {
   item_name: string;
   item_description: string;
   photo_url?: string | null;
+  /** The item name cannot be edited by its owner once the tag is registered. */
+  item_name_locked?: boolean;
+  /** Registered, or given a new photo, and waiting for staff to verify it. */
+  awaiting_approval?: boolean;
+  /** A new photo is waiting; the previously approved one is still the official photo. */
+  photo_pending?: boolean;
+  is_reregistration?: boolean;
   show_name: boolean;
   show_email: boolean;
   show_phone: boolean;

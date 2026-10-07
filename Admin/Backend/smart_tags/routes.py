@@ -3,7 +3,7 @@ import io
 from functools import wraps
 from flask import Blueprint, current_app, jsonify, request, send_file
 from app.utils import get_db
-from app.utils.smart_tags import MAX_BATCH, SmartTagService, TagError, TagsUnavailable, normalize_tag_id, qr_png
+from app.utils.smart_tags import MAX_BATCH, MAX_PHOTO_BYTES, SmartTagService, TagError, TagsUnavailable, normalize_tag_id, qr_png
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
 
 smart_tags_bp = Blueprint('admin_smart_tags', __name__)
@@ -117,7 +117,46 @@ def enable(tag_id):
 def photo(tag_id):
     _require_admin()
     _, service = _service()
-    return jsonify({'url': service.admin_photo_url(tag_id)}), 200
+    return jsonify(service.admin_photos(tag_id)), 200
+
+
+@smart_tags_bp.route('/smart-tags/<tag_id>/approve', methods=['POST'])
+@_handled('approve the Smart Tag')
+def approve(tag_id):
+    admin = _require_admin()
+    db, service = _service()
+    row = service.approve(tag_id, admin['account_id'])
+    _log_admin_action(db, admin, 'Approve Smart Tag', 'Smart Tags', row.get('item_name') or row['tag_id'], row['tag_id'])
+    return jsonify({'success': True, 'message': 'The Smart Tag is approved and active. The owner was told.'}), 200
+
+
+@smart_tags_bp.route('/smart-tags/<tag_id>/reject', methods=['POST'])
+@_handled('reject the Smart Tag')
+def reject(tag_id):
+    admin = _require_admin()
+    db, service = _service()
+    row = service.reject(tag_id, (request.get_json(silent=True) or {}).get('reason'), admin['account_id'])
+    _log_admin_action(db, admin, 'Reject Smart Tag', 'Smart Tags', row.get('item_name') or row['tag_id'], row['tag_id'])
+    return jsonify({'success': True, 'message': 'The Smart Tag was not approved. The owner was told why.'}), 200
+
+
+@smart_tags_bp.route('/smart-tags/<tag_id>', methods=['PATCH'])
+@_handled('update the Smart Tag')
+def update_tag(tag_id):
+    """Staff edit: every field and the photo, as JSON or multipart. Never changes the approval state."""
+    admin = _require_admin()
+    db, service = _service()
+    picture = None
+    if request.mimetype == 'multipart/form-data':
+        payload = request.form.to_dict()
+        upload = request.files.get('photo')
+        if upload and upload.filename:
+            picture = {'data': upload.read(MAX_PHOTO_BYTES + 1), 'mimetype': upload.mimetype}
+    else:
+        payload = request.get_json(silent=True) or {}
+    row = service.admin_update(tag_id, payload, picture, admin['account_id'])
+    _log_admin_action(db, admin, 'Edit Smart Tag', 'Smart Tags', row.get('item_name') or row['tag_id'], row['tag_id'])
+    return jsonify({'success': True, 'message': 'The Smart Tag was updated.'}), 200
 
 
 @smart_tags_bp.route('/smart-tags/<tag_id>/qr', methods=['GET'])

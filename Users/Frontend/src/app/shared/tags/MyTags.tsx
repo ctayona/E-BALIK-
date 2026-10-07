@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { BellRing, CalendarClock, Camera, Pencil, QrCode, ShieldAlert, Tag as TagIcon, TriangleAlert } from "lucide-react";
+import { BellRing, CalendarClock, Camera, Hourglass, Pencil, QrCode, ShieldAlert, Tag as TagIcon, TriangleAlert } from "lucide-react";
 import Modal from "@/app/shared/modal/Modal";
 import { SkeletonBlock } from "@/app/shared/LoadingSkeleton";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
@@ -11,6 +11,7 @@ import { TagRequestError, expiryText, extractTagCode, spacedCode, tagsApi, type 
 
 function StatusChip({ tag }: { tag: OwnerTag }) {
   if (tag.is_disabled) return <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-[12px] font-semibold text-rose-800 ring-1 ring-rose-200">Deactivated</span>;
+  if (tag.status === "pending_verification") return <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#fef3c7] px-2.5 py-1 text-[12px] font-semibold text-[#78350f] ring-1 ring-[#f5c451]"><Hourglass size={12} aria-hidden="true" />Awaiting Admin Approval</span>;
   if (tag.status === "expired") return <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-[12px] font-semibold text-rose-800 ring-1 ring-rose-200"><CalendarClock size={12} aria-hidden="true" />Expired</span>;
   if (tag.status === "lost") return <span className="inline-flex items-center gap-1 rounded-full bg-gold-50 px-2.5 py-1 text-[12px] font-semibold text-gold-800 ring-1 ring-gold-200"><TriangleAlert size={12} aria-hidden="true" />Marked lost</span>;
   return <span className="inline-flex items-center gap-1 rounded-full bg-tide-50 px-2.5 py-1 text-[12px] font-semibold text-tide-700 ring-1 ring-tide-200">Active</span>;
@@ -79,7 +80,7 @@ export default function MyTags({ standalone = false, onLoaded, onRegister, reloa
       setTags((current) => { const next = (current ?? []).map((t) => (t.tag_id === photoFor.tag_id ? result.tag : t)); onLoaded?.(next); return next; });
       setPhotoFor(null);
       setNewPhoto(null);
-      showInfoModal({ variant: "success", title: "Photo saved", message: "Finders who scan this tag will now see the new photo of your item." });
+      showInfoModal({ variant: "success", title: "Photo sent for approval", message: result.tag.status === "pending_verification" ? "Staff will review your photo. Your tag works again as soon as they approve it." : "Photo saved." });
     } catch (reason) {
       setPhotoError(reason instanceof Error ? reason.message : "Unable to save the photo.");
     } finally {
@@ -113,7 +114,9 @@ export default function MyTags({ standalone = false, onLoaded, onRegister, reloa
       if (photo) result = await tagsApi.photo(editing.tag_id, photo);
       setTags((current) => { const next = (current ?? []).map((t) => (t.tag_id === editing.tag_id ? result.tag : t)); onLoaded?.(next); return next; });
       setEditing(null);
-      showInfoModal({ variant: "success", title: "Smart Tag updated", message: "Your changes are saved. The page finders see now follows your new privacy choices." });
+      showInfoModal(photo
+        ? { variant: "warning", title: "Sent for approval", message: "Your changes are saved. The new photo is waiting for staff approval, and your tag is paused until they approve it." }
+        : { variant: "success", title: "Smart Tag updated", message: "Your changes are saved. The page finders see now follows your new privacy choices." });
     } catch (reason) {
       setFormError(reason instanceof Error ? reason.message : "Unable to save the tag.");
     } finally {
@@ -136,6 +139,9 @@ export default function MyTags({ standalone = false, onLoaded, onRegister, reloa
           <>
             {error && <p role="alert" className={CX.alertError}>{error} <button type="button" onClick={() => void load()} className="font-semibold underline">Try again</button></p>}
             {setup && <p className={CX.alertInfo}>Smart Tags are opening soon. You will be able to register your stickers here.</p>}
+            {tags.some((tag) => tag.status === "pending_verification") && (
+              <p className="flex items-start gap-2.5 rounded-2xl border border-[#f5c451] bg-[#fef3c7] px-4 py-3 text-[13.5px] leading-6 text-[#78350f]" role="status"><Hourglass size={17} className="mt-1 shrink-0" aria-hidden="true" />{tags.filter((tag) => tag.status === "pending_verification").length === 1 ? "One of your tags is" : `${tags.filter((tag) => tag.status === "pending_verification").length} of your tags are`} waiting for staff approval. Bring the item to the Lost and Found Office so they can check it.</p>
+            )}
 
             {tags.length === 0 && !setup && !error && (
               <div className="rounded-2xl border border-dashed border-line-strong bg-frost-50 px-5 py-8 text-center">
@@ -149,7 +155,7 @@ export default function MyTags({ standalone = false, onLoaded, onRegister, reloa
             {tags.length > 0 && (
               <ul className={`grid gap-3 md:grid-cols-2 ${standalone ? "xl:grid-cols-3" : ""}`}>
                 {tags.map((tag) => (
-                  <li key={tag.tag_id} className={`flex flex-col gap-3 rounded-2xl border p-4 ${tag.status === "lost" && !tag.is_disabled ? "border-gold-300 bg-gold-50" : tag.status === "expired" ? "border-rose-200 bg-rose-50/40" : "border-line bg-white"}`}>
+                  <li key={tag.tag_id} className={`flex flex-col gap-3 rounded-2xl border p-4 ${tag.status === "pending_verification" ? "border-[#f5c451] bg-[#fef9e7]/60" : tag.status === "lost" && !tag.is_disabled ? "border-gold-300 bg-gold-50" : tag.status === "expired" ? "border-rose-200 bg-rose-50/40" : "border-line bg-white"}`}>
                     <div className="flex items-start gap-3">
                       {tag.photo_url && <img src={tag.photo_url} alt="" decoding="async" loading="lazy" className="size-14 shrink-0 rounded-xl border border-line object-cover" />}
                       <div className="min-w-0 flex-1">
@@ -159,6 +165,12 @@ export default function MyTags({ standalone = false, onLoaded, onRegister, reloa
                       <StatusChip tag={tag} />
                     </div>
                     {tag.is_disabled && <p className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] leading-5 text-rose-800"><ShieldAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" />An administrator deactivated this tag{tag.disabled_reason ? `: ${tag.disabled_reason}` : "."}</p>}
+                    {tag.status === "pending_verification" && (
+                      <p className="flex items-start gap-2 rounded-xl border border-[#f5c451] bg-[#fef3c7] px-3 py-2 text-[13px] leading-5 text-[#78350f]">
+                        <Hourglass size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+                        <span>{tag.is_reregistration ? "Your new photo is waiting for staff approval. Your tag is paused until then and finders see nothing." : "Bring this item and its sticker to the Lost and Found Office. Staff will check it, then the tag starts working. Finders see nothing until then."}</span>
+                      </p>
+                    )}
                     {expiryText(tag) && (
                       <p className={`flex items-start gap-2 text-[13px] leading-5 ${tag.status === "expired" ? "rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800" : tag.days_left != null && tag.days_left <= 30 ? "rounded-xl border border-gold-300 bg-gold-50 px-3 py-2 text-gold-800" : "text-ink-soft"}`}>
                         <CalendarClock size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -167,7 +179,7 @@ export default function MyTags({ standalone = false, onLoaded, onRegister, reloa
                     )}
                     {tag.found_notice_count > 0 && <p className="flex items-center gap-2 text-[13px] text-ink-soft"><BellRing size={14} className="text-gold-700" aria-hidden="true" />{tag.found_notice_count} {tag.found_notice_count === 1 ? "person reported finding it" : "reports of it being found"}</p>}
                     <div className="mt-auto flex flex-wrap gap-2">
-                      {!tag.is_disabled && tag.status !== "expired" && (
+                      {!tag.is_disabled && tag.status !== "expired" && tag.status !== "pending_verification" && (
                         tag.status === "lost"
                           ? <button type="button" disabled={switching === tag.tag_id} onClick={() => void setStatus(tag, "active")} className={`${CX.btnGold} min-h-[40px] px-4 text-[13.5px]`}>I found it</button>
                           : <button type="button" disabled={switching === tag.tag_id} onClick={() => void setStatus(tag, "lost")} className={`${CX.btnGhost} min-h-[40px] px-4 text-[13.5px] border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50`}>Mark as lost</button>
@@ -228,14 +240,17 @@ export default function MyTags({ standalone = false, onLoaded, onRegister, reloa
         icon={<Camera size={20} />}
         eyebrow={photoFor ? `Tag ${spacedCode(photoFor.tag_id)}` : undefined}
         title={photoFor?.photo_url ? "Retake the photo" : "Add a photo"}
-        description="Take a new photo of your item with the sticker attached. Finders see it when they scan the tag."
+        description="Take a new photo of your item with the sticker attached."
         footer={<>
           <button type="button" onClick={() => { setPhotoFor(null); setNewPhoto(null); }} disabled={saving} className={CX.btnGhost}>Cancel</button>
-          <button type="button" onClick={() => void savePhoto()} disabled={saving || !newPhoto} className={CX.btnGold}>{saving ? "Saving…" : "Save photo"}</button>
+          <button type="button" onClick={() => void savePhoto()} disabled={saving || !newPhoto} className={CX.btnGold}>{saving ? "Sending…" : photoFor?.status === "pending_verification" ? "Replace photo" : "Submit for approval"}</button>
         </>}
       >
         {photoFor && (
           <div className="space-y-3">
+            {photoFor.status !== "pending_verification" && (
+              <p className="flex items-start gap-2 rounded-2xl border border-[#f5c451] bg-[#fef3c7] px-4 py-3 text-[13.5px] leading-6 text-[#78350f]"><Hourglass size={16} className="mt-1 shrink-0" aria-hidden="true" />Changing the photo needs staff approval. Your tag stops working and finders see nothing until staff approve the new photo.</p>
+            )}
             <LivePhotoField file={newPhoto} existingUrl={photoFor.photo_url} onChange={setNewPhoto} required />
             {photoError && <p role="alert" className={CX.alertError}>{photoError}</p>}
           </div>

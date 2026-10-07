@@ -68,7 +68,7 @@ export default function RegisterTagModal({ open, initialCode, onClose, onRegiste
       const result = await tagsApi.claim(tagCode, { ...values, dpa_consent: consent }, photo);
       onRegistered(result.tag);
       onClose();
-      showInfoModal({ variant: "success", title: "Smart Tag registered", message: `"${result.tag.item_name}" is now protected. Anyone who scans the sticker will see what you chose to share.` });
+      showInfoModal({ variant: "success", title: "Smart Tag submitted", message: `"${result.tag.item_name}" is waiting for staff approval.`, details: ["Bring the item with the sticker on it to the Lost and Found Office.", "Staff compare it with your photo, then the tag starts working.", "Until then finders cannot see anything about it."] });
     } catch (reason) {
       setFormError(reason instanceof Error ? reason.message : "Unable to register this tag.");
       if (reason instanceof TagRequestError && reason.code === "already_claimed") { setStep("code"); setCodeError("This Smart Tag is already registered to someone."); }

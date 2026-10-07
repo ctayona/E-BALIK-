@@ -2,12 +2,12 @@ import { API_URL, adminMutationRequest, getAuthHeaders } from "./api";
 
 /** Admin Smart Tags API. Reads throw `SmartTagSetupError` when the Supabase migration has not been applied yet. */
 
-export type TagFilter = "all" | "blank" | "claimed" | "lost" | "expired" | "disabled";
+export type TagFilter = "all" | "blank" | "pending" | "claimed" | "lost" | "expired" | "disabled";
 export type TagType = "qr" | "rfid" | "nfc";
 
 export interface AdminSmartTag {
   tag_id: string;
-  status: "blank" | "active" | "lost" | "expired";
+  status: "blank" | "pending_verification" | "active" | "lost" | "expired";
   tag_type: TagType;
   validity_months: number | null;
   valid_until: string | null;
@@ -17,6 +17,17 @@ export interface AdminSmartTag {
   last_scanned_at: string | null;
   /** True when the owner took a registration photo. Open the tag to load it (a short-lived signed link). */
   has_photo?: boolean;
+  /** A new photo waits for approval beside the approved one. */
+  has_pending_photo?: boolean;
+  /** True when an already approved tag got a new photo (false for a first registration). */
+  is_reregistration?: boolean;
+  submitted_at?: string | null;
+  verified_at?: string | null;
+  item_description?: string;
+  show_name?: boolean;
+  show_email?: boolean;
+  show_phone?: boolean;
+  contact_phone?: string;
   is_disabled: boolean;
   disabled_reason: string | null;
   item_name: string;
@@ -29,7 +40,7 @@ export interface AdminSmartTag {
   url: string;
 }
 
-export interface SmartTagStats { total: number; blank: number; claimed: number; lost: number; expired: number; disabled: number }
+export interface SmartTagStats { total: number; blank: number; claimed: number; lost: number; expired: number; pending: number; disabled: number }
 export interface TagTypeOption { value: TagType; label: string; enabled: boolean }
 export interface TagBatch {
   batch_id: string | null;
@@ -37,7 +48,7 @@ export interface TagBatch {
   tag_type: TagType;
   validity_months: number | null;
   created_at: string | null;
-  total: number; blank: number; active: number; lost: number; expired: number; disabled: number;
+  total: number; blank: number; active: number; lost: number; expired: number; pending: number; disabled: number;
   expiring_soon: number;
   scans: number;
   next_expiry: string | null;
@@ -97,11 +108,32 @@ export async function fetchTagBatches(): Promise<{ batches: TagBatch[]; warning_
 export const deactivateSmartTag = (id: string, reason: string) => mutate<{ success: boolean }>(`${encodeURIComponent(id)}/disable`, "Deactivate Smart Tag", { reason });
 export const reactivateSmartTag = (id: string) => mutate<{ success: boolean }>(`${encodeURIComponent(id)}/enable`, "Reactivate Smart Tag");
 
-export async function fetchSmartTagPhoto(id: string): Promise<string | null> {
+/** The photo to review, and the previously approved one when a new photo is waiting. */
+export interface TagPhotos { url: string | null; previous_url: string | null; is_new_photo: boolean }
+
+export async function fetchSmartTagPhoto(id: string): Promise<TagPhotos> {
   const response = await fetch(`${API_URL}/api/admin/smart-tags/${encodeURIComponent(id)}/photo`, { headers: getAuthHeaders() });
   if (!response.ok) throw new Error("Unable to load the photo");
   const payload = await response.json().catch(() => ({}));
-  return typeof payload.url === "string" ? payload.url : null;
+  return { url: typeof payload.url === "string" ? payload.url : null, previous_url: typeof payload.previous_url === "string" ? payload.previous_url : null, is_new_photo: Boolean(payload.is_new_photo) };
+}
+
+export const approveSmartTag = (id: string) => mutate<{ success: boolean }>(`${encodeURIComponent(id)}/approve`, "Approve Smart Tag");
+export const rejectSmartTag = (id: string, reason: string) => mutate<{ success: boolean }>(`${encodeURIComponent(id)}/reject`, "Reject Smart Tag", { reason });
+
+export interface TagEditFields { item_name: string; item_description: string; show_name: boolean; show_email: boolean; show_phone: boolean; contact_phone: string }
+
+/** Staff edit of any field and the photo. Sent as multipart so a photo can ride along; never changes the approval state. */
+export async function editSmartTag(id: string, fields: TagEditFields, photo?: File | null) {
+  const form = new FormData();
+  Object.entries(fields).forEach(([key, value]) => form.append(key, String(value)));
+  if (photo) form.append("photo", photo, photo.name);
+  const headers = getAuthHeaders();
+  delete headers["Content-Type"];  // the browser adds the multipart boundary itself
+  const response = await adminMutationRequest(`${API_URL}/api/admin/smart-tags/${encodeURIComponent(id)}`, { method: "PATCH", headers, body: form }, "Edit Smart Tag");
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Unable to save the changes");
+  return payload as { success: boolean };
 }
 
 /** The QR needs the admin's token, so it is fetched as a blob and shown through an object URL. */

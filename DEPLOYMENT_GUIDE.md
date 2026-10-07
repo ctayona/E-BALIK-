@@ -75,9 +75,10 @@ Server/manual_migrations/20261007_report_integrity_and_reactions.sql
 Server/manual_migrations/20261008_smart_tags.sql
 Server/manual_migrations/20261009_tag_expiry_and_auction_buyout.sql
 Server/manual_migrations/20261010_tag_photo_and_mission_control.sql
+Server/manual_migrations/20261011_tag_staff_verification.sql
 ```
 
-The last six are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo and the Mission Control storage tools. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, then `20261010`). The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
+The last seven are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo, the Mission Control storage tools and staff approval of Smart Tags. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, `20261010`, then `20261011`). The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
 
 ```sql
 SELECT to_regclass('public.auctions') AS auctions,

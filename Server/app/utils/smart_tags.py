@@ -29,6 +29,8 @@ MAX_FINDER_CONTACT = 120
 TAG_IMAGE_BUCKET = 'smart-tag-images'
 MAX_PHOTO_BYTES = 5 * 1024 * 1024
 PHOTO_URL_SECONDS = 600
+# A tag a user has just registered, or whose photo they replaced, does nothing until staff have compared it with the real item.
+PENDING = 'pending_verification'
 _TAG_RE = re.compile(r'^[A-Z0-9]{10,12}$')
 _PHONE_RE = re.compile(r'^\+?[0-9][0-9 ()\-]{5,18}[0-9]$')
 _CONTROL_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
@@ -56,7 +58,7 @@ class TagsUnavailable(Exception):
 def _is_missing_schema(error: Exception) -> bool:
     text = str(error).lower()
     missing = any(m in text for m in ('does not exist', 'schema cache', 'could not find', 'pgrst205', 'pgrst204', '42p01', '42703'))
-    return missing and ('smart_tags' in text or any(c in text for c in ('tag_type', 'validity_months', 'valid_until', 'batch_id', 'item_image_url')))
+    return missing and ('smart_tags' in text or any(c in text for c in ('tag_type', 'validity_months', 'valid_until', 'batch_id', 'item_image_url', 'pending_image_url', 'prior_status', 'review_requested_at', 'verified_at', 'verification_note')))
 
 
 def _now() -> datetime:
@@ -290,7 +292,8 @@ class SmartTagService:
         return None
 
     def _owner(self, row: Dict[str, Any]) -> Dict[str, Any]:
-        return {**self.owner_view(row), 'photo_url': self._photo_url(row.get('item_image_url'))}
+        # While a new photo waits for approval the owner sees it (it is what they took); finders see nothing at all.
+        return {**self.owner_view(row), 'photo_url': self._photo_url(row.get('pending_image_url') or row.get('item_image_url'))}
 
     def set_photo(self, raw_tag_id: Any, account_id: str, photo: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Replace the photo of a tag you own (also how tags registered before photos existed get one)."""
@@ -304,16 +307,29 @@ class SmartTagService:
             raise TagError('This Smart Tag was deactivated by an administrator, so it cannot be changed.', 403)
         if tag.get('status') == 'expired':
             raise TagError('This Smart Tag has expired. Ask the Lost and Found Office to renew it.', 403, code='expired')
+        if tag.get('status') == 'blank':
+            raise TagError('This Smart Tag is not registered yet.', 409)
+        status = tag.get('status')
+        now = _iso(_now())
+        first_review = status == PENDING and not tag.get('prior_status')  # nothing has ever been approved: just replace the submitted photo
         path = self._store_photo(tag_id, photo)
+        if first_review:
+            changes = {'item_image_url': path, 'review_requested_at': now, 'updated_at': now}
+            replaced = tag.get('item_image_url')
+        else:
+            # A new photo of an approved tag takes it out of service until staff approve the new picture. The approved
+            # photo stays in place so a rejection can put everything back.
+            changes = {'pending_image_url': path, 'status': PENDING, 'prior_status': tag.get('prior_status') or status, 'review_requested_at': now, 'updated_at': now}
+            replaced = tag.get('pending_image_url')
         try:
-            rows = self._table().update({'item_image_url': path, 'updated_at': _iso(_now())}).eq('tag_id', tag_id).eq('owner_account_id', account_id).eq('is_disabled', False).execute().data or []
+            rows = self._table().update(changes).eq('tag_id', tag_id).eq('owner_account_id', account_id).eq('status', status).eq('is_disabled', False).execute().data or []
         except Exception as error:
             self._remove_photo(path)
             self._guard(error)
         if not rows:
             self._remove_photo(path)
             raise TagError('The tag changed while you were editing it. Reload and try again.', 409)
-        self._remove_photo(tag.get('item_image_url'))
+        self._remove_photo(replaced)
         self._log(account_id, 'Update Smart Tag Photo', rows[0])
         return self._owner(rows[0])
 
@@ -369,6 +385,9 @@ class SmartTagService:
             return {'tag_id': tag_id, 'status': 'blank'}
         if tag.get('status') == 'expired':
             return {'tag_id': tag_id, 'status': 'expired'}
+        if tag.get('status') == PENDING:
+            # Not verified by staff yet: no item, owner or photo. Only the owner is told it is theirs.
+            return {'tag_id': tag_id, 'status': PENDING, 'is_owner': bool(viewer_id) and str(tag.get('owner_account_id')) == str(viewer_id)}
         owner = self._profile(tag.get('owner_account_id'))
         if not owner:
             return {'tag_id': tag_id, 'status': 'inactive'}
@@ -402,6 +421,10 @@ class SmartTagService:
             'last_found_notice_at': row.get('last_found_notice_at'), 'url': tag_url(row['tag_id']),
             'tag_type': row.get('tag_type') or 'qr', 'validity_months': row.get('validity_months'), 'valid_until': row.get('valid_until'),
             'days_left': days_left(row.get('valid_until')) if row.get('status') in ('active', 'lost') else None,
+            'item_name_locked': True,  # the item name can never be edited by its owner after registration
+            'awaiting_approval': row.get('status') == PENDING,
+            'photo_pending': bool(row.get('pending_image_url')),
+            'is_reregistration': bool(row.get('prior_status')),
         }
 
     def my_tags(self, account_id: str) -> List[Dict[str, Any]]:
@@ -456,13 +479,11 @@ class SmartTagService:
         photo_path = self._store_photo(tag_id, photo)
         moment = _now()
         now = _iso(moment)
-        months = current.get('validity_months')
-        # The validity period starts when the owner registers the tag (for example one academic year from today).
-        expiry = {'valid_until': _iso(add_months(moment, int(months)))} if months else {}
+        # Registration only submits the tag. Staff verify the item in person, and the validity period starts at that approval.
         # One atomic statement: it only succeeds while the tag is still blank, unowned and not disabled,
         # so two people (or two clicks) can never both claim the same sticker.
         try:
-            rows = self._table().update({**fields, **expiry, 'item_image_url': photo_path, 'owner_account_id': account_id, 'status': 'active', 'claimed_at': now, 'updated_at': now}) \
+            rows = self._table().update({**fields, 'item_image_url': photo_path, 'owner_account_id': account_id, 'status': PENDING, 'prior_status': None, 'review_requested_at': now, 'claimed_at': now, 'updated_at': now}) \
                 .eq('tag_id', tag_id).eq('status', 'blank').is_('owner_account_id', 'null').eq('is_disabled', False).execute().data or []
         except Exception as error:
             self._remove_photo(photo_path)
@@ -487,8 +508,12 @@ class SmartTagService:
             raise TagError('This Smart Tag was deactivated by an administrator, so it cannot be changed.', 403)
         if tag.get('status') == 'expired':
             raise TagError('This Smart Tag has expired. Ask the Lost and Found Office to renew it.', 403, code='expired')
-        changes = self._details(payload, current=tag)
+        if 'item_name' in payload and clean_text(payload.get('item_name'), MAX_ITEM_NAME) != (tag.get('item_name') or ''):
+            raise TagError('The item name cannot be changed after a tag is registered. This stops a sticker from being moved to a different item. If the name is wrong, ask the Lost and Found Office.', 403, code='item_locked')
+        changes = self._details({key: value for key, value in payload.items() if key != 'item_name'}, current=tag)
         if 'status' in payload:
+            if tag.get('status') == PENDING:
+                raise TagError('This tag is waiting for staff approval. You can mark it lost or found once it is approved.', 409, code='pending')
             status = str(payload.get('status') or '').strip().lower()
             if status not in ('active', 'lost'):
                 raise TagError('A tag can be marked active or lost.')
@@ -506,6 +531,124 @@ class SmartTagService:
             self._log(account_id, 'Mark Smart Tag Lost' if changes['status'] == 'lost' else 'Mark Smart Tag Found', rows[0])
         return self._owner(rows[0])
 
+    # ------------------------------------------------------------------ staff verification
+    def admin_photos(self, raw_tag_id: Any) -> Dict[str, Any]:
+        """The photo staff must compare with the real item, and the previously approved one when a new photo is waiting."""
+        tag_id = normalize_tag_id(raw_tag_id)
+        if not tag_id:
+            raise TagError('This Smart Tag was not found.', 404)
+        tag = self._get(tag_id)
+        pending = tag.get('pending_image_url')
+        return {
+            'url': self._photo_url(pending or tag.get('item_image_url')),
+            'previous_url': self._photo_url(tag.get('item_image_url')) if pending else None,
+            'is_new_photo': bool(pending),
+        }
+
+    def _notify(self, owner_id: Any, title: str, message: str, kind: str) -> None:
+        if not owner_id:
+            return
+        try:
+            self.db.create_user_notification(str(owner_id), title, message, notification_type=kind, link_label='View my Smart Tags', link_page='my-tags')
+        except Exception as error:
+            logger.warning('Smart tag verification notice failed: %s', error)
+
+    def approve(self, raw_tag_id: Any, admin_id: str) -> Dict[str, Any]:
+        """Staff compared the screen with the item in front of them. The tag goes live (a new photo replaces the old one)."""
+        tag_id = normalize_tag_id(raw_tag_id)
+        if not tag_id:
+            raise TagError('This Smart Tag was not found.', 404)
+        tag = self._get(tag_id)
+        if tag.get('status') != PENDING:
+            raise TagError('This tag is not waiting for approval.', 409, code='not_pending')
+        moment = _now()
+        now = _iso(moment)
+        changes: Dict[str, Any] = {'status': tag.get('prior_status') or 'active', 'prior_status': None, 'review_requested_at': None,
+                                   'verified_at': now, 'verified_by': admin_id, 'verification_note': None, 'updated_at': now}
+        replaced = None
+        if tag.get('pending_image_url'):
+            changes.update({'item_image_url': tag['pending_image_url'], 'pending_image_url': None})
+            replaced = tag.get('item_image_url')
+        months = tag.get('validity_months')
+        if not tag.get('prior_status') and months:
+            changes['valid_until'] = _iso(add_months(moment, int(months)))  # the validity period starts at this in-person approval
+        try:
+            rows = self._table().update(changes).eq('tag_id', tag_id).eq('status', PENDING).execute().data or []
+        except Exception as error:
+            self._guard(error)
+        if not rows:
+            raise TagError('Someone else just reviewed this tag. Reload the list.', 409, code='not_pending')
+        self._remove_photo(replaced)
+        self._notify(tag.get('owner_account_id'), 'Smart Tag approved',
+                     f'Staff verified your Smart Tag for "{tag.get("item_name") or "your item"}". It is active now and finders can see what you chose to share.', 'smart_tag_approved')
+        return rows[0]
+
+    def reject(self, raw_tag_id: Any, reason: Any, admin_id: str) -> Dict[str, Any]:
+        """A new registration is cleared so the sticker can be registered again; a rejected new photo just returns to the old one."""
+        tag_id = normalize_tag_id(raw_tag_id)
+        if not tag_id:
+            raise TagError('This Smart Tag was not found.', 404)
+        note = clean_text(reason, 300)
+        if len(note) < 3:
+            raise TagError('Give a short reason. The owner is told why.')
+        tag = self._get(tag_id)
+        if tag.get('status') != PENDING:
+            raise TagError('This tag is not waiting for approval.', 409, code='not_pending')
+        now = _iso(_now())
+        owner_id = tag.get('owner_account_id')
+        item = tag.get('item_name') or 'your item'
+        if tag.get('prior_status'):
+            changes = {'status': tag['prior_status'], 'pending_image_url': None, 'prior_status': None, 'review_requested_at': None,
+                       'verification_note': note, 'updated_at': now}
+            discard = tag.get('pending_image_url')
+            message = f'Staff did not approve the new photo for "{item}". Reason: {note} Your previous photo and your tag are active again.'
+        else:
+            changes = {'status': 'blank', 'owner_account_id': None, 'item_name': None, 'item_description': None, 'show_name': False, 'show_email': False,
+                       'show_phone': False, 'contact_phone': None, 'item_image_url': None, 'pending_image_url': None, 'claimed_at': None, 'valid_until': None,
+                       'prior_status': None, 'review_requested_at': None, 'verification_note': note, 'updated_at': now}
+            discard = tag.get('item_image_url')
+            message = f'Staff could not verify your Smart Tag registration for "{item}". Reason: {note} The sticker is free again; bring the item to the Lost and Found Office and register it again.'
+        try:
+            rows = self._table().update(changes).eq('tag_id', tag_id).eq('status', PENDING).execute().data or []
+        except Exception as error:
+            self._guard(error)
+        if not rows:
+            raise TagError('Someone else just reviewed this tag. Reload the list.', 409, code='not_pending')
+        self._remove_photo(discard)
+        self._notify(owner_id, 'Smart Tag not approved', message, 'smart_tag_rejected')
+        return rows[0]
+
+    def admin_update(self, raw_tag_id: Any, payload: Dict[str, Any], photo: Optional[Dict[str, Any]], admin_id: str) -> Dict[str, Any]:
+        """Staff may change every field of a registered tag, including the item name and the photo, without triggering approval."""
+        tag_id = normalize_tag_id(raw_tag_id)
+        if not tag_id:
+            raise TagError('This Smart Tag was not found.', 404)
+        tag = self._get(tag_id)
+        if tag.get('status') == 'blank' or not tag.get('owner_account_id'):
+            raise TagError('Only a registered tag can be edited.', 409)
+        keys = ('item_name', 'item_description', 'show_name', 'show_email', 'show_phone', 'contact_phone')
+        changes = self._details({key: payload[key] for key in keys if key in payload}, current=tag)
+        path = None
+        if photo and photo.get('data'):
+            path = self._store_photo(tag_id, photo)
+            changes.update({'item_image_url': path, 'pending_image_url': None})
+        if not changes:
+            raise TagError('Nothing to change.')
+        changes['updated_at'] = _iso(_now())
+        try:
+            rows = self._table().update(changes).eq('tag_id', tag_id).execute().data or []
+        except Exception as error:
+            self._remove_photo(path)
+            self._guard(error)
+        if not rows:
+            self._remove_photo(path)
+            raise TagError('The tag changed while you were editing it. Reload and try again.', 409)
+        if path:
+            self._remove_photo(tag.get('item_image_url'))
+            self._remove_photo(tag.get('pending_image_url'))
+        self._notify(tag.get('owner_account_id'), 'Smart Tag updated by staff', f'Staff updated the details of your Smart Tag for "{rows[0].get("item_name") or "your item"}".', 'smart_tag_updated')
+        return rows[0]
+
     # ------------------------------------------------------------------ finder
     def report_found(self, raw_tag_id: Any, message: Any = '', finder_contact: Any = '') -> Dict[str, Any]:
         """A finder pressed "I found this item". Tell the owner (in the app and by email) at most once per cooldown."""
@@ -513,7 +656,7 @@ class SmartTagService:
         if not tag_id:
             raise TagError('This Smart Tag was not found.', 404)
         tag = self._refresh(self._get(tag_id))
-        if tag.get('is_disabled') or tag.get('status') in ('blank', 'expired') or not tag.get('owner_account_id'):
+        if tag.get('is_disabled') or tag.get('status') in ('blank', 'expired', PENDING) or not tag.get('owner_account_id'):
             raise TagError('This Smart Tag is not active, so the owner cannot be notified.', 409)
         note = clean_text(message, MAX_FINDER_MESSAGE, multiline=True)
         contact = clean_text(finder_contact, MAX_FINDER_CONTACT)
@@ -616,13 +759,15 @@ class SmartTagService:
                 for key, value in flt.items():
                     q = q.in_(key, value) if isinstance(value, list) else q.eq(key, value)
                 return int(q.limit(1).execute().count or 0)
-            stats = {'total': count(), 'blank': count(status='blank', is_disabled=False), 'claimed': count(status=['active', 'lost', 'expired']),
-                     'lost': count(status='lost'), 'expired': count(status='expired'), 'disabled': count(is_disabled=True)}
+            stats = {'total': count(), 'blank': count(status='blank', is_disabled=False), 'claimed': count(status=['active', 'lost', 'expired', PENDING]),
+                     'lost': count(status='lost'), 'expired': count(status='expired'), 'pending': count(status=PENDING), 'disabled': count(is_disabled=True)}
             q = self._table().select('*')
             if status == 'blank':
                 q = q.eq('status', 'blank').eq('is_disabled', False)
             elif status == 'claimed':
-                q = q.in_('status', ['active', 'lost', 'expired'])
+                q = q.in_('status', ['active', 'lost', 'expired', PENDING])
+            elif status == 'pending':
+                q = q.eq('status', PENDING)
             elif status == 'lost':
                 q = q.eq('status', 'lost')
             elif status == 'expired':
@@ -647,7 +792,11 @@ class SmartTagService:
                 'found_notice_count': int(row.get('found_notice_count') or 0), 'last_found_notice_at': row.get('last_found_notice_at'),
                 'tag_type': row.get('tag_type') or 'qr', 'validity_months': row.get('validity_months'), 'valid_until': row.get('valid_until'),
                 'days_left': days_left(row.get('valid_until')) if row.get('status') in ('active', 'lost') else None, 'batch_id': row.get('batch_id'),
-                'scan_count': int(row.get('scan_count') or 0), 'last_scanned_at': row.get('last_scanned_at'), 'has_photo': bool(row.get('item_image_url')),
+                'scan_count': int(row.get('scan_count') or 0), 'last_scanned_at': row.get('last_scanned_at'), 'has_photo': bool(row.get('item_image_url') or row.get('pending_image_url')),
+                'has_pending_photo': bool(row.get('pending_image_url')), 'is_reregistration': bool(row.get('prior_status')),
+                'submitted_at': row.get('review_requested_at') if row.get('status') == PENDING else None, 'verified_at': row.get('verified_at'),
+                'item_description': row.get('item_description') or '', 'show_name': bool(row.get('show_name')), 'show_email': bool(row.get('show_email')),
+                'show_phone': bool(row.get('show_phone')), 'contact_phone': row.get('contact_phone') or '',
                 'owner': {'name': self._name(owner), 'email': owner.get('email') or '', 'campus_id': owner.get('campus_id') or ''} if owner else None,
                 'url': tag_url(row['tag_id']),
             }
@@ -707,14 +856,14 @@ class SmartTagService:
             group = groups.setdefault(key, {
                 'batch_id': row.get('batch_id'), 'label': row.get('batch_label') or 'Unnamed batch', 'tag_type': row.get('tag_type') or 'qr',
                 'validity_months': row.get('validity_months'), 'created_at': row.get('created_at'),
-                'total': 0, 'blank': 0, 'active': 0, 'lost': 0, 'expired': 0, 'disabled': 0, 'expiring_soon': 0, 'scans': 0, 'next_expiry': None,
+                'total': 0, 'blank': 0, 'active': 0, 'lost': 0, 'expired': 0, 'pending': 0, 'disabled': 0, 'expiring_soon': 0, 'scans': 0, 'next_expiry': None,
             })
             group['total'] += 1
             group['scans'] += int(row.get('scan_count') or 0)
             if row.get('is_disabled'):
                 group['disabled'] += 1
             status = row.get('status') or 'blank'
-            group[status if status in ('blank', 'active', 'lost', 'expired') else 'blank'] += 1
+            group['pending' if status == PENDING else status if status in ('blank', 'active', 'lost', 'expired') else 'blank'] += 1
             until = _parse(row.get('valid_until'))
             if status in ('active', 'lost') and until:
                 if group['next_expiry'] is None or until < _parse(group['next_expiry']):
@@ -775,6 +924,8 @@ class SmartTagService:
         tag = self._get(tag_id)
         if tag.get('status') == 'blank' or not tag.get('owner_account_id'):
             raise TagError('Only a registered tag can be renewed.', 409)
+        if tag.get('status') == PENDING:
+            raise TagError('Approve this tag first. It is still waiting for verification.', 409)
         now = _now()
         base = max(now, _parse(tag.get('valid_until')) or now)
         changes = {'valid_until': _iso(add_months(base, count)), 'updated_at': _iso(now)}

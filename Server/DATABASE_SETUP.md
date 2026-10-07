@@ -119,6 +119,19 @@ SELECT proname FROM pg_proc WHERE proname = 'auction_finalize';
 Note: once the gate is live, every existing account that is not verified can no
 longer report items, file claims or bid until an admin verifies it.
 
+### Smart Tag staff approval (fraud prevention)
+
+Run `manual_migrations/20261011_tag_staff_verification.sql` after `20261010`. It is guarded, transactional and safe
+to re-run. It widens `smart_tags.status` to `VARCHAR(24)` and adds `pending_verification` to the status check, adds
+`pending_image_url`, `prior_status`, `review_requested_at`, `verified_at`, `verified_by` and `verification_note`,
+and a partial index `idx_smart_tags_pending`. Existing tags keep their status, so nothing already working is paused.
+Verify with:
+
+```sql
+SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'smart_tags_status_check';  -- lists pending_verification
+SELECT column_name FROM information_schema.columns WHERE table_name = 'smart_tags' AND column_name IN ('pending_image_url','prior_status','verified_at');
+```
+
 ### Smart Tag live photo and Mission Control storage tools
 
 Run `manual_migrations/20261010_tag_photo_and_mission_control.sql` after `20261009`. It is additive and

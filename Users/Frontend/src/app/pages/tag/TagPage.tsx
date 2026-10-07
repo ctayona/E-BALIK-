@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, ArrowRight, BadgeCheck, CalendarX, HandHeart, Lock, Mail, MapPin, Phone, QrCode, ShieldAlert, ShieldCheck, UserRound } from "lucide-react";
+import { AlertTriangle, ArrowRight, BadgeCheck, CalendarX, HandHeart, Hourglass, Lock, Mail, MapPin, Phone, QrCode, ShieldAlert, ShieldCheck, UserRound } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import umakLogo from "@/imports/umaklogo.webp";
 import Modal from "@/app/shared/modal/Modal";
@@ -183,7 +183,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
               <p className="mx-auto mt-3 max-w-[42ch] text-[15px] leading-7 text-ink-muted">Claim it to link this sticker to your item. If someone finds your item, you will be notified.</p>
               <div className="mt-6 text-left">
                 {claimed ? (
-                  <p className={CX.alertSuccess} role="status">Registered. Opening your tag…</p>
+                  <p className={CX.alertSuccess} role="status">Submitted. Staff will approve it once they have seen the item…</p>
                 ) : (
                   <TagDetailsForm mode="claim" submitLabel="Claim this tag" busy={claiming} error={claimError} onSubmit={(values, consent, photo) => void claim(values, consent, photo)} />
                 )}
@@ -211,6 +211,22 @@ export default function TagPage({ rawId }: { rawId: string }) {
         <StateCard icon={<CalendarX size={34} />} tone="gold" title="This Smart Tag has expired">
           <p className="mx-auto mt-3 max-w-[42ch] text-[15px] leading-7 text-ink-muted">Its validity period has ended, so the owner's details are no longer shown. If you found an item with this sticker, please bring it to the nearest OHSO guard post so it can be checked and returned.</p>
           <p className="mx-auto mt-3 max-w-[42ch] text-[13.5px] leading-6 text-ink-muted">Are you the owner? Ask the Lost and Found Office to renew this tag.</p>
+          <a href="/" className={`${CX.btnNavy} mt-6`}>Go to E-Balik</a>
+        </StateCard>
+      </Shell>
+    );
+  }
+
+  // ---- Waiting for staff: nothing about the item, owner or photo is shown
+  if (tag.status === "pending_verification") {
+    return (
+      <Shell code={tagCode}>
+        <StateCard icon={<Hourglass size={34} />} tone="gold" title={tag.is_owner ? "Your tag is waiting for approval" : "This Smart Tag is awaiting approval"}>
+          {tag.is_owner ? (
+            <p className="mx-auto mt-3 max-w-[42ch] text-[15px] leading-7 text-ink-muted">Bring the item with this sticker on it to the Lost and Found Office. Staff will compare it with the photo you took, then switch the tag on. Until then nobody can see your details.</p>
+          ) : (
+            <p className="mx-auto mt-3 max-w-[42ch] text-[15px] leading-7 text-ink-muted">This sticker has not been verified by the university yet, so no details are shown. If you found an item with this sticker, please bring it to the nearest OHSO guard post so it can be checked and returned.</p>
+          )}
           <a href="/" className={`${CX.btnNavy} mt-6`}>Go to E-Balik</a>
         </StateCard>
       </Shell>

@@ -535,9 +535,13 @@ class TagPhotoTests(unittest.TestCase):
         service, _, store = make_service([tag_row(item_image_url=f'{TAG}/old.jpg')], auto_photo=False)
         store['objects'] = {(TAG_IMAGE_BUCKET, f'{TAG}/old.jpg'): (b'x', {})}
         view = service.set_photo(TAG, OWNER, PHOTO)
-        self.assertNotIn((TAG_IMAGE_BUCKET, f'{TAG}/old.jpg'), store['objects'])
-        self.assertEqual(len(store['objects']), 1)
-        self.assertEqual(store['smart_tags'][0]['item_image_url'], next(p for _, p in store['objects']))
+        # The approved photo stays until staff approve the new one; the new one waits beside it.
+        self.assertIn((TAG_IMAGE_BUCKET, f'{TAG}/old.jpg'), store['objects'])
+        self.assertEqual(len(store['objects']), 2)
+        saved = store['smart_tags'][0]
+        self.assertEqual(saved['item_image_url'], f'{TAG}/old.jpg')
+        self.assertEqual((saved['pending_image_url'] or '').split('/')[0], TAG)
+        self.assertEqual((view['status'], saved['prior_status']), ('pending_verification', 'active'))
         self.assertTrue(view['photo_url'])
 
     def test_only_the_owner_of_a_working_tag_can_change_its_photo(self):

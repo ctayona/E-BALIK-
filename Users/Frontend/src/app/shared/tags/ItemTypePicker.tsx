@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ComponentType } from "react";
-import { BatteryCharging, Backpack, Calculator, Check, ChevronDown, CupSoda, Glasses, Headphones, IdCard, KeyRound, Laptop, PenLine, Smartphone, Tablet, Umbrella, Wallet, Watch } from "lucide-react";
+import { BatteryCharging, Backpack, Calculator, Check, ChevronDown, CupSoda, Glasses, Headphones, IdCard, KeyRound, Laptop, Lock, PenLine, Smartphone, Tablet, Umbrella, Wallet, Watch } from "lucide-react";
 import { CX } from "@/app/utils/clay";
 
 type Preset = { label: string; icon: ComponentType<{ size?: number; "aria-hidden"?: boolean | "true" | "false" }> };
@@ -30,7 +30,7 @@ const options = [...ITEM_PRESETS.map((preset) => ({ key: preset.label, label: pr
  * a preset's label, or whatever the user typed. A saved name that is not a preset reopens as "Other" with the text filled in.
  * The list opens in the page flow (not as a floating layer), so it is never clipped inside a dialog.
  */
-export default function ItemTypePicker({ value, onChange, label = "What is this tag attached to?", required = true }: { value: string; onChange: (name: string) => void; label?: string; required?: boolean }) {
+export default function ItemTypePicker({ value, onChange, label = "What is this tag attached to?", required = true, locked = false }: { value: string; onChange: (name: string) => void; label?: string; required?: boolean; locked?: boolean }) {
   const preset = ITEM_PRESETS.find((item) => item.label.toLowerCase() === value.trim().toLowerCase());
   const [otherMode, setOtherMode] = useState(() => Boolean(value.trim()) && !preset);
   const [open, setOpen] = useState(false);
@@ -78,6 +78,21 @@ export default function ItemTypePicker({ value, onChange, label = "What is this 
   };
 
   const Icon = chosen?.icon;
+
+  // After registration the item name is fixed, so a sticker cannot be moved to a different item.
+  if (locked) {
+    return (
+      <div>
+        <span id={labelId} className={CX.label}>{label}</span>
+        <div aria-labelledby={labelId} role="textbox" aria-readonly="true" className="flex min-h-[48px] items-center gap-3 rounded-[var(--radius-control)] border border-line bg-frost-50 px-3.5 text-ink">
+          {Icon ? <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950" aria-hidden="true"><Icon size={17} aria-hidden="true" /></span> : <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-frost-100 text-navy-700" aria-hidden="true"><PenLine size={16} /></span>}
+          <span className="min-w-0 flex-1 truncate font-semibold">{value || "—"}</span>
+          <Lock size={16} className="shrink-0 text-ink-muted" aria-hidden="true" />
+        </div>
+        <p className="mt-1.5 flex items-start gap-1.5 text-[12.5px] leading-5 text-ink-muted"><Lock size={12} className="mt-1 shrink-0" aria-hidden="true" />The item name is locked to prevent fraud. If it is wrong, ask the Lost and Found Office to correct it.</p>
+      </div>
+    );
+  }
 
   return (
     <div ref={rootRef}>

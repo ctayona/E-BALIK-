@@ -416,8 +416,14 @@ CREATE TABLE IF NOT EXISTS public.smart_tags (
     owner_account_id UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL,
     item_name VARCHAR(120),
     item_description TEXT,
-    item_image_url TEXT,  -- storage path (private bucket smart-tag-images) of the live photo of the item with its sticker
-    status VARCHAR(10) NOT NULL DEFAULT 'blank' CHECK (status IN ('blank', 'active', 'lost', 'expired')),
+    item_image_url TEXT,  -- storage path (private bucket smart-tag-images) of the approved live photo of the item with its sticker
+    pending_image_url TEXT,  -- a new photo waiting for staff approval (item_image_url keeps the approved one)
+    status VARCHAR(24) NOT NULL DEFAULT 'blank' CHECK (status IN ('blank', 'pending_verification', 'active', 'lost', 'expired')),
+    prior_status VARCHAR(10) CHECK (prior_status IS NULL OR prior_status IN ('active', 'lost')),  -- where the tag returns after a new photo is reviewed
+    review_requested_at TIMESTAMPTZ,  -- when the owner submitted the registration or the new photo
+    verified_at TIMESTAMPTZ,
+    verified_by UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL,
+    verification_note TEXT,  -- the reason when staff rejected the last submission
 
     -- What a finder is allowed to see. Everything is hidden unless the owner switches it on.
     show_name BOOLEAN NOT NULL DEFAULT FALSE,
@@ -462,6 +468,7 @@ ALTER TABLE public.smart_tags ENABLE ROW LEVEL SECURITY;
 
 CREATE INDEX IF NOT EXISTS idx_smart_tags_batch_id ON public.smart_tags(batch_id);
 CREATE INDEX IF NOT EXISTS idx_smart_tags_valid_until ON public.smart_tags(valid_until) WHERE status IN ('active', 'lost');
+CREATE INDEX IF NOT EXISTS idx_smart_tags_pending ON public.smart_tags(review_requested_at) WHERE status = 'pending_verification';
 
 -- ============================================================================
 -- Existing databases: manual_migrations/20261009_tag_expiry_and_auction_buyout.sql adds the smart_tags columns above,
@@ -479,6 +486,10 @@ CREATE INDEX IF NOT EXISTS idx_smart_tags_valid_until ON public.smart_tags(valid
 --   storage_bucket_stats()                                  -- objects and bytes per bucket
 --   storage_list_objects(p_bucket, p_limit, p_offset)       -- names, sizes and ages, for the orphaned-image scan
 -- The announcement banner is stored in system_settings under the key 'announcement' (no new table).
+--
+-- Staff verification: manual_migrations/20261011_tag_staff_verification.sql widens smart_tags.status to VARCHAR(24), adds the
+-- status 'pending_verification' (a new registration, or an active tag whose owner took a new photo, waits here until an admin
+-- compares the screen with the real item) and the review columns shown above. Existing active tags stay active.
 -- ============================================================================
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES ('smart-tag-images', 'smart-tag-images', false, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp'])

@@ -135,7 +135,8 @@ You can get the same list again at any time: open **Smart tags**, filter by **Bl
 | Where the tag is | What it means | Where you see it |
 | --- | --- | --- |
 | **Blank** | Generated, not sold yet. Anyone holding the sticker can register it. | "Blank (unsold)" count |
-| **Active** | A user registered it and attached it to an item. | "Claimed (sold)" count |
+| **Pending approval** | A user registered it (or sent a new photo of an active tag) and staff have not checked it yet. Finders see nothing. | "Pending approval" tab |
+| **Active** | Staff approved the registration. | "Claimed (sold)" count |
 | **Lost** | The owner marked the item as lost. Finders see a red warning. | "Marked lost" count |
 | **Expired** | Its validity period ended. Finders see only "This Smart Tag has expired". The owner sees Expired. | "Expired" count |
 | **Deactivated** | An admin switched it off. Finders see nothing. | "Deactivated" count |
@@ -146,6 +147,9 @@ Important habits:
 - Hand over the sticker, and tell the buyer to **scan it right away** and register it.
 - **Registration needs a live photo.** The buyer must take a photo of the item with the sticker attached, with the camera, at that moment (picking a picture from the gallery is not possible). The browser asks for camera permission; on a phone that blocks it, the phone's camera app opens instead. The photo is stored privately and shown only to someone who scans the tag while it is active; you can see it in the tag's detail window.
 - Tags registered before this rule have no photo; their owners can add one with **Edit** on the Smart Tags page.
+- **Registration needs staff approval.** A new registration is **Pending approval**: finders see only that the tag exists, never the item or owner, and the validity period has not started. The owner brings the item and the sticker to the office. Open **Pending approval** (or the gold banner), click **Review**, compare the item name, the owner's name and the large live photo with the real item, then **Approve** (the tag becomes Active and the validity clock starts) or **Reject** with a reason (a first registration is cleared so the sticker can be registered again; a new photo is discarded and the previous photo stays).
+- **What owners can and cannot change.** Description and the privacy switches: any time. **Item name: never**, so a sticker cannot be moved to a different item (staff can correct it). A **new live photo** sends an active tag back to Pending approval until staff re-approve it; the old photo stays on file so a rejection restores it.
+- **Staff can edit everything.** In a tag's detail window choose **Edit** to change the name, description, privacy, phone and photo. This never triggers approval.
 - A user manages their tags on the **Smart Tags** page (top menu): register a sticker, see when each tag expires, change the privacy switches, and mark an item lost.
 - **"Claimed"** in the admin page means sold and registered. If you want to know which are sold but not yet registered, track that in your own sales record: E-Balik only knows a tag is sold once the buyer registers it.
 
