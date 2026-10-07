@@ -481,11 +481,26 @@ class SchedulerTests(unittest.TestCase):
         with patch.dict('os.environ', {'SCHEDULER_ENABLED': 'false'}):
             self.assertFalse(scheduler.start_scheduler(self.app()))
 
+    def test_the_timer_is_off_in_development_unless_asked_for_and_on_in_production(self):
+        development, production = self.app(), self.app()
+        development.config['DEBUG'], production.config['DEBUG'] = True, False
+        env = {k: v for k, v in __import__('os').environ.items() if k not in ('SCHEDULER_ENABLED', 'FLASK_DEBUG', 'WERKZEUG_RUN_MAIN')}
+        with patch.dict('os.environ', env, clear=True), patch.object(scheduler.threading, 'Thread') as thread:
+            scheduler._started.clear()
+            self.assertFalse(scheduler.start_scheduler(development))          # a laptop pointed at the live database stays quiet
+            self.assertTrue(scheduler.start_scheduler(production))            # production starts it
+            thread.return_value.start.assert_called_once()
+            scheduler._started.clear()
+            with patch.dict('os.environ', {'SCHEDULER_ENABLED': 'true'}):
+                self.assertTrue(scheduler.start_scheduler(development))       # only when explicitly forced on
+            scheduler._started.clear()
+
     def test_running_the_jobs_settles_then_checks_deadlines_and_survives_errors(self):
         app = self.app()
         fake = MagicMock()
         fake.process_overdue_pickups.return_value = {'checked': 1, 'warned': 0, 'forfeited': 0, 'errors': 0}
-        with patch('app.utils.get_db'), patch('app.utils.auction_db.AuctionService', return_value=fake):
+        with patch('app.utils.get_db'), patch('app.utils.auction_db.AuctionService', return_value=fake), \
+                patch('app.utils.housekeeping.run_housekeeping', return_value={'claim_pickups': {'checked': 0}}):
             summary = scheduler.run_scheduled_jobs(app)
         fake.settle_and_notify.assert_called_once_with(force=True)
         self.assertEqual(summary['auction_pickups']['checked'], 1)
@@ -550,8 +565,8 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_the_collector_pages_through_rows_and_tolerates_unmigrated_columns(self):
         store = {
-            'missing_items': [{'category': 'Keys', 'last_seen_date': '2026-10-01', 'created_at': '2026-10-01'}],
-            'found_items': [{'status': 'returned'}, {'status': 'unclaimed'}],
+            'missing_items': [{'category': 'Keys', 'last_seen_date': date.today().isoformat(), 'created_at': date.today().isoformat(), 'last_location': 'Library'}],
+            'found_items': [{'status': 'returned', 'created_at': date.today().isoformat(), 'location': 'Library'}, {'status': 'unclaimed', 'created_at': date.today().isoformat()}],
             'claims': [{'claim_id': 'a', 'status': 'collected'}, {'claim_id': 'b', 'status': 'approved_for_pickup'}],
         }
         result = analytics.collect_visual_analytics(make_db(store))

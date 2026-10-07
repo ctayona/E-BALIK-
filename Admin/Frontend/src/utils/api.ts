@@ -1,5 +1,6 @@
 import { showInfoModal, type InfoModalVariant } from "../components/info-modal/infoModalStore";
 import { tr } from "./preferences";
+import { markActive } from "./sessionGuard";
 
 export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -47,7 +48,7 @@ export interface AdminUser {
   lname: string;
   campus_id?: string;
   user_role: string;
-  access_level: "admin" | "super_admin";
+  access_level: "guard" | "admin" | "super_admin";
 }
 
 export interface AdminDashboardSummary {
@@ -97,7 +98,7 @@ export interface AdminUserRow {
   reports: number;
   claims: number;
   status: "Active" | "Suspended" | "Inactive";
-  accessLevel: "user" | "admin" | "super_admin";
+  accessLevel: "user" | "guard" | "admin" | "super_admin";
   lastActivity: string;
   verification?: "pending" | "verified" | "rejected";
   category?: string | null;
@@ -253,11 +254,12 @@ export async function adminLogin(email: string, password: string): Promise<Admin
     throw new Error(typeof data.error === "string" ? data.error : "Unable to sign in");
   }
   const accessLevel = String(data.access_level || "").toLowerCase();
-  if (!data.token || !["admin", "super_admin"].includes(accessLevel || String(data.user_role || "").toLowerCase())) {
-    throw new Error("Admin access is required");
+  if (!data.token || !["admin", "super_admin", "guard"].includes(accessLevel || String(data.user_role || "").toLowerCase())) {
+    throw new Error("Staff access is required");
   }
 
   localStorage.setItem("ebalik_admin_token", data.token);
+  markActive();  // a new sign-in starts its idle clock now
   const user = {
     account_id: String(data.account_id),
     email: String(data.email),
@@ -347,17 +349,17 @@ export async function updateAdminUserStatus(accountId: string, status: "active" 
   return response.json();
 }
 
-export async function updateAdminUserAccessLevel(accountId: string, accessLevel: "user" | "admin") {
+export async function updateAdminUserAccessLevel(accountId: string, accessLevel: "user" | "guard" | "admin") {
   const response = await adminMutationRequest(`${API_URL}/api/admin/users/${accountId}/access-level`, {
     method: "PATCH",
     headers: getAuthHeaders(),
     body: JSON.stringify({ access_level: accessLevel }),
-  }, accessLevel === "admin" ? "Promote user to admin" : "Remove admin access");
+  }, accessLevel === "admin" ? "Promote user to admin" : accessLevel === "guard" ? "Make user a guard" : "Remove staff access");
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(typeof payload.error === "string" ? payload.error : "Unable to update user access level");
   }
-  return payload as { user: { account_id: string; email: string; access_level: "user" | "admin" } };
+  return payload as { user: { account_id: string; email: string; access_level: "user" | "guard" | "admin" } };
 }
 
 export async function deleteAdminUser(accountId: string, authenticatorCode: string) {
@@ -409,7 +411,7 @@ export async function verifyAdminMfaSetup(code: string): Promise<{ enabled: bool
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Unable to verify authenticator setup");
   const result = payload as { enabled: boolean; recovery_codes: string[]; token: string };
-  if (result.token) localStorage.setItem("ebalik_admin_token", result.token);
+  if (result.token) { localStorage.setItem("ebalik_admin_token", result.token); markActive(); }
   return result;
 }
 
@@ -421,7 +423,7 @@ export async function disableAdminMfa(password: string, code: string): Promise<v
   }, "Disable authenticator MFA");
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Unable to disable authenticator MFA");
-  if (typeof payload.token === "string") localStorage.setItem("ebalik_admin_token", payload.token);
+  if (typeof payload.token === "string") { localStorage.setItem("ebalik_admin_token", payload.token); markActive(); }
 }
 
 export async function fetchAdminClaims(): Promise<AdminClaimRow[]> {
@@ -633,7 +635,7 @@ export function getStoredAdmin(): AdminUser | null {
   try {
     const user = JSON.parse(rawUser) as AdminUser;
     const accessLevel = String(user.access_level || user.user_role || "").toLowerCase();
-    if (!["admin", "super_admin"].includes(accessLevel)) return null;
+    if (!["admin", "super_admin", "guard"].includes(accessLevel)) return null;
     user.access_level = accessLevel as AdminUser["access_level"];
     return user;
   } catch {
@@ -749,13 +751,19 @@ export interface DashboardAnalytics {
   lost_by_month: Array<{ key: string; month: string; count: number }>;
   lost_heatmap: { weekdays: string[]; months: Array<{ key: string; label: string; counts: number[] }>; max: number };
   busiest: { weekday: string | null; month: string | null };
+  hotspots: Array<{ location: string; lost: number; found: number; total: number }>;
+  range: { key: string; start: string | null; end: string | null };
   outcomes: { returned: number; auctioned: number; abandoned: number; in_custody: number; total_found: number; return_rate: number; auction_forfeits?: number | null };
   handover: { released: number | null; awaiting: number | null };
   generated_at?: string;
 }
 
-export async function fetchDashboardAnalytics(): Promise<DashboardAnalytics> {
-  const response = await fetch(`${API_URL}/api/admin/dashboard/analytics`, { headers: getAuthHeaders() });
+export interface AnalyticsQuery { range?: string; start?: string; end?: string }
+
+export async function fetchDashboardAnalytics(query: AnalyticsQuery = {}): Promise<DashboardAnalytics> {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => { if (value) params.set(key, value); });
+  const response = await fetch(`${API_URL}/api/admin/dashboard/analytics${params.size ? `?${params}` : ""}`, { headers: getAuthHeaders() });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Unable to load analytics");
   return payload as DashboardAnalytics;

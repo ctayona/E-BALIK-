@@ -34,6 +34,16 @@ class PasswordService:
             return False
 
 
+STAFF_ACCESS_LEVELS = ('admin', 'super_admin', 'guard')
+
+
+def session_lifetime(access_level: str = None) -> timedelta:
+    """How long a sign-in lasts: shorter for staff accounts, which can release items and change records."""
+    if str(access_level or '').strip().lower() in STAFF_ACCESS_LEVELS:
+        return timedelta(hours=max(0.25, float(getattr(Config, 'SESSION_STAFF_HOURS', 8))))
+    return timedelta(hours=max(0.25, float(getattr(Config, 'SESSION_USER_HOURS', 12))))
+
+
 class JWTService:
     """JWT token creation and verification"""
     
@@ -42,14 +52,14 @@ class JWTService:
         """Create JWT access token"""
         try:
             if expires_delta is None:
-                expires_delta = Config.JWT_ACCESS_TOKEN_EXPIRES
+                expires_delta = session_lifetime(access_level)
             
-            expire = datetime.utcnow() + expires_delta
+            expire = datetime.now(timezone.utc) + expires_delta
             payload = {
                 'account_id': account_id,
                 'email': email,
                 'exp': expire,
-                'iat': datetime.utcnow()
+                'iat': datetime.now(timezone.utc)
             }
             if role:
                 payload['user_role'] = role
@@ -94,6 +104,13 @@ class JWTService:
             )
             if payload.get('purpose') == 'admin_mfa':
                 raise ValueError('MFA challenge token is not an access token')
+            issued = payload.get('iat')
+            if isinstance(issued, (int, float)):
+                # Older than the allowed lifetime means expired, even if the token itself was issued with a longer expiry
+                # (sessions created before these limits existed lasted 30 days).
+                age = datetime.now(timezone.utc).timestamp() - issued
+                if age > session_lifetime(payload.get('access_level')).total_seconds():
+                    raise jwt.ExpiredSignatureError('Session is older than the allowed lifetime')
             logger.info(f"✓ JWT token verified for {payload.get('email')}")
             return payload
         except jwt.ExpiredSignatureError:

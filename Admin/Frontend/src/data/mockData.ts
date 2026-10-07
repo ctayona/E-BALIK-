@@ -61,7 +61,7 @@ export interface User {
   reports: number;
   claims: number;
   status: "Active" | "Suspended" | "Inactive";
-  accessLevel: "user" | "admin" | "super_admin";
+  accessLevel: "user" | "guard" | "admin" | "super_admin";
   lastActivity: string;
   verification?: "pending" | "verified" | "rejected";
   category?: string | null;

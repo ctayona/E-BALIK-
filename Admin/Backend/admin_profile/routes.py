@@ -102,7 +102,6 @@ def verify_admin_mfa_setup():
             admin['account_id'], profile.get('email') or admin.get('email', ''),
             profile.get('user_role'), access_level, admin_mfa_verified=True,
             admin_mfa_generation=session_generation,
-            expires_delta=timedelta(hours=12),
         )
         return jsonify({'enabled': True, 'recovery_codes': recovery_codes, 'token': token}), 200
     except ValueError as error:
@@ -151,7 +150,7 @@ def disable_admin_mfa():
         access_level = str(profile.get('access_level') or admin.get('access_level') or 'admin')
         token = JWTService.create_access_token(
             admin['account_id'], profile.get('email') or admin.get('email', ''),
-            profile.get('user_role'), access_level, expires_delta=timedelta(hours=12),
+            profile.get('user_role'), access_level,
         )
         return jsonify({'enabled': False, 'token': token}), 200
     except ValueError as error:

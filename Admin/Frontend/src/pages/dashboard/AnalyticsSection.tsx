@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, Cell, LabelList, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { BarChart3, RefreshCw } from "lucide-react";
-import { fetchDashboardAnalytics, type DashboardAnalytics } from "../../utils/api";
+import { BarChart3, Download, MapPin, Printer, RefreshCw } from "lucide-react";
+import { fetchDashboardAnalytics, type AnalyticsQuery, type DashboardAnalytics } from "../../utils/api";
+import { downloadCsv } from "../../utils/csv";
+import { showInfoModal } from "../../components/info-modal/infoModalStore";
 import { SkeletonBlock } from "../../components/LoadingSkeleton";
-import { BTN } from "../../components/ui/primitives";
+import { BTN, INPUT } from "../../components/ui/primitives";
 import { useTheme, tr } from "../../utils/preferences";
 
 /** Fixed categorical order, validated for colour-blind separation (light and dark surfaces). Slices never get a generated hue: the rest fold into "Other". */
@@ -21,6 +23,59 @@ const TONE = {
   dark: { grid: "#2c2c2a", tick: "#a6a9b8", empty: "#2c2c2a", surface: "#1a1a19", other: "#898781", bar: "#3987e5", tooltip: { background: "#0f172f", border: "1px solid rgba(255,255,255,0.1)", color: "#eef1f8" } },
 };
 const GOLD = "#d1a153";
+
+type RangeKey = "30d" | "90d" | "12m" | "all" | "custom";
+const RANGES: Array<{ key: RangeKey; label: string }> = [
+  { key: "30d", label: "30 days" }, { key: "90d", label: "90 days" }, { key: "12m", label: "12 months" }, { key: "all", label: "All time" }, { key: "custom", label: "Custom" },
+];
+
+const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : "0%");
+const describeRange = (data: DashboardAnalytics) => (data.range.key === "all" ? tr("All time") : `${data.range.start ?? ""} to ${data.range.end ?? ""}`);
+
+/** One flat CSV of every figure on screen: Section, Item, Value, Detail. */
+function exportCsv(data: DashboardAnalytics) {
+  const rows: Array<Array<string | number>> = [
+    ["Range", data.range.key, describeRange(data), ""],
+    ["Lost reports", "Total", data.lost_total, ""],
+    ...data.lost_categories.map((c): Array<string | number> => ["Lost category", c.name, c.value, pct(c.value, data.lost_total)]),
+    ...data.lost_by_weekday.map((d): Array<string | number> => ["Lost by weekday", d.name, d.count, ""]),
+    ...data.lost_by_month.map((m): Array<string | number> => ["Lost by month", m.month, m.count, ""]),
+    ...data.hotspots.map((h): Array<string | number> => ["Hotspot", h.location, h.total, `lost ${h.lost}, found ${h.found}`]),
+    ["Found items", "Returned to owners", data.outcomes.returned, `${data.outcomes.return_rate}% of found items`],
+    ["Found items", "Auctioned", data.outcomes.auctioned, ""],
+    ["Found items", "Abandoned or disposed", data.outcomes.abandoned, ""],
+    ["Found items", "Still in custody", data.outcomes.in_custody, ""],
+    ["Found items", "Total found", data.outcomes.total_found, ""],
+  ];
+  downloadCsv(`analytics-${data.range.key}`, ["Section", "Item", "Value", "Detail"], rows);
+}
+
+const escapeHtml = (value: string | number) => String(value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] as string));
+
+/** Opens a clean printable report (tables, no charts) and the print dialog, where "Save as PDF" is one of the choices. */
+function printReport(data: DashboardAnalytics) {
+  const table = (title: string, head: string[], body: Array<Array<string | number>>) => body.length === 0 ? "" :
+    `<h2>${escapeHtml(title)}</h2><table><thead><tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${body.map((row) => `<tr>${row.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>E-Balik analytics report</title><style>
+    body{font-family:Segoe UI,Helvetica,Arial,sans-serif;color:#0f172a;margin:32px}h1{font-family:Georgia,serif;color:#1f3160;margin:0}
+    p.meta{color:#475569;margin:4px 0 20px}h2{font-size:15px;color:#1f3160;border-bottom:2px solid #d1a153;padding-bottom:4px;margin:24px 0 8px}
+    table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #e2e8f0}th{background:#f1f5f9}
+    @media print{body{margin:12mm}}</style></head><body>
+    <h1>E-Balik analytics report</h1>
+    <p class="meta">University of Makati Lost and Found. Period: ${escapeHtml(describeRange(data))}. Created ${escapeHtml(new Date().toLocaleString())}.</p>
+    ${table("Found items: how they ended up", ["Outcome", "Items"], [["Returned to owners", data.outcomes.returned], ["Auctioned", data.outcomes.auctioned], ["Abandoned or disposed", data.outcomes.abandoned], ["Still in custody", data.outcomes.in_custody], ["Total found", data.outcomes.total_found], ["Return rate", `${data.outcomes.return_rate}%`]])}
+    ${table(`Most lost item categories (${data.lost_total} lost reports)`, ["Category", "Reports", "Share"], data.lost_categories.map((c) => [c.name, c.value, pct(c.value, data.lost_total)]))}
+    ${table("Busiest days", ["Day", "Lost reports"], data.lost_by_weekday.map((d) => [d.name, d.count]))}
+    ${table("Busiest months", ["Month", "Lost reports"], data.lost_by_month.map((m) => [m.month, m.count]))}
+    ${table("Campus hotspots", ["Location", "Lost", "Found", "Total"], data.hotspots.map((h) => [h.location, h.lost, h.found, h.total]))}
+    </body></html>`;
+  const popup = window.open("", "_blank");
+  if (!popup) { showInfoModal({ variant: "warning", title: "Pop-up blocked", message: "Allow pop-ups for this site, then press Print report again." }); return; }
+  popup.document.write(html);
+  popup.document.close();
+  popup.focus();
+  window.setTimeout(() => popup.print(), 300);
+}
 
 function Card({ title, subtitle, children, className = "" }: { title: string; subtitle: string; children: React.ReactNode; className?: string }) {
   return (
@@ -62,13 +117,34 @@ export default function AnalyticsSection() {
   const [data, setData] = useState<DashboardAnalytics | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [hover, setHover] = useState<{ label: string; count: number } | null>(null);
+  const [rangeKey, setRangeKey] = useState<RangeKey>("12m");
+  const [draft, setDraft] = useState({ start: "", end: "" });
+  const [applied, setApplied] = useState<{ start: string; end: string } | null>(null);
+  const [reload, setReload] = useState(0);
+  const [customError, setCustomError] = useState("");
 
-  const load = () => {
-    setLoading(true); setError("");
-    fetchDashboardAnalytics().then(setData).catch((failure) => setError(failure instanceof Error ? failure.message : tr("Unable to load analytics"))).finally(() => setLoading(false));
+  const query = useMemo<AnalyticsQuery | null>(() => (rangeKey === "custom" ? (applied ? { start: applied.start, end: applied.end } : null) : { range: rangeKey }), [rangeKey, applied]);
+  useEffect(() => {
+    if (!query) return undefined;   // custom range chosen, dates not applied yet
+    let active = true;
+    setRefreshing(true); setError("");
+    fetchDashboardAnalytics(query)
+      .then((next) => { if (active) setData(next); })
+      .catch((failure) => { if (active) setError(failure instanceof Error ? failure.message : tr("Unable to load analytics")); })
+      .finally(() => { if (active) { setRefreshing(false); setLoading(false); } });
+    return () => { active = false; };
+  }, [query, reload]);
+  const load = () => setReload((n) => n + 1);
+
+  const applyCustom = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!draft.start || !draft.end) { setCustomError(tr("Choose both dates.")); return; }
+    if (draft.start > draft.end) { setCustomError(tr("The start date must be before the end date.")); return; }
+    setCustomError("");
+    setApplied({ ...draft });
   };
-  useEffect(load, []);
 
   const slices = useMemo(() => (data?.lost_categories ?? []).map((entry, index) => ({ ...entry, color: entry.name === "Other" ? tone.other : SERIES[mode][index % SERIES[mode].length] })), [data, mode, tone.other]);
   const slicesTotal = slices.reduce((sum, slice) => sum + slice.value, 0);
@@ -82,7 +158,7 @@ export default function AnalyticsSection() {
       </div>
     );
   }
-  if (error || !data) {
+  if (!data) {
     return (
       <section className="admin-card flex flex-wrap items-center justify-between gap-3 p-5" role="alert">
         <p className="text-[14px] text-ink-soft">{error || tr("Analytics are not available right now.")}</p>
@@ -106,10 +182,33 @@ export default function AnalyticsSection() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 id="analytics-heading" className="flex items-center gap-2 font-[family-name:var(--font-heading)] text-[22px] font-semibold text-ink"><BarChart3 size={21} className="text-gold-600" aria-hidden="true" />{tr("Visual analytics")}</h2>
-          <p className="text-[13px] text-ink-muted">{tr("What gets lost, when it gets lost, and how items end up.")}</p>
+          <p className="text-[13px] text-ink-muted">{tr("What gets lost, when it gets lost, and how items end up.")} {describeRange(data)}</p>
         </div>
-        <button type="button" onClick={load} className={BTN.ghost}><RefreshCw size={15} aria-hidden="true" />{tr("Refresh")}</button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => exportCsv(data)} className={BTN.ghost}><Download size={15} aria-hidden="true" />{tr("Export CSV")}</button>
+          <button type="button" onClick={() => printReport(data)} className={BTN.ghost}><Printer size={15} aria-hidden="true" />{tr("Print report")}</button>
+          <button type="button" onClick={load} className={BTN.ghost} disabled={refreshing}><RefreshCw size={15} className={refreshing ? "animate-spin" : ""} aria-hidden="true" />{tr("Refresh")}</button>
+        </div>
       </div>
+
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label={tr("Date range")}>
+        {RANGES.map((option) => (
+          <button key={option.key} type="button" aria-pressed={rangeKey === option.key} onClick={() => setRangeKey(option.key)}
+            className={`min-h-[40px] rounded-xl border px-3.5 text-[13.5px] font-semibold transition-colors ${rangeKey === option.key ? "border-gold-500 bg-gold-50 text-navy-800 dark:bg-gold-500/15 dark:text-gold-200" : "border-line-strong text-ink-soft hover:bg-frost-50"}`}>
+            {tr(option.label)}
+          </button>
+        ))}
+      </div>
+      {rangeKey === "custom" && (
+        <form onSubmit={applyCustom} className="flex flex-wrap items-end gap-3">
+          <label className="block"><span className="mb-1 block text-[13px] font-semibold text-ink-soft">{tr("From")}</span><input type="date" value={draft.start} max={draft.end || undefined} onChange={(event) => { const value = event.target.value; setDraft((current) => ({ ...current, start: value })); }} className={`${INPUT} w-[180px]`} /></label>
+          <label className="block"><span className="mb-1 block text-[13px] font-semibold text-ink-soft">{tr("To")}</span><input type="date" value={draft.end} min={draft.start || undefined} onChange={(event) => { const value = event.target.value; setDraft((current) => ({ ...current, end: value })); }} className={`${INPUT} w-[180px]`} /></label>
+          <button type="submit" className={BTN.gold}>{tr("Apply")}</button>
+          {customError && <p role="alert" className="basis-full text-[13px] text-rose-700 dark:text-[#fecdd3]">{customError}</p>}
+        </form>
+      )}
+      {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-[14px] text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-[#fecdd3]">{error}</p>}
+      <div className={`space-y-5 transition-opacity ${refreshing ? "opacity-60" : ""}`} aria-busy={refreshing}>
 
       <Card title={tr("Returned versus abandoned")} subtitle={tr("How every found item has ended up so far")}>
         <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -232,6 +331,36 @@ export default function AnalyticsSection() {
           </>
         )}
       </Card>
+
+      <Card title={tr("Campus hotspots")} subtitle={data.hotspots[0] ? tr("{0} has the most reports", { "0": data.hotspots[0].location }) : tr("Where items are lost and found most often")}>
+        {data.hotspots.length === 0 ? <p className="rounded-2xl border border-dashed border-line-strong px-6 py-12 text-center text-[14px] text-ink-muted">{tr("No locations recorded in this period.")}</p> : (
+          <>
+            <ul className="space-y-3" aria-label={tr("Campus hotspots")}>
+              {data.hotspots.map((spot) => {
+                const widest = Math.max(data.hotspots[0].total, 1);
+                return (
+                  <li key={spot.location}>
+                    <div className="flex items-center justify-between gap-3 text-[14px]">
+                      <span className="flex min-w-0 items-center gap-1.5 text-ink-soft"><MapPin size={14} className="shrink-0 text-ink-muted" aria-hidden="true" /><span className="truncate">{spot.location}</span></span>
+                      <span className="shrink-0 font-semibold tabular-nums text-ink">{spot.total}</span>
+                    </div>
+                    <div className="mt-1 flex h-3 overflow-hidden rounded-full" style={{ background: tone.empty, gap: 2, width: "100%" }} title={`${spot.location}: ${spot.lost} ${tr("lost")}, ${spot.found} ${tr("found")}`}>
+                      <div style={{ width: `${(spot.lost / widest) * 100}%`, background: SERIES[mode][0] }} />
+                      <div style={{ width: `${(spot.found / widest) * 100}%`, background: SERIES[mode][2] }} />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="mt-4 flex items-center gap-4 text-[12.5px] text-ink-muted" aria-hidden="true">
+              <span className="flex items-center gap-1.5"><span className="size-3 rounded-[4px]" style={{ background: SERIES[mode][0] }} />{tr("Lost")}</span>
+              <span className="flex items-center gap-1.5"><span className="size-3 rounded-[4px]" style={{ background: SERIES[mode][2] }} />{tr("Found")}</span>
+            </div>
+            <AsTable label={tr("View as a table")} headers={[tr("Location"), tr("Lost"), tr("Found"), tr("Total")]} rows={data.hotspots.map((spot) => [spot.location, spot.lost, spot.found, spot.total])} />
+          </>
+        )}
+      </Card>
+      </div>
     </div>
   );
 }

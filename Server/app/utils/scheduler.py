@@ -7,7 +7,10 @@ Three ways to run the same job, because a free Render service sleeps when idle a
   3. `python Server/scripts/run_cron.py` for a Render Cron Job or any server crontab.
 Every step claims its row with a conditional database update, so overlapping runs from all three can never double-warn or double-forfeit.
 
-Settings: SCHEDULER_ENABLED (default true; false turns the timer off), SCHEDULER_INTERVAL_MINUTES (default 15), CRON_SECRET.
+Besides the auction deadlines the job also runs `housekeeping.run_housekeeping` (claim reminders and expiry, Smart Tag expiry reminders, evidence retention).
+
+Settings: SCHEDULER_ENABLED (default: on in production, OFF in development so a laptop pointed at the live database never sends emails or deletes files;
+set it to true or false to override), SCHEDULER_INTERVAL_MINUTES (default 15), CRON_SECRET.
 """
 import hmac
 import logging
@@ -34,10 +37,12 @@ def run_scheduled_jobs(app) -> Dict[str, Any]:
             service = AuctionService(db)
             service.settle_and_notify(force=True)  # confirmed winners are notified, which also starts their pickup clock
             summary['auction_pickups'] = service.process_overdue_pickups()
+            from app.utils.housekeeping import run_housekeeping
+            summary.update(run_housekeeping(db))  # claim pickup reminders and expiry, Smart Tag reminders, evidence retention
         except Exception as error:
             logger.exception('Scheduled jobs failed: %s', error)
             summary['error'] = str(error)[:200]
-    if summary.get('auction_pickups', {}).get('warned') or summary.get('auction_pickups', {}).get('forfeited'):
+    if any(value for part in summary.values() if isinstance(part, dict) for key, value in part.items() if key not in ('checked', 'days', 'disabled')):
         logger.info('Scheduled jobs: %s', summary)
     return summary
 
@@ -52,7 +57,11 @@ def _interval_seconds() -> int:
 
 def start_scheduler(app) -> bool:
     """Start the timer thread once per process. Returns False when it is disabled or already running."""
-    if app.config.get('TESTING') or (os.getenv('SCHEDULER_ENABLED') or 'true').strip().lower() in ('0', 'false', 'no', 'off'):
+    setting = os.getenv('SCHEDULER_ENABLED')
+    # Default: on in production, off while developing. A developer's laptop usually points at the live database, and these jobs
+    # send emails, forfeit auction wins and delete files, so they only run locally when SCHEDULER_ENABLED=true is set on purpose.
+    enabled = (not app.debug) if setting is None or not setting.strip() else setting.strip().lower() not in ('0', 'false', 'no', 'off')
+    if app.config.get('TESTING') or not enabled:
         return False
     if os.getenv('FLASK_DEBUG') and os.getenv('WERKZEUG_RUN_MAIN') != 'true':
         return False  # with the debug reloader the first process only supervises; the child runs the app and starts the timer

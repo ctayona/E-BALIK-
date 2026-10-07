@@ -70,6 +70,7 @@ Server/manual_migrations/20260930_claim_history_reference_and_superadmin_delete.
 Server/manual_migrations/20261003_superadmin_delete_user.sql
 Server/manual_migrations/20261004_claim_report_closeout.sql
 Server/manual_migrations/20261005_auction_hall.sql
+Server/manual_migrations/20261005b_auction_awaiting_admin_baseline.sql   (new databases only; your live one already has it)
 Server/manual_migrations/20261006_system_control_verification.sql
 Server/manual_migrations/20261007_report_integrity_and_reactions.sql
 Server/manual_migrations/20261008_smart_tags.sql
@@ -77,9 +78,10 @@ Server/manual_migrations/20261009_tag_expiry_and_auction_buyout.sql
 Server/manual_migrations/20261010_tag_photo_and_mission_control.sql
 Server/manual_migrations/20261011_tag_staff_verification.sql
 Server/manual_migrations/20261012_handover_pins_and_auction_timeouts.sql
+Server/manual_migrations/20261013_guard_role_reminders_and_retention.sql
 ```
 
-The last eight are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo, the Mission Control storage tools staff approval of Smart Tags, Handover PINs, and the automatic auction pickup deadlines. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, `20261010`, `20261011`, then `20261012`). The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
+The last nine are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo, the Mission Control storage tools staff approval of Smart Tags, Handover PINs, the automatic auction pickup deadlines, the guard role, email preferences, claim and Smart Tag reminders and evidence retention. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, `20261010`, `20261011`, `20261012`, then `20261013`). The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
 
 ```sql
 SELECT to_regclass('public.auctions') AS auctions,
@@ -135,13 +137,28 @@ Render fills in `JWT_SECRET_KEY` itself, and `render.yaml` already sets `FLASK_E
 
 #### Automatic auction deadlines (48h warning, 72h forfeit)
 
-The backend checks pickup deadlines itself every 15 minutes (`SCHEDULER_INTERVAL_MINUTES`; `SCHEDULER_ENABLED=false` turns it off), but a **free Render service sleeps when nobody visits**, and a sleeping service cannot keep time. To make the deadlines reliable, set `CRON_SECRET` and let a free outside timer call the API every 15 minutes, for example on cron-job.org:
+The backend checks pickup deadlines itself every 15 minutes (`SCHEDULER_INTERVAL_MINUTES`; it runs by default in production only; `SCHEDULER_ENABLED=false` turns it off, and `true` forces it on elsewhere), but a **free Render service sleeps when nobody visits**, and a sleeping service cannot keep time. To make the deadlines reliable, set `CRON_SECRET` and let a free outside timer call the API every 15 minutes, for example on cron-job.org:
 
 ```text
 POST https://<your-api>.onrender.com/api/cron/run      header  X-Cron-Secret: <CRON_SECRET>
 ```
 
 On a paid plan you can instead add a Render Cron Job running `python Server/scripts/run_cron.py`. All three ways are safe to combine: each warning and forfeit is claimed with a conditional database update, so nothing is ever sent twice.
+
+#### Sessions, reminders and file retention (all optional tuning, the defaults are sensible)
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `SESSION_USER_HOURS` | 12 | Longest a student session lasts. The app also signs out after 60 minutes of inactivity. |
+| `SESSION_STAFF_HOURS` | 8 | Longest an admin, super admin or guard session lasts. The app also signs out after 20 minutes of inactivity. |
+| `CLAIM_PICKUP_DAYS` | 14 | An approved claim that is not collected closes after this many days. |
+| `CLAIM_REMINDER_DAYS` | 7 | Days after approval when the pickup reminder is sent. |
+| `TAG_EXPIRY_REMINDER_DAYS` | 30 | How many days before a Smart Tag expires its owner is reminded. |
+| `EVIDENCE_RETENTION_DAYS` | 30 | ID documents and proof photos are deleted this many days after a claim closes or a verification is reviewed. **`0` switches deletion off.** Update the numbers on the data privacy page (`PrivacyPage.tsx`) if you change it. |
+| `PUBLIC_API_URL` | Render's own address | The address used in unsubscribe links. Render provides `RENDER_EXTERNAL_URL` itself, so you normally set nothing. |
+
+Existing 30-day sign-ins stop working as soon as this is deployed (the server refuses any token older than the limits above), so everyone signs in once more.
+Everything in this section runs only in production by default; locally the timer is off so a laptop never emails people or deletes files from the live database.
 
 ### 2.3 Deploy and watch the log
 

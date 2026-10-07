@@ -5,7 +5,7 @@ import random
 import string
 from datetime import datetime, timedelta, timezone
 from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, Email, To, Content
+from sendgrid.helpers.mail import Mail, Email, To, Content, Header
 from config import Config
 from app.utils.email_templates import render_email, site_url
 import logging
@@ -25,25 +25,32 @@ class EmailService:
             logger.error(f"✗ Failed to initialize SendGrid: {e}")
             raise
 
-    def _send(self, to_email: str, subject: str, html: str, text: str) -> bool:
+    def _send(self, to_email: str, subject: str, html: str, text: str, headers: Optional[Dict[str, str]] = None) -> bool:
         """Send one message with an HTML and a plain-text part. True only when SendGrid accepts it."""
-        response = self.sg.send(Mail(
+        message = Mail(
             from_email=self.from_email,
             to_emails=to_email,
             subject=subject,
             html_content=html,
             plain_text_content=text,
-        ))
+        )
+        for key, value in (headers or {}).items():
+            message.add_header(Header(key, value))
+        response = self.sg.send(message)
         return 200 <= int(response.status_code) < 300
 
-    def send_notice_email(self, to_email: str, subject: str, **layout) -> bool:
-        """Render a premium message (see `render_email` for the layout fields) and send it. Never raises."""
+    def send_notice_email(self, to_email: str, subject: str, unsubscribe_url: str = '', unsubscribe_label: str = 'these emails', **layout) -> bool:
+        """Render a premium message (see `render_email` for the layout fields) and send it. Never raises.
+
+        An `unsubscribe_url` (optional emails only) adds a footer link and the List-Unsubscribe headers mail apps show as a button.
+        """
         if not to_email:
             logger.warning('Skipping email "%s": the account has no email address', subject)
             return False
         try:
-            html, text = render_email(**layout)
-            sent = self._send(to_email, subject, html, text)
+            html, text = render_email(unsubscribe_url=unsubscribe_url, unsubscribe_label=unsubscribe_label, **layout)
+            headers = {'List-Unsubscribe': f'<{unsubscribe_url}>', 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click'} if unsubscribe_url else None
+            sent = self._send(to_email, subject, html, text, headers)
             if not sent:
                 logger.error('SendGrid rejected the email "%s"', subject)
             return sent
@@ -146,6 +153,7 @@ class EmailService:
         item_name: str,
         found_item_reference: str,
         handover_pin: Optional[str],
+        pickup_deadline_text: Optional[str] = None,
     ) -> bool:
         """The approval notice. The Handover PIN is the centrepiece: the guard types it to release the item."""
         paragraphs = [
@@ -164,12 +172,86 @@ class EmailService:
             highlight=("YOUR HANDOVER PIN", handover_pin) if handover_pin else None,
             highlight_note="Keep this PIN private. It works once, for this item only, and only together with your ID.",
             details={'Item': item_name, 'Claim reference': claim_reference, 'Found item reference': found_item_reference,
+                     'Collect by': pickup_deadline_text or '',
                      'Where': 'Lost and Found Office, Admin Building (Ground Floor, OHSO Office)'},
             cta=("View Claim Status", site_url()),
             notes=["Approval online does not release the item by itself: the in-person check keeps your belongings safe. Questions? Call 09478685684."],
         )
 
-    def send_announcement_email(self, to_email: str, first_name: str, subject: str, body: str) -> bool:
+    def send_handover_receipt_email(self, to_email: str, recipient_name: str, item_name: str, claim_reference: str,
+                                    found_item_reference: str, released_at: str) -> bool:
+        """Sent once the guard has released the item: the owner's proof that it was returned."""
+        return self.send_notice_email(
+            to_email, "Your item was released: receipt",
+            title="Item released to you",
+            preheader=f"{item_name} was released to you. This is your receipt.",
+            greeting=f"Hello {recipient_name or 'there'},",
+            paragraphs=[
+                f"This confirms that \"{item_name}\" was handed over to you at the Lost and Found Office. Your claim is now complete, and we are glad it found its way back.",
+                "Keep this email as your receipt. If anything about this handover looks wrong, contact us right away.",
+            ],
+            details={'Item': item_name, 'Claim reference': claim_reference, 'Found item reference': found_item_reference, 'Released': released_at},
+            cta=("View my claims", site_url()),
+            notes=["If you did not collect this item yourself, please call 09478685684 or email ebaliksupport@gmail.com immediately."],
+            tone='success',
+        )
+
+    def send_claim_pickup_reminder_email(self, to_email: str, recipient_name: str, item_name: str, claim_reference: str,
+                                         days_left: int, deadline_text: str, unsubscribe_url: str = '') -> bool:
+        """A friendly nudge a week after approval. Optional (the reminders category)."""
+        return self.send_notice_email(
+            to_email, f"Reminder: {item_name} is waiting for you",
+            unsubscribe_url=unsubscribe_url, unsubscribe_label='pickup reminders',
+            title="Your item is still waiting",
+            preheader=f"Collect {item_name} within {days_left} days with your Handover PIN and ID.",
+            greeting=f"Hello {recipient_name or 'there'},",
+            paragraphs=[
+                f"Your claim for \"{item_name}\" was approved and the Lost and Found Office is keeping it safe for you.",
+                f"Please collect it by {deadline_text}. Bring your original school or government ID and show your Handover PIN, which is on your claim card in E-Balik.",
+            ],
+            details={'Item': item_name, 'Claim reference': claim_reference, 'Collect by': deadline_text, 'Time left': f"{days_left} day{'s' if days_left != 1 else ''}"},
+            cta=("View Claim Status", site_url()),
+            notes=["If you can no longer collect it, no action is needed. After the deadline the claim closes and you can submit a new one."],
+            tone='warning',
+        )
+
+    def send_claim_expired_email(self, to_email: str, recipient_name: str, item_name: str, claim_reference: str, deadline_text: str) -> bool:
+        """The pickup window closed. Always sent: the claimant must know the claim is no longer open."""
+        return self.send_notice_email(
+            to_email, f"Your claim for {item_name} has closed",
+            title="Your claim has closed",
+            preheader=f"The pickup deadline for {item_name} has passed.",
+            greeting=f"Hello {recipient_name or 'there'},",
+            paragraphs=[
+                f"The pickup deadline for \"{item_name}\" ({deadline_text}) passed, so your approved claim has been closed and your Handover PIN no longer works.",
+                "If the item is still yours and you would like it back, you can submit a new claim in E-Balik while it is still in custody, and we will review it again.",
+            ],
+            details={'Item': item_name, 'Claim reference': claim_reference, 'Deadline': deadline_text},
+            cta=("Open E-Balik", site_url()),
+            notes=["Questions? Call 09478685684 or email ebaliksupport@gmail.com."],
+            tone='danger',
+        )
+
+    def send_tag_expiry_reminder_email(self, to_email: str, recipient_name: str, item_name: str, tag_code: str,
+                                       days_left: int, valid_until_text: str, unsubscribe_url: str = '') -> bool:
+        """Smart Tag is about to expire. Optional (the reminders category)."""
+        return self.send_notice_email(
+            to_email, f"Your Smart Tag for {item_name} expires in {days_left} days",
+            unsubscribe_url=unsubscribe_url, unsubscribe_label='Smart Tag reminders',
+            title="Your Smart Tag is expiring soon",
+            preheader=f"Valid until {valid_until_text}. Renew it so finders can still reach you.",
+            greeting=f"Hello {recipient_name or 'there'},",
+            paragraphs=[
+                f"The Smart Tag on \"{item_name}\" is valid until {valid_until_text}. After that, anyone who scans it will only be told that it expired, and they will not be able to reach you.",
+                "To renew it, bring the item to the Lost and Found Office. Staff will extend it for you.",
+            ],
+            details={'Item': item_name, 'Tag code': tag_code, 'Valid until': valid_until_text, 'Time left': f"{days_left} day{'s' if days_left != 1 else ''}"},
+            cta=("Open My Smart Tags", site_url()),
+            notes=["This is a courtesy reminder. Your tag keeps working until the date above."],
+            tone='warning',
+        )
+
+    def send_announcement_email(self, to_email: str, first_name: str, subject: str, body: str, unsubscribe_url: str = '') -> bool:
         """A message written by an administrator. Everything is escaped, and no attachment is ever added."""
         if not to_email:
             return False
@@ -181,6 +263,7 @@ class EmailService:
             paragraphs=[line for line in str(body).split('\n') if line.strip()],
             cta=("Open E-Balik", site_url()),
             notes=["This message was sent by the E-Balik administrators."],
+            unsubscribe_url=unsubscribe_url, unsubscribe_label='announcements',
         )
 
     def send_test_email(self, to_email: str, first_name: str = '') -> tuple:

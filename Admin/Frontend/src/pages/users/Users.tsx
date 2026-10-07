@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Eye, Pencil, ShieldMinus, ShieldPlus, Trash2, UserCheck, UserPlus, UserRound, UserX } from "lucide-react";
+import { Eye, Pencil, ShieldCheck, ShieldMinus, ShieldPlus, Trash2, UserCheck, UserPlus, UserRound, UserX } from "lucide-react";
 import type { User } from "../../data/mockData";
 import { deleteAdminUser, fetchAdminAccountVerifications, fetchAdminUsers, getStoredAdmin, updateAdminUserAccessLevel, updateAdminUserStatus, type AdminAccountVerificationRequest } from "../../utils/api";
 import { canDelete } from "../../utils/permissions";
@@ -17,8 +17,8 @@ import { showInfoModal } from "../../components/info-modal/infoModalStore";
 import { tr } from "../../utils/preferences";
 
 const STATUS_TONE: Record<User["status"], Tone> = { Active: "mint", Suspended: "rose", Inactive: "slate" };
-const ACCESS_LABEL: Record<User["accessLevel"], string> = { super_admin: "Super admin", admin: "Admin", user: "User" };
-const ACCESS_TONE: Record<User["accessLevel"], Tone> = { super_admin: "gold", admin: "iris", user: "slate" };
+const ACCESS_LABEL: Record<User["accessLevel"], string> = { super_admin: "Super admin", admin: "Admin", guard: "Guard", user: "User" };
+const ACCESS_TONE: Record<User["accessLevel"], Tone> = { super_admin: "gold", admin: "iris", guard: "mint", user: "slate" };
 const AVATAR_GRADIENTS = [
   "linear-gradient(145deg,#2b4282,#1f3160)",
   "linear-gradient(145deg,#ecc787,#b9873a)",
@@ -27,7 +27,7 @@ const AVATAR_GRADIENTS = [
 ];
 const ALL = "__all__";
 
-type ConfirmState = { type: "suspend" | "activate" | "access" | "delete"; userId: string; title: string; description: string; confirmText: string };
+type ConfirmState = { type: "suspend" | "activate" | "access" | "guard" | "delete"; userId: string; title: string; description: string; confirmText: string };
 
 function VerificationPill({ status }: { status?: User["verification"] }) {
   if (status === "verified") return <StatusPill tone="mint">Verified</StatusPill>;
@@ -135,8 +135,7 @@ export default function Users() {
     }
   };
 
-  const changeAccess = async (user: User) => {
-    const nextLevel = user.accessLevel === "admin" ? "user" : "admin";
+  const changeAccess = async (user: User, nextLevel: "user" | "guard" | "admin" = user.accessLevel === "admin" ? "user" : "admin") => {
     setAccessBusy(user.id);
     try {
       const response = await updateAdminUserAccessLevel(user.id, nextLevel);
@@ -159,6 +158,16 @@ export default function Users() {
       ? "They keep their user account but lose access to this console."
       : "They can create, view and edit records in this console. Only super admins can delete.",
     confirmText: user.accessLevel === "admin" ? "Remove admin access" : "Make admin",
+  });
+
+  const askGuard = (user: User) => setConfirmAction({
+    type: "guard",
+    userId: user.id,
+    title: user.accessLevel === "guard" ? tr("remove guard access from {0}?", { "0": user.name }) : tr("make {0} a guard?", { "0": user.name }),
+    description: user.accessLevel === "guard"
+      ? "They go back to a normal user account and lose the release desk."
+      : "A guard can only sign in to the release desk and release items by Handover PIN. They cannot open any other page, and they are signed out after 20 minutes of inactivity.",
+    confirmText: user.accessLevel === "guard" ? "Remove guard access" : "Make guard",
   });
 
   const askDelete = (user: User) => setConfirmAction({
@@ -210,7 +219,7 @@ export default function Users() {
         <Toolbar trailing={hasFilters ? <button type="button" onClick={() => { setSearch(""); setStatusFilter(ALL); setAccessFilter(ALL); }} className={BTN.ghost}>{t("common.clearFilters")}</button> : undefined}>
           <SearchField value={search} onChange={setSearch} placeholder={t("users.search")} />
           <FilterSelect label={t("common.status")} value={statusFilter} onChange={setStatusFilter} options={[{ value: ALL, label: t("common.allStatuses") }, { value: "Active", label: "Active" }, { value: "Suspended", label: "Suspended" }, { value: "Inactive", label: "Inactive" }]} />
-          <FilterSelect label={t("users.col.access")} value={accessFilter} onChange={setAccessFilter} options={[{ value: ALL, label: t("users.allAccess") }, { value: "user", label: "Users" }, { value: "admin", label: "Admins" }, { value: "super_admin", label: "Super admins" }]} />
+          <FilterSelect label={t("users.col.access")} value={accessFilter} onChange={setAccessFilter} options={[{ value: ALL, label: t("users.allAccess") }, { value: "user", label: "Users" }, { value: "guard", label: "Guards" }, { value: "admin", label: "Admins" }, { value: "super_admin", label: "Super admins" }]} />
         </Toolbar>
 
         <DataTable
@@ -264,6 +273,14 @@ export default function Users() {
                     disabled={accessBusy === user.id}
                     onClick={() => askAccess(user)}
                     icon={user.accessLevel === "admin" ? <ShieldMinus size={17} aria-hidden="true" /> : <ShieldPlus size={17} aria-hidden="true" />}
+                  />
+                )}
+                {isSuperAdmin && (user.accessLevel === "user" || user.accessLevel === "guard") && (
+                  <IconAction
+                    label={user.accessLevel === "guard" ? tr("Remove guard access from {0}", { "0": user.name }) : tr("Make {0} a guard", { "0": user.name })}
+                    disabled={accessBusy === user.id}
+                    onClick={() => askGuard(user)}
+                    icon={<ShieldCheck size={17} aria-hidden="true" />}
                   />
                 )}
                 {canEdit(user) && user.id !== currentAdminId && (
@@ -363,6 +380,7 @@ export default function Users() {
               }
             } else if (actionType === "suspend") await setStatus(user.id, "suspended");
             else if (actionType === "activate") await setStatus(user.id, "active");
+            else if (actionType === "guard") await changeAccess(user, user.accessLevel === "guard" ? "user" : "guard");
             else await changeAccess(user);
           }}
         />

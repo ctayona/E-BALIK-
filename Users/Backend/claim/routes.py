@@ -1,10 +1,11 @@
 """Claim page: submit, list and cancel claims."""
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 from werkzeug.utils import secure_filename
 import uuid
 
 from app.utils import JWTService, get_db
 from app.utils.email_service import send_reference_email_best_effort
+from app.utils.handover import HandoverService, qr_png
 from app.utils.report_guard import ReportRuleError, begin_submission, end_submission
 from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, consent_metadata, dpa_consent_given
 
@@ -183,3 +184,28 @@ def cancel_claim(claim_id):
     except Exception as error:
         current_app.logger.error(f'Claim cancellation error: {error}')
         return jsonify({'error': 'Unable to cancel claim request'}), 500
+
+
+@claims_bp.route('/<claim_id>/handover-qr', methods=['GET'])
+def handover_qr(claim_id):
+    """The signed-in claimant's own Handover PIN as a QR code, for the guard to scan. Never cached, and only for the claim's owner."""
+    try:
+        account_id = _account_id()
+        try:
+            uuid.UUID(str(claim_id))
+        except ValueError:
+            return jsonify({'error': 'Claim not found'}), 404
+        db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        rows = db.client.table('claims').select('claim_id,status,claimant_account_id,handover_pin_encrypted').eq('claim_id', claim_id) \
+            .eq('claimant_account_id', account_id).limit(1).execute().data or []
+        pin = HandoverService(db).reveal(rows[0]) if rows else None
+        if not pin:
+            return jsonify({'error': 'There is no active Handover PIN for this claim.'}), 404
+        response = Response(qr_png(pin), mimetype='image/png')
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except Exception as error:
+        current_app.logger.exception('Handover QR failed for claim_id=%s: %s', claim_id, error)
+        return jsonify({'error': 'Unable to create the QR code'}), 500

@@ -10,6 +10,7 @@ import Modal, { CountdownConsent } from "@/app/shared/modal/Modal";
 import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
 import { showSubmitError } from "@/app/utils/submitErrors";
 import VerificationGate from "@/app/shared/verification/VerificationGate";
+import HandoverQr from "@/app/shared/claims/HandoverQr";
 import { isVerified, useCurrentUser } from "@/app/utils/system";
 
 type ClaimRecord = {
@@ -400,6 +401,7 @@ export default function Claim({ foundItemId = "", onNavigate }: { foundItemId?: 
                             <div className="mb-3 rounded-[12px] border-2 border-dashed border-[#d1a153] bg-[#1f3160] px-3 py-3 text-center" aria-label="Your Handover PIN">
                               <p className="text-[11px] font-bold tracking-[0.14em] text-[#ecc787]">YOUR HANDOVER PIN</p>
                               <p className="mt-1 select-all font-mono text-[30px] font-bold leading-none tracking-[0.28em] text-[#ffffff]">{claim.handover_pin}</p>
+                              <HandoverQr claimId={claim.claim_id} />
                               <p className="mt-2 text-[11.5px] leading-4 text-[#b9c3dc]">Show this PIN and your original ID to the guard. It works once, and only for this item. Keep it private.</p>
                             </div>
                           )}

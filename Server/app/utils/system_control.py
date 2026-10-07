@@ -19,6 +19,8 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 STAFF_LEVELS = {'admin', 'super_admin'}
+# Staff plus the release-desk guard: never blocked by maintenance mode, suspension checks or the verification gate.
+DESK_LEVELS = STAFF_LEVELS | {'guard'}
 CACHE_SECONDS = 5.0
 MIN_CLEANUP_DAYS = 30
 MAX_CLEANUP_DAYS = 3650
@@ -39,7 +41,7 @@ AUTH_OPEN_PATHS = {
     '/api/auth/login', '/api/auth/google-login', '/api/auth/admin-mfa/verify',
     '/api/auth/forgot-password', '/api/auth/reset-password',
 }
-PUBLIC_PATHS = {'/api/system/status', '/api/cron/run'}  # the cron trigger carries its own secret and must keep working during maintenance
+PUBLIC_PATHS = {'/api/system/status', '/api/cron/run', '/api/email/unsubscribe'}  # the cron trigger carries its own secret and must keep working during maintenance
 
 # (method, path pattern, what the user was trying to do)
 VERIFICATION_GATED = [
@@ -84,7 +86,7 @@ def access_level(profile: Optional[Dict[str, Any]]) -> str:
     if not profile:
         return 'user'
     stored = str(profile.get('access_level') or '').strip().lower()
-    if stored in {'user', 'admin', 'super_admin'}:
+    if stored in {'user', 'guard', 'admin', 'super_admin'}:
         return stored
     legacy = str(profile.get('user_role') or '').strip().lower()
     return legacy if legacy in STAFF_LEVELS else 'user'
@@ -234,7 +236,7 @@ def _maintenance_response(settings: Dict[str, Dict[str, Any]]):
 
 def login_block(db, profile: Dict[str, Any]):
     """A JSON response when this account may not sign in right now (maintenance for non-staff, suspension), else None."""
-    staff = access_level(profile) in STAFF_LEVELS
+    staff = access_level(profile) in DESK_LEVELS
     settings = load_settings(db)
     if settings['maintenance_mode'].get('enabled') and not staff:
         return _maintenance_response(settings)
@@ -277,7 +279,7 @@ def enforce_request():
         logger.warning('System enforcement skipped (database unavailable): %s', error)
         return None
 
-    staff = bool(state) and state['level'] in STAFF_LEVELS
+    staff = bool(state) and state['level'] in DESK_LEVELS
     if settings['maintenance_mode'].get('enabled') and not staff:
         return None if request.path in AUTH_OPEN_PATHS else _maintenance_response(settings)
     if not payload or not state or staff:

@@ -15,6 +15,7 @@ const Notifications = lazy(() => import("@/app/pages/notifications/Notifications
 const AuctionHall = lazy(() => import("@/app/pages/auction-hall/AuctionHall"));
 const MyTagsPage = lazy(() => import("@/app/pages/my-tags/MyTagsPage"));
 const TagPage = lazy(() => import("@/app/pages/tag/TagPage"));
+const PrivacyPage = lazy(() => import("@/app/pages/privacy/PrivacyPage"));
 import UserHeader from "@/app/shared/UserHeader";
 import MobileTabBar from "@/app/shared/MobileTabBar";
 import InfoModalHost from "@/app/shared/info-modal/InfoModalHost";
@@ -24,6 +25,9 @@ import { authUtils } from "@/app/utils/api";
 import MaintenanceScreen from "@/app/shared/system/MaintenanceScreen";
 import AnnouncementBanner from "@/app/shared/system/AnnouncementBanner";
 import { SYSTEM_EVENT, isStaff, useSystemStatus, type SystemEventDetail } from "@/app/utils/system";
+import { SESSION_MESSAGES, SESSION_NOTICE_KEY, startSessionGuard, watchForExpiredSessions, type SessionEndReason } from "@/app/utils/sessionGuard";
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const USER_PAGE_STORAGE_KEY = "ebalik_user_last_page";
 const USER_NAVIGATION_OPTIONS_KEY = "ebalik_user_navigation_options";
@@ -34,14 +38,19 @@ const AUTHENTICATED_PAGES: Page[] = [
 
 /** /tag/<code> is the address printed in every Smart Tag QR code. It is public, so it skips sign-in and the app shell. */
 const TAG_PATH = /^\/tag\/([^/]+)\/?$/i;
+/** /privacy is the data privacy page, public and linked from the site footer and from emails. */
+const PRIVACY_PATH = /^\/privacy\/?$/i;
 
 export default function App() {
   const tagMatch = window.location.pathname.match(TAG_PATH);
+  const privacy = PRIVACY_PATH.test(window.location.pathname);
   // The announcement banner is the first thing on every page: the landing page, the app, the maintenance screen and the tag page.
   return (
     <>
       <AnnouncementBanner />
-      {tagMatch ? (
+      {privacy ? (
+        <Suspense fallback={<LandingSkeleton />}><PrivacyPage /></Suspense>
+      ) : tagMatch ? (
         <>
           <Suspense fallback={<LandingSkeleton />}><TagPage rawId={decodeURIComponent(tagMatch[1])} /></Suspense>
           <InfoModalHost />
@@ -151,6 +160,33 @@ function MainApp() {
     window.addEventListener(SYSTEM_EVENT, onSystemEvent);
     return () => window.removeEventListener(SYSTEM_EVENT, onSystemEvent);
   }, [logout, refreshProfile]);
+
+  // End a sign-in that has expired or sat idle (rules in utils/sessionGuard.ts), clear everything it left behind, and say why.
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    const end = (reason: SessionEndReason) => {
+      ["ebalik_admin_token", "ebalik_admin_user"].forEach((key) => localStorage.removeItem(key));   // an admin's copy of the sign-in goes too
+      logout();
+      localStorage.removeItem(USER_PAGE_STORAGE_KEY);
+      sessionStorage.removeItem(USER_NAVIGATION_OPTIONS_KEY);
+      setNavigationOptions({});
+      setPage("home");
+      showInfoModal({ variant: "info", title: "You were signed out", message: SESSION_MESSAGES[reason] });
+    };
+    const options = { tokenKey: "ebalik_token", onEnd: end };
+    const stopGuard = startSessionGuard(options);
+    const stopWatching = watchForExpiredSessions({ ...options, apiUrl: API_URL });
+    return () => { stopGuard(); stopWatching(); };
+  }, [isAuthenticated, logout]);
+
+  // The admin app sends people here after it ended their session: tell them why they are signed out.
+  useEffect(() => {
+    let reason: string | null = null;
+    try { reason = localStorage.getItem(SESSION_NOTICE_KEY); localStorage.removeItem(SESSION_NOTICE_KEY); } catch { /* storage blocked */ }
+    if (reason && reason in SESSION_MESSAGES) {
+      showInfoModal({ variant: "info", title: "You were signed out", message: SESSION_MESSAGES[reason as SessionEndReason] });
+    }
+  }, []);
 
   function handleLoginSuccess() {
     setPage("dashboard");

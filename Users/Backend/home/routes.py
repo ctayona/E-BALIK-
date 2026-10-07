@@ -22,9 +22,14 @@ def _is_admin_profile(user: dict) -> bool:
     return _access_level(user) in {'admin', 'super_admin'}
 
 
+def _is_staff_profile(user: dict) -> bool:
+    """Admins, super admins and guards may use the staff console (a guard only sees the release desk there)."""
+    return _access_level(user) in {'admin', 'super_admin', 'guard'}
+
+
 def _access_level(user: dict) -> str:
     stored_level = str(user.get('access_level') or '').strip().lower()
-    if stored_level in {'user', 'admin', 'super_admin'}:
+    if stored_level in {'user', 'guard', 'admin', 'super_admin'}:
         return stored_level
     legacy_role = str(user.get('user_role') or '').strip().lower()
     if legacy_role == 'super_admin':
@@ -403,7 +408,7 @@ def login():
             return blocked
 
         access_level = _access_level(user)
-        if data.get('admin_only') and not _is_admin_profile(user):
+        if data.get('admin_only') and not _is_staff_profile(user):
             return jsonify({'error': 'Admin access is required'}), 403
         if data.get('admin_only') and user.get('is_active') is False:
             return jsonify({'error': 'This account is inactive'}), 403
@@ -637,7 +642,6 @@ def verify_admin_mfa_login():
             user['email'],
             user.get('user_role'),
             access_level,
-            expires_delta=timedelta(hours=12),
             admin_mfa_verified=True,
             admin_mfa_generation=int(mfa_record.get('session_generation') or 0),
         )

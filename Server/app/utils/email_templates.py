@@ -97,6 +97,8 @@ def render_email(
     cta: Optional[Tuple[str, str]] = None,
     notes: Optional[Iterable[str]] = None,
     tone: str = 'default',
+    unsubscribe_url: str = '',
+    unsubscribe_label: str = 'these emails',
 ) -> Tuple[str, str]:
     """Build the HTML and plain-text bodies. `cta` is `(label, absolute_url)`; `highlight` is `(label, value)`."""
     accent = TONES.get(tone, GOLD)
@@ -119,6 +121,12 @@ def render_email(
         )
 
     home = site_url()
+    unsubscribe_html = ''
+    if unsubscribe_url:
+        unsubscribe_html = (
+            f'<p style="margin:0 0 6px;font-family:{SANS};font-size:12px;line-height:19px;color:{INK_MUTED};">You get this because of your E-Balik notification settings. '
+            f'<a href="{escape(unsubscribe_url, quote=True)}" style="color:{GOLD};text-decoration:underline;">Unsubscribe from {escape(unsubscribe_label)}</a>.</p>'
+        )
     html = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -149,8 +157,9 @@ def render_email(
       <p style="margin:26px 0 0;padding-top:20px;border-top:1px solid {LINE};font-family:{SANS};font-size:14px;line-height:22px;color:{INK_SOFT};">With care,<br><strong style="color:{INK};">The E-Balik Team</strong><br><span style="color:{INK_MUTED};">Lost and Found Office, University of Makati</span></p>
     </td></tr>
     <tr><td align="center" style="padding:22px 14px 4px;">
+      {unsubscribe_html}
       <p style="margin:0 0 6px;font-family:{SANS};font-size:12px;line-height:19px;color:{INK_MUTED};">We will never ask for your password or a verification code by email, chat or phone.</p>
-      <p style="margin:0;font-family:{SANS};font-size:12px;line-height:19px;color:{INK_MUTED};"><a href="{escape(home, quote=True)}" style="color:{GOLD};text-decoration:none;">Open E-Balik</a> &nbsp;&middot;&nbsp; ebaliksupport@gmail.com &nbsp;&middot;&nbsp; &copy; University of Makati</p>
+      <p style="margin:0;font-family:{SANS};font-size:12px;line-height:19px;color:{INK_MUTED};"><a href="{escape(home, quote=True)}" style="color:{GOLD};text-decoration:none;">Open E-Balik</a> &nbsp;&middot;&nbsp; <a href="{escape(site_url('privacy'), quote=True)}" style="color:{GOLD};text-decoration:none;">Data privacy</a> &nbsp;&middot;&nbsp; ebaliksupport@gmail.com &nbsp;&middot;&nbsp; &copy; University of Makati</p>
     </td></tr>
   </table>
 </td></tr>
@@ -178,4 +187,6 @@ def render_email(
     text_lines += list(notes)
     text_lines += ['', 'With care,', 'The E-Balik Team', 'Lost and Found Office, University of Makati',
                    'We will never ask for your password or a verification code by email, chat or phone.']
+    if unsubscribe_url:
+        text_lines += ['', f'Unsubscribe from {unsubscribe_label}: {unsubscribe_url}']
     return html, '\n'.join(text_lines).strip() + '\n'

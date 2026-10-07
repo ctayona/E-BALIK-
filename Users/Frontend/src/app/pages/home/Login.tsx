@@ -36,7 +36,7 @@ export default function Login({
   const { login, googleLogin, verifyAdminMfa, isLoading, error, clearError } = useAuth();
 
   function redirectAdmin(user: { user_role?: string; access_level?: string }) {
-    if (["admin", "super_admin"].includes((user.access_level || user.user_role || "").toLowerCase())) {
+    if (["admin", "super_admin", "guard"].includes((user.access_level || user.user_role || "").toLowerCase())) {
       const adminUrl = import.meta.env.VITE_ADMIN_URL || "/admin/";
       const token = localStorage.getItem("ebalik_token");
       const storedUser = localStorage.getItem("ebalik_user");

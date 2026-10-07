@@ -386,7 +386,8 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
               </div>
             </div>
             <div className="flex gap-6 flex-wrap">
-              {["Privacy policy", "Terms of Service", "Contact support"].map((l) => (
+              <a href="/privacy" className="text-white/55 text-[13px] hover:text-gold-300 transition-colors duration-200 font-medium">Privacy policy</a>
+              {["Terms of Service", "Contact support"].map((l) => (
                 <button key={l} className="text-white/55 text-[13px] hover:text-gold-300 transition-colors duration-200 font-medium">
                   {l}
                 </button>

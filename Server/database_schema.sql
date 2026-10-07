@@ -525,3 +525,30 @@ END $$;
 ALTER TABLE user_profiles
     ADD COLUMN IF NOT EXISTS bidding_banned_until TIMESTAMP WITH TIME ZONE,
     ADD COLUMN IF NOT EXISTS bidding_ban_reason TEXT;
+
+-- ============================================================================
+-- Guard role, email preferences, claim pickup reminders, Smart Tag expiry reminders and evidence retention
+-- Mirrors manual_migrations/20261013_guard_role_reminders_and_retention.sql (run that file on an existing database).
+-- access_level 'guard' = release desk: can only use the Handover PIN screen. admin_set_user_access_level() accepts it (see the migration).
+-- email_preferences: {"reminders": bool, "announcements": bool}; a missing key means on.
+-- claims.pickup_deadline (older column) is set when a claim is approved; pickup_reminder_sent_at = reminder sent; evidence_purged_at =
+-- the ID document and proof photo were deleted after the retention period (EVIDENCE_RETENTION_DAYS, default 30).
+-- ============================================================================
+ALTER TABLE user_profiles DROP CONSTRAINT IF EXISTS user_profiles_access_level_check;
+ALTER TABLE user_profiles ADD CONSTRAINT user_profiles_access_level_check CHECK (access_level IN ('user', 'guard', 'admin', 'super_admin'));
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS email_preferences JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE claims
+    ADD COLUMN IF NOT EXISTS pickup_reminder_sent_at TIMESTAMP WITH TIME ZONE,
+    ADD COLUMN IF NOT EXISTS evidence_purged_at TIMESTAMP WITH TIME ZONE;
+CREATE INDEX IF NOT EXISTS idx_claims_open_pickups ON claims (pickup_deadline) WHERE status = 'approved_for_pickup';
+CREATE INDEX IF NOT EXISTS idx_claims_evidence_pending ON claims (updated_at) WHERE status IN ('collected', 'rejected') AND evidence_purged_at IS NULL;
+
+DO $$
+BEGIN
+    IF to_regclass('public.smart_tags') IS NOT NULL THEN
+        ALTER TABLE public.smart_tags ADD COLUMN IF NOT EXISTS expiry_reminder_sent_at TIMESTAMP WITH TIME ZONE;
+        CREATE INDEX IF NOT EXISTS idx_smart_tags_expiry_reminder ON public.smart_tags (valid_until)
+            WHERE status IN ('active', 'lost') AND expiry_reminder_sent_at IS NULL;
+    END IF;
+END $$;

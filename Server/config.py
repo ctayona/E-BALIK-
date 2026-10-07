@@ -30,7 +30,11 @@ class Config:
 
     # JWT
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'dev-secret-key-change-in-production')
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=30)
+    # Session lifetimes. A token older than this is refused even if its own expiry is later (see JWTService.verify_token),
+    # so sessions issued before this limit existed (30 days) stop working too. Staff = admin, super admin and guard.
+    SESSION_USER_HOURS = float(os.getenv('SESSION_USER_HOURS', 12))
+    SESSION_STAFF_HOURS = float(os.getenv('SESSION_STAFF_HOURS', 8))
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=SESSION_USER_HOURS)
     APP_ENCRYPTION_KEY = os.getenv('APP_ENCRYPTION_KEY')
 
     # Google OAuth

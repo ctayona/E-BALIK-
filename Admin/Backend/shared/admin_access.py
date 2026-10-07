@@ -18,13 +18,16 @@ def _require_admin(required_level='admin'):
     if not profile or profile.get('is_active') is False:
         raise PermissionError('Active administrator access required')
     access_level = str(profile.get('access_level') or '').strip().lower()
-    if access_level not in {'user', 'admin', 'super_admin'}:
+    if access_level not in {'user', 'guard', 'admin', 'super_admin'}:
         legacy_role = str(profile.get('user_role') or '').strip().lower()
         access_level = 'admin' if legacy_role == 'admin' else 'super_admin' if legacy_role == 'super_admin' else 'user'
     if required_level == 'super_admin' and access_level != 'super_admin':
         raise PermissionError('Super administrator access required')
     if required_level == 'admin' and access_level not in {'admin', 'super_admin'}:
         raise PermissionError('Admin access required')
+    # 'guard' is the lowest staff level: the release desk. It also admits admins, but no admin page admits a guard.
+    if required_level == 'guard' and access_level not in {'guard', 'admin', 'super_admin'}:
+        raise PermissionError('Guard or administrator access required')
     mfa_record = db.get_admin_mfa(account_id)
     if mfa_record and mfa_record.get('enabled_at') and payload.get('admin_mfa_verified') is not True:
         raise PermissionError('Authenticator verification required')

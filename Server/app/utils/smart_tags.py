@@ -936,6 +936,10 @@ class SmartTagService:
         except Exception as error:
             self._guard(error)
         row = rows[0] if rows else {**tag, **changes}
+        try:  # a renewed tag may need a fresh expiry reminder later; a separate step so renewing works before migration 20261013
+            self._table().update({'expiry_reminder_sent_at': None}).eq('tag_id', tag_id).execute()
+        except Exception:
+            pass
         try:
             self.db.create_user_notification(
                 str(tag['owner_account_id']), 'Smart Tag renewed', f'Your Smart Tag for "{tag.get("item_name") or "your item"}" is valid until {add_months(base, count).strftime("%B %d, %Y")}.',

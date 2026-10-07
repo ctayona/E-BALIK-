@@ -4,7 +4,8 @@ import Header from "./components/Header";
 import AnnouncementBanner from "./components/AnnouncementBanner";
 import { AdminCardGridSkeleton, AdminMetricSkeleton, AdminTableSkeleton, SkeletonBlock } from "./components/LoadingSkeleton";
 import { getUnreadNotificationCount } from "./utils/notificationsStore";
-import { AdminUser, clearAdminSession, getStoredAdmin } from "./utils/api";
+import { AdminUser, API_URL, clearAdminSession, getStoredAdmin } from "./utils/api";
+import { SESSION_NOTICE_KEY, startSessionGuard, watchForExpiredSessions, type SessionEndReason } from "./utils/sessionGuard";
 import InfoModalHost from "./components/info-modal/InfoModalHost";
 import { showInfoModal } from "./components/info-modal/infoModalStore";
 import { useT, tr } from "./utils/preferences";
@@ -24,6 +25,7 @@ const Notifications = lazy(() => import("./pages/notifications/Notifications"));
 const ActivityLogs = lazy(() => import("./pages/activity-logs/ActivityLogs"));
 const AdminProfile = lazy(() => import("./pages/admin-profile/AdminProfile"));
 const SystemControl = lazy(() => import("./pages/system-control/SystemControl"));
+const GuardDesk = lazy(() => import("./pages/guard-desk/GuardDesk"));
 
 type Page = "dashboard" | "lost-items" | "found-items" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "admin-profile";
 
@@ -70,6 +72,22 @@ export default function App() {
     }
   }, [user]);
 
+  // End an admin session that expired or sat idle (rules in utils/sessionGuard.ts): clear every copy of the sign-in, then send the
+  // person to the public site, which tells them why. This is what stops last night's admin session working this morning.
+  useEffect(() => {
+    if (!user) return undefined;
+    const end = (reason: SessionEndReason) => {
+      try { localStorage.setItem(SESSION_NOTICE_KEY, reason); } catch { /* storage blocked */ }
+      clearAdminSession();
+      localStorage.removeItem("ebalik_admin_notifications");
+      window.location.replace("/");
+    };
+    const options = { tokenKey: "ebalik_admin_token", onEnd: end };
+    const stopGuard = startSessionGuard(options);
+    const stopWatching = watchForExpiredSessions({ ...options, apiUrl: API_URL });
+    return () => { stopGuard(); stopWatching(); };
+  }, [user]);
+
   useEffect(() => {
     const syncUnreadCount = () => setNotifCount(getUnreadNotificationCount());
     syncUnreadCount();
@@ -92,6 +110,16 @@ export default function App() {
           <p className="mt-2 text-sm text-slate-500">{tr("Redirecting you back to login…")}</p>
         </div>
       </div>
+    );
+  }
+
+  // A guard sees one screen, the release desk. The server refuses every other admin request from a guard as well.
+  if (user.access_level === "guard") {
+    return (
+      <>
+        <Suspense fallback={<AdminPageSkeleton />}><GuardDesk user={user} onLogout={handleLogout} /></Suspense>
+        <InfoModalHost />
+      </>
     );
   }
 

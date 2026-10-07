@@ -245,8 +245,8 @@ def update_user_access_level(account_id):
         actor = _require_admin(required_level='super_admin')
         payload = request.get_json(silent=True) or {}
         access_level = str(payload.get('access_level') or '').strip().lower()
-        if access_level not in {'user', 'admin'}:
-            return jsonify({'error': 'Access level must be user or admin'}), 400
+        if access_level not in {'user', 'guard', 'admin'}:
+            return jsonify({'error': 'Access level must be user, guard or admin'}), 400
 
         db = get_db(
             url=current_app.config['SUPABASE_URL'],

@@ -122,6 +122,8 @@ async function mutate<T = { success: boolean; message?: string }>(path: string, 
 
 export const fetchAdminAuctions = () => read<AuctionList>("auctions");
 export const fetchAdminAuctionDetail = (id: string) => read<AuctionDetail>(`auctions/${encodeURIComponent(id)}`);
+/** How many items have been in custody long enough to auction, for the dashboard. */
+export const fetchAuctionReadySummary = () => read<{ count: number; oldest_days: number; min_custody_days: number }>("auctions/eligible-items?summary=1");
 export const fetchEligibleAuctionItems = () => read<{ items: EligibleItem[]; min_custody_days: number; unclaimed_total: number }>("auctions/eligible-items");
 
 export const createAdminAuction = (form: AuctionForm) => mutate("auctions", "POST", "Create auction", form);

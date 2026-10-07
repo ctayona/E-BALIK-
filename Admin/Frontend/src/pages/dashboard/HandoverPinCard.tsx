@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { CheckCircle2, KeyRound, PackageCheck, ShieldCheck, UserRound, X } from "lucide-react";
 import { lookupHandoverPin, releaseByHandoverPin, type HandoverClaim } from "../../utils/api";
+import ScanPinButton from "./ScanPinButton";
 import { BTN } from "../../components/ui/primitives";
 import { tr } from "../../utils/preferences";
 
@@ -32,11 +33,11 @@ export default function HandoverPinCard() {
     window.setTimeout(() => inputRef.current?.focus(), 30);
   };
 
-  const check = async () => {
-    if (!complete || busy) return;
+  const check = async (value: string = pin) => {
+    if (value.replace(/\s/g, "").length !== 6 || busy) return;
     setBusy(true); setError("");
     try {
-      setClaim(await lookupHandoverPin(pin));
+      setClaim(await lookupHandoverPin(value));
       setStep("confirm");
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : tr("Unable to check that PIN."));
@@ -88,6 +89,7 @@ export default function HandoverPinCard() {
               />
               {error && <p id="handover-error" role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-[14px] text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-[#fecdd3]">{error}</p>}
               <button type="submit" disabled={!complete || busy} className={`${BTN.gold} min-h-[48px] w-full text-[15px]`}><ShieldCheck size={18} aria-hidden="true" />{busy ? tr("Checking…") : tr("Check PIN")}</button>
+              <ScanPinButton disabled={busy} onPin={(scanned) => { const shown = formatPin(scanned); setPin(shown); void check(shown); }} />
             </form>
           )}
 

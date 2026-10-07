@@ -26,6 +26,9 @@ def register_blueprints(app):
     from app.utils.scheduler import cron_bp
     app.register_blueprint(cron_bp, url_prefix='/api/cron')
 
+    from Users.Backend.email_prefs.routes import email_prefs_bp
+    app.register_blueprint(email_prefs_bp, url_prefix='/api/email')
+
     # Admin section — every admin page blueprint mounts at /api/admin
     from Admin.Backend.dashboard.routes import dashboard_bp
     from Admin.Backend.lost_items.routes import lost_items_bp

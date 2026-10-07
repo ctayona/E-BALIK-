@@ -16,7 +16,7 @@ interface User {
   campus_id?: string;
   user_role?: string;
   user_category?: string;
-  access_level?: "user" | "admin" | "super_admin";
+  access_level?: "user" | "guard" | "admin" | "super_admin";
   verification_status?: string;
   verification_document_name?: string;
   verification_document_type?: string;

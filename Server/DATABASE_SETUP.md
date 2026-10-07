@@ -119,6 +119,25 @@ SELECT proname FROM pg_proc WHERE proname = 'auction_finalize';
 Note: once the gate is live, every existing account that is not verified can no
 longer report items, file claims or bid until an admin verifies it.
 
+### Guard role, email preferences, reminders and evidence retention
+
+Run `manual_migrations/20261013_guard_role_reminders_and_retention.sql` after `20261012`. It is additive and safe to re-run. It allows
+`user_profiles.access_level = 'guard'` (and re-creates `admin_set_user_access_level` so a super admin can assign it), adds
+`user_profiles.email_preferences`, `claims.pickup_reminder_sent_at` and `evidence_purged_at`, and `smart_tags.expiry_reminder_sent_at`.
+Until it runs: guards cannot be assigned, saving email choices answers "not set up yet", and the reminder, claim expiry and file
+deletion steps log a warning and change nothing (nothing is ever sent or deleted by guesswork). Verify with:
+
+```sql
+SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'user_profiles_access_level_check';   -- includes 'guard'
+SELECT column_name FROM information_schema.columns WHERE table_name = 'user_profiles' AND column_name = 'email_preferences';
+SELECT column_name FROM information_schema.columns WHERE table_name = 'claims' AND column_name IN ('pickup_reminder_sent_at','evidence_purged_at');
+SELECT column_name FROM information_schema.columns WHERE table_name = 'smart_tags' AND column_name = 'expiry_reminder_sent_at';
+```
+
+**Before the first production run after this migration:** approved claims from before pickup deadlines existed are given a fresh 14-day
+deadline (nobody is closed retroactively), but ID documents and proof photos of claims that closed more than 30 days ago will be deleted on
+the first run. If you want a different period, set `EVIDENCE_RETENTION_DAYS` first (`0` turns deletion off).
+
 ### Handover PINs, auction pickup deadlines and the bidding ban
 
 Run `manual_migrations/20261012_handover_pins_and_auction_timeouts.sql` after `20261011`. It is additive and safe to re-run. It adds

@@ -72,7 +72,13 @@ def list_auctions():
 def eligible_items():
     _require_admin()
     _, service = _service()
-    return jsonify(service.eligible_items()), 200
+    result = service.eligible_items()
+    if request.args.get('summary'):
+        # The dashboard only needs "how many items are ready to auction" and how long the oldest has waited.
+        items = result.get('items', [])
+        return jsonify({'count': len(items), 'oldest_days': max((i.get('days_in_custody', 0) for i in items), default=0),
+                        'min_custody_days': result.get('min_custody_days')}), 200
+    return jsonify(result), 200
 
 
 @auctions_bp.route('/auctions', methods=['POST'])

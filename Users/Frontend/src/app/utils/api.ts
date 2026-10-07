@@ -4,6 +4,7 @@
  */
 
 import { emitSystemEvent, type SystemCode } from './system';
+import { markActive } from './sessionGuard';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const API_TIMEOUT = import.meta.env.VITE_API_TIMEOUT || 30000;
@@ -426,6 +427,7 @@ export const authUtils = {
    */
   setToken(token: string): void {
     localStorage.setItem('ebalik_token', token);
+    markActive();  // a new sign-in starts its idle clock now
   },
 
   /**

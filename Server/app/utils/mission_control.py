@@ -97,18 +97,27 @@ def _recipients(db, audience: str, account_id: Optional[str]) -> List[Dict[str, 
         if not rows:
             raise ToolError('That user was not found. Search again and pick them from the list.', 404)
         return rows
-    rows = _paged(lambda: db.client.table('user_profiles').select('account_id,fname,lname,email,is_active').order('account_id'), cap=MAX_RECIPIENTS)
+    try:  # email_preferences lets people opt out of announcements; a database without it simply sends to everyone as before
+        rows = _paged(lambda: db.client.table('user_profiles').select('account_id,fname,lname,email,is_active,email_preferences').order('account_id'), cap=MAX_RECIPIENTS)
+    except Exception:
+        rows = _paged(lambda: db.client.table('user_profiles').select('account_id,fname,lname,email,is_active').order('account_id'), cap=MAX_RECIPIENTS)
     return [r for r in rows if r.get('is_active') is not False]
 
 
-def _send_emails(recipients: List[Dict[str, Any]], subject: str, body: str) -> Dict[str, int]:
+def _send_emails(recipients: List[Dict[str, Any]], subject: str, body: str, broadcast: bool = False) -> Dict[str, int]:
+    from app.utils import email_prefs
     from app.utils.email_service import EmailService
     service = EmailService()
     sent = failed = 0
     for person in recipients:
         if not person.get('email'):
             continue
-        if service.send_announcement_email(person['email'], str(person.get('fname') or '').strip(), subject, body):
+        if broadcast:  # a campus-wide announcement is optional mail: it carries an unsubscribe link
+            delivered = service.send_announcement_email(person['email'], str(person.get('fname') or '').strip(), subject, body,
+                                                        unsubscribe_url=email_prefs.unsubscribe_url(person['account_id'], 'announcements'))
+        else:
+            delivered = service.send_announcement_email(person['email'], str(person.get('fname') or '').strip(), subject, body)
+        if delivered:
             sent += 1
         else:
             failed += 1
@@ -148,6 +157,11 @@ def send_message(db, audience: Any, account_id: Any, title: Any, body: Any, send
     if email:
         from config import Config
         with_email = [r for r in recipients if r.get('email')]
+        if audience == 'all':
+            from app.utils import email_prefs
+            eligible = [r for r in with_email if email_prefs.allows(r, 'announcements')]
+            result['email_opted_out'] = len(with_email) - len(eligible)
+            with_email = eligible
         if not Config.SENDGRID_API_KEY:
             result['email_unavailable'] = True
         elif audience == 'user':
@@ -155,7 +169,7 @@ def send_message(db, audience: Any, account_id: Any, title: Any, body: Any, send
             result['email_sent'], result['email_failed'] = outcome['sent'], outcome['failed']
         else:
             # A whole-campus email takes a while; send it in the background so the request answers at once.
-            threading.Thread(target=_send_emails, args=(with_email, subject, text), daemon=True).start()
+            threading.Thread(target=_send_emails, args=(with_email, subject, text, True), daemon=True).start()
             result['email_queued'] = len(with_email)
     return result
 

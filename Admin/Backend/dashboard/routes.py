@@ -1,5 +1,5 @@
 """Admin Dashboard page: summary metrics."""
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 from app.utils import get_db
 from Admin.Backend.shared.admin_access import _require_admin
 
@@ -33,8 +33,12 @@ def dashboard_analytics():
             url=current_app.config['SUPABASE_URL'],
             service_key=current_app.config['SUPABASE_SERVICE_KEY']
         )
-        from app.utils.analytics import collect_visual_analytics
-        return jsonify(collect_visual_analytics(db)), 200
+        from app.utils.analytics import RangeError, collect_visual_analytics
+        try:
+            data = collect_visual_analytics(db, request.args.get('range'), request.args.get('start'), request.args.get('end'))
+        except RangeError as error:
+            return jsonify({'error': str(error)}), 400
+        return jsonify(data), 200
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except PermissionError as error:

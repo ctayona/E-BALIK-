@@ -15,6 +15,9 @@ To save tokens on every prompt, the full project context is not dumped here. Whe
 - **`Server/database_schema.sql`**: The canonical and authoritative Supabase PostgreSQL schema. **Read this before any DB or backend changes.**
 - **`docs/IMPLEMENTATION_CHECKLIST.md`**: Check this if tracking remaining tasks.
 
+## 2b. Documentation Tasks
+- For any paper, report, manual, presentation or spreadsheet request, **read `docs/DOCUMENTATION_GUIDE.md` first** and follow it. Do not edit code during a documentation task.
+
 ## 3. Core Tech Stack Constraints
 - **Frontend:** React 18, TypeScript, Vite, Tailwind CSS v4, Radix UI.
 - **Backend:** Python, Flask.

@@ -9,6 +9,7 @@ claims page uses, so the chain of custody has one definition of "released".
 """
 import hashlib
 import hmac
+import io
 import logging
 import secrets
 from typing import Any, Dict, Optional
@@ -22,6 +23,8 @@ PIN_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 PIN_LENGTH = 6
 APPROVED_STATUS = 'approved_for_pickup'
 MAX_ISSUE_ATTEMPTS = 8
+# What the QR code on the claimant's screen contains. The prefix lets the scanner tell it from any other QR code.
+QR_PREFIX = 'EBALIK-HANDOVER:'
 
 
 class HandoverError(Exception):
@@ -43,9 +46,28 @@ def generate_pin() -> str:
     return ''.join(secrets.choice(PIN_ALPHABET) for _ in range(PIN_LENGTH))
 
 
+def qr_payload(pin: str) -> str:
+    return f'{QR_PREFIX}{pin}'
+
+
+def qr_png(pin: str) -> bytes:
+    """PNG of the QR code the guard scans instead of typing the PIN."""
+    import qrcode
+    from qrcode.constants import ERROR_CORRECT_Q
+    qr = qrcode.QRCode(error_correction=ERROR_CORRECT_Q, box_size=12, border=4)
+    qr.add_data(qr_payload(pin))
+    qr.make(fit=True)
+    buffer = io.BytesIO()
+    qr.make_image(fill_color='#1f3160', back_color='white').save(buffer, format='PNG')
+    return buffer.getvalue()
+
+
 def normalize_pin(value: Any) -> str:
-    """Upper-case the PIN and drop spaces and dashes. Returns '' when it cannot be a valid PIN."""
-    pin = ''.join(ch for ch in str(value or '').upper() if ch not in ' -')
+    """Upper-case the PIN and drop spaces and dashes (and the QR prefix). Returns '' when it cannot be a valid PIN."""
+    text = str(value or '').strip()
+    if text.upper().startswith(QR_PREFIX):
+        text = text[len(QR_PREFIX):]
+    pin = ''.join(ch for ch in text.upper() if ch not in ' -')
     if len(pin) != PIN_LENGTH or any(ch not in PIN_ALPHABET for ch in pin):
         return ''
     return pin
@@ -145,6 +167,17 @@ class HandoverService:
         except Exception as error:  # the claim is already collected, so the PIN cannot match again anyway
             logger.warning('Handover PIN cleanup failed for claim %s: %s', found['claim_id'], error)
         return found
+
+    def set_pickup_deadline(self, claim_id: str, days: int) -> Optional[str]:
+        """Record when an approved claim must be collected by. Never raises: the deadline is a convenience, the approval already stands."""
+        from datetime import datetime, timedelta, timezone
+        deadline = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+        try:
+            self.client.table('claims').update({'pickup_deadline': deadline}).eq('claim_id', claim_id).eq('status', APPROVED_STATUS).execute()
+            return deadline
+        except Exception as error:
+            logger.warning('Pickup deadline could not be saved for claim %s: %s', claim_id, error)
+            return None
 
     @staticmethod
     def _now() -> str:

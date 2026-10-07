@@ -2,7 +2,7 @@
 from flask import Blueprint, current_app, jsonify, request
 from app.utils import get_db
 from app.utils.claim_status import normalize_claim_status
-from app.utils import rate_limit
+from app.utils import housekeeping, rate_limit
 from app.utils.email_service import EmailService
 from app.utils.handover import HandoverError, HandoverService
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
@@ -88,7 +88,9 @@ def update_claim_status(claim_id):
         _log_admin_action(db, admin, f'Claim {status.replace("_", " ").title()}', 'Claims & Verification', claim_id, claim_id)
         handover = {'handover_pin_issued': False, 'approval_email_sent': False}
         if status == 'approved_for_pickup' and claim_email_context:
-            handover = _issue_pin_and_notify(db, claim_id, claim_email_context)
+            handover = _issue_pin_and_notify(db, claim_id, claim_email_context, new_deadline=True)
+        if status == 'collected':
+            _send_receipt(db, claim_id)
         return jsonify({'claim': updated, **handover}), 200
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
@@ -105,11 +107,19 @@ def update_claim_status(claim_id):
         return jsonify({'error': 'Unable to update claim status', 'details': str(error)}), 500
 
 
-def _issue_pin_and_notify(db, claim_id, context):
-    """Create the Handover PIN for a just-approved claim and email it. Neither step may undo the approval."""
+def _issue_pin_and_notify(db, claim_id, context, new_deadline=False):
+    """Create the Handover PIN for a just-approved claim and email it. Neither step may undo the approval.
+
+    `new_deadline` starts the pickup clock (on approval); a re-sent PIN keeps the existing deadline.
+    """
     pin = None
+    deadline_text = None
     try:
-        pin = HandoverService(db).issue(claim_id)
+        service = HandoverService(db)
+        pin = service.issue(claim_id)
+        if new_deadline:
+            deadline = service.set_pickup_deadline(claim_id, housekeeping.claim_pickup_days())
+            deadline_text = housekeeping.format_date(deadline)
     except HandoverError as error:
         current_app.logger.warning('Claim %s approved without a Handover PIN: %s', claim_id, error.message)
     except Exception as error:
@@ -123,12 +133,29 @@ def _issue_pin_and_notify(db, claim_id, context):
             item_name=context.get('item_name') or 'Found item',
             found_item_reference=context.get('found_item_reference') or '',
             handover_pin=pin,
+            pickup_deadline_text=deadline_text,
         )
     except Exception as error:
         current_app.logger.exception('Claim %s approval email failed: %s', claim_id, error)
     if not email_sent:
         current_app.logger.warning('Claim %s was approved, but approval email was not sent', claim_id)
     return {'handover_pin_issued': bool(pin), 'approval_email_sent': bool(email_sent)}
+
+
+def _send_receipt(db, claim_id):
+    """Email the owner that the item was released. Best effort: the release is already recorded."""
+    try:
+        context = db.get_claim_email_context(claim_id) or {}
+        if not context.get('email'):
+            return False
+        return bool(EmailService().send_handover_receipt_email(
+            to_email=context['email'], recipient_name=context.get('name') or 'there', item_name=context.get('item_name') or 'Found item',
+            claim_reference=str(context.get('claim_reference') or claim_id), found_item_reference=context.get('found_item_reference') or '',
+            released_at=housekeeping.format_datetime(None),
+        ))
+    except Exception as error:
+        current_app.logger.warning('Claim %s was released, but the receipt email was not sent: %s', claim_id, error)
+        return False
 
 
 def _handover_error(error):
@@ -139,7 +166,7 @@ def _handover_error(error):
 def handover_lookup():
     """The guard types the claimant's PIN; this shows who and what it belongs to before anything is released."""
     try:
-        admin = _require_admin()
+        admin = _require_admin(required_level='guard')
         if not rate_limit.allow(f"handover:{admin['account_id']}", 12, 60):
             return jsonify({'error': 'Too many PIN attempts. Wait a minute and try again.', 'code': 'rate_limited'}), 429
         db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
@@ -160,11 +187,12 @@ def handover_lookup():
 def handover_release():
     """Complete the physical handover: the item is released to its owner and the claim closes as collected."""
     try:
-        admin = _require_admin()
+        admin = _require_admin(required_level='guard')
         if not rate_limit.allow(f"handover:{admin['account_id']}", 12, 60):
             return jsonify({'error': 'Too many PIN attempts. Wait a minute and try again.', 'code': 'rate_limited'}), 429
         db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
         released = HandoverService(db).release((request.get_json(silent=True) or {}).get('pin'), admin['account_id'])
+        _send_receipt(db, released['claim_id'])
         _log_admin_action(db, admin, 'Release Item By Handover PIN', 'Claims & Verification', released.get('claim_reference') or released['claim_id'], released['claim_id'])
         return jsonify({'success': True, 'claim': released, 'message': f"{released['item_name']} was released to {released['claimant_name']}."}), 200
     except HandoverError as error:

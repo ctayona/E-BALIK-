@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, ChevronRight, Clock3, Gavel, Sparkles } from "lucide-react";
 import { fetchAdminDashboard, getStoredAdmin, type AdminDashboardSummary } from "../../utils/api";
 import { RolePill } from "../../components/ui/primitives";
-import { fetchAdminAuctions } from "../../utils/auctionApi";
+import { fetchAdminAuctions, fetchAuctionReadySummary } from "../../utils/auctionApi";
 import { isSuperAdmin } from "../../utils/permissions";
 import { useTheme, tr } from "../../utils/preferences";
 
@@ -44,10 +44,17 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
   const [auctionPickups, setAuctionPickups] = useState<number | null>(null);
   const [auctionDecisions, setAuctionDecisions] = useState<number | null>(null);
   const [reauctionReady, setReauctionReady] = useState<number | null>(null);
+  const [readyToAuction, setReadyToAuction] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
     fetchAdminAuctions().then((data) => { if (active) { setAuctionPickups(data.stats.awaiting_pickup); setAuctionDecisions(data.stats.awaiting_admin ?? 0); setReauctionReady(data.stats.reauction_ready ?? 0); } }).catch(() => { if (active) { setAuctionPickups(null); setAuctionDecisions(null); setReauctionReady(null); } });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchAuctionReadySummary().then((data) => { if (active) setReadyToAuction(data.count); }).catch(() => { if (active) setReadyToAuction(null); });
     return () => { active = false; };
   }, []);
 
@@ -179,6 +186,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
     { label: tr("AI matches to confirm"), hint: tr("Possible owner and item pairs found automatically"), value: summary?.potential_ai_matches ?? 0, page: "ai-matching", edge: "before:bg-iris-500", icon: <Sparkles size={18} aria-hidden="true" /> },
     { label: tr("Unresolved items"), hint: tr("Reports still open without a match or claim"), value: summary?.unresolved_items ?? 0, page: "lost-items", edge: "before:bg-rose-400", icon: <AlertTriangle size={18} aria-hidden="true" /> },
     ...(auctionDecisions ? [{ label: tr("Auctions awaiting your decision"), hint: tr("Bidding closed. Confirm the winner or re-auction"), value: auctionDecisions, page: "auctions" as DeskPage, edge: "before:bg-iris-400", icon: <Gavel size={18} aria-hidden="true" /> }] : []),
+    ...(readyToAuction ? [{ label: tr("Items ready to auction"), hint: tr("Unclaimed for over 30 days with no open claim. Start an auction"), value: readyToAuction, page: "auctions" as DeskPage, edge: "before:bg-gold-400", icon: <Gavel size={18} aria-hidden="true" /> }] : []),
     ...(reauctionReady ? [{ label: tr("Ready for re-auction"), hint: tr("The winner did not collect in 72 hours. List the item again"), value: reauctionReady, page: "auctions" as DeskPage, edge: "before:bg-rose-400", icon: <Gavel size={18} aria-hidden="true" /> }] : []),
     ...(auctionPickups ? [{ label: tr("Auction pickups waiting"), hint: tr("Winners who still need to pay and collect"), value: auctionPickups, page: "auctions" as DeskPage, edge: "before:bg-gold-300", icon: <Gavel size={18} aria-hidden="true" /> }] : []),
   ];
