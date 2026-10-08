@@ -1,4 +1,4 @@
-import { LogOut, ShieldCheck } from "lucide-react";
+import { FilePlus2, LogOut, ShieldCheck } from "lucide-react";
 import HandoverPinCard from "../dashboard/HandoverPinCard";
 import AssignedItemsCard from "./AssignedItemsCard";
 import GuardNoticesCard from "./GuardNoticesCard";
@@ -7,9 +7,20 @@ import { BTN } from "../../components/ui/primitives";
 import type { AdminUser } from "../../utils/api";
 import { tr } from "../../utils/preferences";
 
+/** A guard is also a normal user: the same sign-in opens the public app, where they can file a found report or browse items. */
+function openUserPages() {
+  const token = localStorage.getItem("ebalik_admin_token");
+  const stored = localStorage.getItem("ebalik_admin_user");
+  if (token && stored) {
+    localStorage.setItem("ebalik_token", token);
+    localStorage.setItem("ebalik_user", stored);
+  }
+  window.location.assign("/");
+}
+
 /**
- * The only screen a guard account gets: release an item by Handover PIN (typed or scanned). Everything else in the console
- * is closed to guards by the server, so this is a convenience as well as a limit: there is nothing else to click.
+ * The guard's front page: release an item by Handover PIN (typed or scanned). The admin console is closed to guards by the server, so
+ * this is the only console screen; the button in the header opens the normal user pages (report a found item, browse) with the same sign-in.
  */
 export default function GuardDesk({ user, onLogout }: { user: AdminUser; onLogout: () => void }) {
   return (
@@ -22,6 +33,7 @@ export default function GuardDesk({ user, onLogout }: { user: AdminUser; onLogou
             <p className="font-[family-name:var(--font-heading)] text-[17px] font-semibold leading-tight text-ink">{tr("Release desk")}</p>
             <p className="truncate text-[13px] text-ink-muted">{user.fname} {user.lname} · {tr("Guard")}</p>
           </div>
+          <button type="button" onClick={openUserPages} className={BTN.gold}><FilePlus2 size={16} aria-hidden="true" /><span className="hidden sm:inline">{tr("Report or browse items")}</span><span className="sm:hidden">{tr("Report")}</span></button>
           <button type="button" onClick={onLogout} className={BTN.ghost}><LogOut size={16} aria-hidden="true" />{tr("Sign out")}</button>
         </div>
       </header>

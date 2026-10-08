@@ -12,6 +12,7 @@ import { useCurrentUser } from "@/app/utils/system";
 import { showSubmitError } from "@/app/utils/submitErrors";
 import VerificationStatusCard, { assignedRole } from "@/app/shared/verification/VerificationStatusCard";
 import EmailPreferencesCard from "@/app/shared/profile/EmailPreferencesCard";
+import SmartTagSettings from "@/app/shared/profile/SmartTagSettings";
 
 export default function Profile({
   user: userProp,
@@ -227,6 +228,8 @@ export default function Profile({
             </div>
           </form>
         </motion.div>
+
+        <SmartTagSettings onNavigate={onNavigate} />
 
         <EmailPreferencesCard />
       </div>

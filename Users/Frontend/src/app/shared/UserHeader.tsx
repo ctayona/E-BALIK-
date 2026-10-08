@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bell, ChevronDown, ClipboardCheck, Files, Gavel, GitCompareArrows, LayoutDashboard, LibraryBig, LogOut, Menu, Moon, PackagePlus, QrCode, Sun, UserRound, X } from "lucide-react";
+import { Bell, ChevronDown, ClipboardCheck, KeyRound, Files, Gavel, GitCompareArrows, LayoutDashboard, LibraryBig, LogOut, Menu, Moon, PackagePlus, QrCode, Sun, UserRound, X } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import headerUmSeal from "@/imports/Header/9aefa1789ba406d6291f8aa816f84df70a02953b.webp";
 import type { Page } from "@/app/types";
@@ -18,6 +18,19 @@ const NAV_LINKS: { label: string; page: Page; icon: ReactNode }[] = [
 ];
 
 const REPORT_PAGES: Page[] = ["report-item", "found-item", "missing-item"];
+
+const CONSOLE_LEVELS = ["guard", "admin", "super_admin"];
+
+/** Open the staff console (the guard's Release desk, or the admin console) with the same sign-in. */
+function openStaffConsole() {
+  const token = localStorage.getItem("ebalik_token");
+  const stored = localStorage.getItem("ebalik_user");
+  if (token && stored) {
+    localStorage.setItem("ebalik_admin_token", token);
+    localStorage.setItem("ebalik_admin_user", stored);
+  }
+  window.location.assign(import.meta.env.VITE_ADMIN_URL || "/admin/");
+}
 
 function initials(user: User | null) {
   if (!user) return "U";
@@ -104,6 +117,8 @@ export default function UserHeader({
   }
 
   const profileLabel  = user ? `${user.fname} ${user.lname}`.trim() : "Profile";
+  const level = String(user?.access_level || "").toLowerCase();
+  const consoleLabel = !CONSOLE_LEVELS.includes(level) ? "" : level === "guard" ? "Release desk" : "Admin console";
   const campusIdLabel = user?.campus_id || "Campus ID not set";
   const badge = unreadCount > 99 ? "99+" : String(unreadCount);
   const isReporting = REPORT_PAGES.includes(currentPage);
@@ -242,6 +257,11 @@ export default function UserHeader({
                       <p className="mt-1 font-mono text-[12px] text-gold-700">{campusIdLabel}</p>
                     </div>
                     <div className="p-1.5">
+                      {consoleLabel && (
+                        <button type="button" role="menuitem" onClick={openStaffConsole} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] font-medium text-ink-soft hover:bg-navy-50">
+                          <KeyRound size={16} className="text-navy-500" aria-hidden="true" /> {consoleLabel}
+                        </button>
+                      )}
                       <button type="button" role="menuitem" onClick={() => navigate("profile")} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] font-medium text-ink-soft hover:bg-navy-50">
                         <UserRound size={16} className="text-navy-500" aria-hidden="true" /> Profile &amp; verification
                       </button>
@@ -342,6 +362,11 @@ export default function UserHeader({
                     <span className="block font-mono text-[12px] text-gold-300">{campusIdLabel}</span>
                   </span>
                 </button>
+                {consoleLabel && (
+                  <button type="button" onClick={openStaffConsole} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-gold-300 hover:bg-white/[0.06]">
+                    <KeyRound size={16} aria-hidden="true" /> {consoleLabel}
+                  </button>
+                )}
                 <button type="button" onClick={toggleTheme} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-navy-100 hover:bg-white/[0.06]">
                   {theme === "dark" ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />} {theme === "dark" ? "Light mode" : "Dark mode"}
                 </button>

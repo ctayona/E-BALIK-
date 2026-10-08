@@ -758,6 +758,9 @@ export async function updateAdminClaimDetails(claimId: string, claimReason: stri
 // ---- Handover PINs (the guard's release screen) -------------------------------------------------
 
 export interface HandoverClaim {
+  /** `claim`: an approved ownership claim. `auction`: an auction winner collecting their purchase (the amount to collect is `amount_due`). */
+  kind?: "claim" | "auction";
+  amount_due?: number;
   claim_id: string;
   claim_reference: string;
   claimant_name: string;
@@ -781,7 +784,7 @@ export async function lookupHandoverPin(pin: string): Promise<HandoverClaim> {
 
 /** Release the item to its owner. Returns the confirmation message. */
 export async function releaseByHandoverPin(pin: string): Promise<string> {
-  return (await handoverRequest<{ message?: string }>("release", pin)).message ?? tr("The item was released to its owner.");
+  return (await handoverRequest<{ message?: string }>("release", pin)).message ?? tr("The item was released.");
 }
 
 export interface CustodyEvent { type: string; label: string; at: string | null; actor: string; detail: string }

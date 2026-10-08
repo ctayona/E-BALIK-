@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Database, HeartPulse, Loader2, LockKeyhole, LogOut, RefreshCw, ShieldCheck, Trash2, Wrench, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Database, HeartPulse, Info, Loader2, LockKeyhole, LogOut, RefreshCw, ShieldCheck, Trash2, Wrench, XCircle } from "lucide-react";
 import { SegmentedFilter } from "../../components/ui/management";
 import AdminGovernance from "./AdminGovernance";
 import AnnouncementPanel from "./AnnouncementPanel";
@@ -19,6 +19,7 @@ import { tr } from "../../utils/preferences";
 const AGES = [30, 60, 90, 180, 365];
 const HEALTH_LOOK: Record<HealthStatus, { icon: typeof CheckCircle2; text: string; chip: string; label: string }> = {
   ok: { icon: CheckCircle2, text: "text-[#1b7863] dark:text-[#6fd6bb]", chip: "bg-[#e6f7f1] text-[#14594a] ring-[#bfe8db] dark:bg-[#3fbf9f]/10 dark:text-[#9fe0ca] dark:ring-[#3fbf9f]/30", label: "Healthy" },
+  info: { icon: Info, text: "text-iris-600 dark:text-iris-300", chip: "bg-frost-100 text-navy-800 ring-line dark:bg-white/[0.06] dark:text-ink dark:ring-white/10", label: "For your information" },
   warn: { icon: AlertTriangle, text: "text-gold-700 dark:text-gold-300", chip: "bg-gold-50 text-gold-800 ring-gold-200 dark:bg-gold-500/10 dark:text-gold-200 dark:ring-gold-500/30", label: "Needs attention" },
   fail: { icon: XCircle, text: "text-rose-600 dark:text-rose-300", chip: "bg-rose-50 text-rose-800 ring-rose-200 dark:bg-rose-500/10 dark:text-[#fecdd3] dark:ring-rose-500/30", label: "Action required" },
 };
@@ -129,7 +130,7 @@ export default function SystemControl() {
     return <div className="space-y-5 p-4 sm:p-6" aria-busy="true"><div><SkeletonBlock className="mb-2 h-8 w-56" /><SkeletonBlock className="h-4 w-80" /></div><div className="grid gap-4 lg:grid-cols-2"><SkeletonBlock className="h-64 rounded-2xl" /><SkeletonBlock className="h-64 rounded-2xl" /></div></div>;
   }
 
-  const overall = health ? HEALTH_LOOK[health.status] : null;
+  const overall = health ? (HEALTH_LOOK[health.status] ?? HEALTH_LOOK.warn) : null;
   const lastCleanup = overview?.last_cleanup;
 
   return (
@@ -201,16 +202,16 @@ export default function SystemControl() {
           icon={<LogOut size={21} />}
           tone="danger"
           title={tr("Force logout")}
-          description={tr("Sign every standard user out at once. Use it after a security problem or a major update.")}
+          description={tr("Sign every standard user and every guard out at once. Use it after a security problem or a major update.")}
         >
           <ul className="space-y-2 text-[14px] leading-6 text-ink-soft">
-            <li className="flex gap-2.5"><ShieldCheck size={17} className="mt-1 shrink-0 text-[#2fae8e]" aria-hidden="true" />{tr("All active user sessions stop working on their next request.")}</li>
-            <li className="flex gap-2.5"><ShieldCheck size={17} className="mt-1 shrink-0 text-[#2fae8e]" aria-hidden="true" />{tr("Admin and super admin sessions are not affected.")}</li>
+            <li className="flex gap-2.5"><ShieldCheck size={17} className="mt-1 shrink-0 text-[#2fae8e]" aria-hidden="true" />{tr("All active user and guard sessions stop working on their next request.")}</li>
+            <li className="flex gap-2.5"><ShieldCheck size={17} className="mt-1 shrink-0 text-[#2fae8e]" aria-hidden="true" />{tr("Admin and super admin sessions are not affected (guards are signed out).")}</li>
             <li className="flex gap-2.5"><ShieldCheck size={17} className="mt-1 shrink-0 text-[#2fae8e]" aria-hidden="true" />{tr("Users can sign in again straight away, unless maintenance mode is on.")}</li>
           </ul>
           <p className="mt-4 text-[13px] text-ink-muted">{overview?.sessions_valid_after ? tr("Last forced logout: {0}", { "0": formatDateTime(overview.sessions_valid_after) }) : tr("No forced logout so far.")}</p>
           <div className="mt-auto pt-5">
-            <button type="button" disabled={setupRequired || !overview} onClick={() => setPending("logout")} className={BTN.danger}><LogOut size={16} aria-hidden="true" />{tr("Sign out all users")}</button>
+            <button type="button" disabled={setupRequired || !overview} onClick={() => setPending("logout")} className={BTN.danger}><LogOut size={16} aria-hidden="true" />{tr("Sign out all users and guards")}</button>
           </div>
         </Card>
       </div>
@@ -235,7 +236,7 @@ export default function SystemControl() {
             </div>
             <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line">
               {health.checks.map((check) => {
-                const look = HEALTH_LOOK[check.status];
+                const look = HEALTH_LOOK[check.status] ?? HEALTH_LOOK.warn;   // a status this page does not know must never crash it
                 return (
                   <li key={check.id} className="flex items-start gap-3 px-4 py-3.5">
                     <look.icon size={19} className={`mt-0.5 shrink-0 ${look.text}`} aria-label={tr(look.label)} />
@@ -244,7 +245,7 @@ export default function SystemControl() {
                       <p className="text-[13.5px] leading-5 text-ink-soft">{check.detail}</p>
                       {check.items && check.items.length > 0 && (
                         <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-[13px] leading-5 text-ink-muted">
-                          {check.items.map((item) => <li key={item}>{item}</li>)}
+                          {check.items.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}
                         </ul>
                       )}
                     </div>
@@ -316,9 +317,9 @@ export default function SystemControl() {
       )}
       {pending === "logout" && (
         <ConfirmActionDialog
-          title="sign out all users"
-          description="Every standard user is signed out and must sign in again. Unsaved work in open pages is lost. Admin sessions are not affected."
-          confirmLabel="Sign out all users"
+          title="sign out all users and guards"
+          description="Every standard user and every guard is signed out and must sign in again. Unsaved work in open pages is lost. Admin and super admin sessions are not affected."
+          confirmLabel="Sign out all users and guards"
           danger
           busy={busy}
           onCancel={() => { if (!busy) setPending(null); }}

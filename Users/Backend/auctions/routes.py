@@ -71,6 +71,25 @@ def auction_detail(auction_id):
     return jsonify(_service().public_detail(auction_id, _optional_account_id())), 200
 
 
+@auctions_bp.route('/<auction_id>/handover-qr', methods=['GET'])
+@_handled('load the pickup QR code')
+def handover_qr(auction_id):
+    """The winner's own pickup PIN as a QR code for the guard to scan. Never cached, and only for the winner of an auction waiting for pickup."""
+    from flask import Response
+    from app.utils.handover import qr_png
+    account_id = _optional_account_id()
+    if not account_id:
+        return jsonify({'error': 'Sign in to see your pickup code.'}), 401
+    service = _service()
+    rows = service.client.table('auctions').select('auction_id,winner_account_id,fulfillment_status,handover_pin_encrypted').eq('auction_id', auction_id).limit(1).execute().data or []
+    pin = service._pickup_pin(rows[0], create=False) if rows and str(rows[0].get('winner_account_id')) == str(account_id) else None
+    if not pin:
+        return jsonify({'error': 'There is no active pickup PIN for this auction.'}), 404
+    response = Response(qr_png(pin), mimetype='image/png')
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 @auctions_bp.route('/<auction_id>/bids', methods=['POST'])
 @_handled('place the bid')
 def place_bid(auction_id):

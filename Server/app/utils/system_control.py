@@ -19,7 +19,8 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 STAFF_LEVELS = {'admin', 'super_admin'}
-# Staff plus the release-desk guard: never blocked by maintenance mode, suspension checks or the verification gate.
+# Staff plus the release-desk guard. Both keep working during maintenance mode and never need ID verification (a guard can file a found
+# report like anyone else). Only administrators skip the sign-out and suspension rules: a guard is signed out by Force logout and can be suspended.
 DESK_LEVELS = STAFF_LEVELS | {'guard'}
 CACHE_SECONDS = 5.0
 MIN_CLEANUP_DAYS = 30
@@ -178,7 +179,7 @@ def set_maintenance(db, enabled: bool, message: str, actor_id: str) -> Dict[str,
 
 
 def force_logout(db, actor_id: str) -> str:
-    """Revoke every standard-user session issued before now. Staff sessions are untouched."""
+    """Revoke every session issued before now, except administrators' and super administrators' own. Standard users and guards are signed out."""
     stamp = _iso(_now().replace(microsecond=0))
     save_setting(db, 'sessions_valid_after', {'ts': stamp, 'by': actor_id}, actor_id)
     return stamp
@@ -235,12 +236,12 @@ def _maintenance_response(settings: Dict[str, Dict[str, Any]]):
 
 
 def login_block(db, profile: Dict[str, Any]):
-    """A JSON response when this account may not sign in right now (maintenance for non-staff, suspension), else None."""
-    staff = access_level(profile) in DESK_LEVELS
+    """A JSON response when this account may not sign in right now (maintenance for people who are not on the desk, suspension), else None."""
+    level = access_level(profile)
     settings = load_settings(db)
-    if settings['maintenance_mode'].get('enabled') and not staff:
+    if settings['maintenance_mode'].get('enabled') and level not in DESK_LEVELS:
         return _maintenance_response(settings)
-    if staff:
+    if level in STAFF_LEVELS:
         return None
     state = account_state(db, str(profile['account_id']), fresh=True)
     if state and not state['is_active']:
@@ -279,10 +280,11 @@ def enforce_request():
         logger.warning('System enforcement skipped (database unavailable): %s', error)
         return None
 
-    staff = bool(state) and state['level'] in DESK_LEVELS
-    if settings['maintenance_mode'].get('enabled') and not staff:
+    desk = bool(state) and state['level'] in DESK_LEVELS
+    administrator = bool(state) and state['level'] in STAFF_LEVELS
+    if settings['maintenance_mode'].get('enabled') and not desk:
         return None if request.path in AUTH_OPEN_PATHS else _maintenance_response(settings)
-    if not payload or not state or staff:
+    if not payload or not state or administrator:
         return None
 
     valid_after = _parse(settings['sessions_valid_after'].get('ts'))
@@ -295,7 +297,7 @@ def enforce_request():
         response = jsonify({'error': _suspension_message(state), 'suspended': True, 'suspended_until': state['suspended_until']})
         response.status_code = 403
         return response
-    if state['verification_status'] != 'verified':
+    if state['verification_status'] != 'verified' and not desk:
         for method, pattern, action in VERIFICATION_GATED:
             if request.method == method and pattern.match(request.path):
                 response = jsonify({

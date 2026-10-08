@@ -647,3 +647,17 @@ CREATE TABLE IF NOT EXISTS public.custody_log (
 );
 CREATE INDEX IF NOT EXISTS idx_custody_log_item ON public.custody_log (found_item_id, created_at);
 ALTER TABLE public.custody_log ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================================
+-- Auction pickup PIN and Smart Tag contact methods
+-- Mirrors manual_migrations/20261018_auction_handover_pin.sql and 20261019_tag_contact_links.sql (run those files on an existing database).
+-- auctions.handover_pin_*: the winner's pickup PIN (hash to find it, encrypted copy so the winner can read it again), like claims.handover_pin_*.
+-- user_profiles.tag_contacts: the owner's saved contact methods; smart_tags.shown_contacts: which of them a tag shows to a finder.
+-- ============================================================================
+ALTER TABLE public.auctions
+    ADD COLUMN IF NOT EXISTS handover_pin_hash TEXT,
+    ADD COLUMN IF NOT EXISTS handover_pin_encrypted TEXT,
+    ADD COLUMN IF NOT EXISTS handover_pin_issued_at TIMESTAMP WITH TIME ZONE;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_auctions_handover_pin_hash ON public.auctions (handover_pin_hash) WHERE handover_pin_hash IS NOT NULL;
+ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS tag_contacts JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.smart_tags    ADD COLUMN IF NOT EXISTS shown_contacts JSONB NOT NULL DEFAULT '[]'::jsonb;

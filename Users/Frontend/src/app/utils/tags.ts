@@ -2,6 +2,18 @@
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
+/** Other ways a finder may be offered to reach the owner. The owner saves each once (Profile) and switches them on per tag. */
+export type ContactKind = "phone2" | "messenger" | "facebook" | "instagram" | "telegram" | "whatsapp";
+export type ContactMethods = Record<ContactKind, string>;
+export const CONTACT_KINDS: Array<{ kind: ContactKind; label: string; placeholder: string; hint: string; inputMode?: "tel" | "text" }> = [
+  { kind: "phone2", label: "Alternate phone number", placeholder: "0917 123 4567", hint: "A second number, for example a parent's or a work phone.", inputMode: "tel" },
+  { kind: "messenger", label: "Messenger", placeholder: "your.username or m.me/your.username", hint: "Your Facebook username or your m.me link." },
+  { kind: "facebook", label: "Facebook", placeholder: "your.username or facebook.com/your.username", hint: "Your Facebook profile link or username." },
+  { kind: "instagram", label: "Instagram", placeholder: "your_username", hint: "Your Instagram username, without the @." },
+  { kind: "telegram", label: "Telegram", placeholder: "your_username or t.me/your_username", hint: "Your Telegram username." },
+  { kind: "whatsapp", label: "WhatsApp", placeholder: "+63 917 123 4567", hint: "Your WhatsApp number with the country code.", inputMode: "tel" },
+];
+
 export type PublicTagStatus = "blank" | "pending_verification" | "active" | "lost" | "expired" | "disabled" | "inactive";
 
 export interface PublicTag {
@@ -12,7 +24,7 @@ export interface PublicTag {
   /** Short-lived signed link to the photo taken at registration. Absent for tags registered before photos existed. */
   photo_url?: string | null;
   /** Only the details the owner chose to share are present. */
-  contact?: { name?: string; email?: string; phone?: string };
+  contact?: { name?: string; email?: string; phone?: string; /** Links the owner chose to show, already built by the server (https or tel only). */ links?: Array<{ kind: string; label: string; url: string }> };
   is_owner?: boolean;
 }
 
@@ -38,6 +50,8 @@ export interface OwnerTag {
   show_email: boolean;
   show_phone: boolean;
   contact_phone: string;
+  /** The saved contact methods this tag shows to a finder. */
+  shown_contacts?: ContactKind[];
   is_disabled: boolean;
   disabled_reason: string | null;
   claimed_at: string | null;
@@ -53,6 +67,7 @@ export interface TagDetailsInput {
   show_email: boolean;
   show_phone: boolean;
   contact_phone: string;
+  shown_contacts?: ContactKind[];
 }
 
 export interface FoundResult { success: boolean; notified: boolean; cooldown: boolean; instructions: string[] }
@@ -99,6 +114,10 @@ export const tagsApi = {
   view: (id: string) => request<PublicTag>(`/${encodeURIComponent(id)}`),
   found: (id: string, input: { message: string; contact: string }) => request<FoundResult>(`/${encodeURIComponent(id)}/found`, { method: "POST", body: input, auth: false }),
   mine: () => request<{ tags: OwnerTag[] }>("/mine"),
+  /** The signed-in owner's saved contact methods. */
+  contacts: () => request<{ contacts: ContactMethods }>("/contacts"),
+  /** Save contact methods; an empty value clears one. */
+  saveContacts: (input: Partial<ContactMethods>) => request<{ contacts: ContactMethods }>("/contacts", { method: "PUT", body: input }),
   /** Registration is multipart: the details plus the photo taken live with the camera. */
   claim: (id: string, input: TagDetailsInput & { dpa_consent: boolean }, photo: File) => {
     const form = new FormData();
@@ -140,4 +159,6 @@ export const spacedCode = (code: string) => code.replace(/(.{4})/g, "$1 ").trim(
 
 /** Only render links for values that really look like an email address or phone number (never a script URL). */
 export const safeMailto = (email: string) => (/^[^\s@<>"'()]+@[^\s@<>"'()]+\.[^\s@<>"'()]+$/.test(email) ? `mailto:${email}` : null);
+/** A finder-facing link from the server: only https and tel addresses are ever rendered as links. */
+export const safeLink = (url: string) => (/^(https:\/\/[^\s<>"']+|tel:\+?[0-9]{5,20})$/.test(url) ? url : null);
 export const safeTel = (phone: string) => (/^\+?[0-9][0-9 ()\-]{5,18}[0-9]$/.test(phone) ? `tel:${phone.replace(/[^0-9+]/g, "")}` : null);

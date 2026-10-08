@@ -87,9 +87,13 @@ export function useSystemStatus(): SystemStatus & { refresh: () => Promise<void>
 
 export const isStaff = (user?: { access_level?: string } | null) => ['admin', 'super_admin'].includes(String(user?.access_level || '').toLowerCase());
 
-/** True once an admin has approved the account. Staff accounts never need verification. */
+/** Administrators plus guards. A guard also uses the normal user pages (to file a found report, browse items), so they are never held back by
+ *  maintenance mode or the ID-verification gate, exactly as the server treats them (`DESK_LEVELS` in system_control.py). */
+export const isDesk = (user?: { access_level?: string } | null) => ['admin', 'super_admin', 'guard'].includes(String(user?.access_level || '').toLowerCase());
+
+/** True once an admin has approved the account. Staff accounts and guards never need verification. */
 export const isVerified = (user?: { verification_status?: string; access_level?: string } | null) =>
-  isStaff(user) || String(user?.verification_status || '').toLowerCase() === 'verified';
+  isDesk(user) || String(user?.verification_status || '').toLowerCase() === 'verified';
 
 /** The signed-in user, re-read whenever the profile is refreshed, so verification banners react as soon as an admin approves the account. */
 export function useCurrentUser() {

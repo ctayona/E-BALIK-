@@ -2,6 +2,7 @@ import { BadgeCheck, Briefcase, Check, Clock3, FileSearch, GraduationCap, Lock, 
 import { motion, useReducedMotion } from "motion/react";
 import { CX, SPRING } from "@/app/utils/clay";
 import type { User } from "@/app/utils/useAuth";
+import { isDesk } from "@/app/utils/system";
 
 type Status = "verified" | "pending" | "rejected" | "none";
 
@@ -54,6 +55,8 @@ const UNLOCKS = ["Report a lost item", "Report a found item", "File an ownership
 /** Profile hero: verification status, assigned role, review progress and what each state unlocks. */
 export default function VerificationStatusCard({ user, busy, onUpload }: { user: User | null; busy: boolean; onUpload: () => void }) {
   const reduced = useReducedMotion();
+  // Guards and administrators never need an ID check: everything is already unlocked for them, so there is nothing to show.
+  if (isDesk(user)) return null;
   const status = statusOf(user);
   const look = LOOK[status];
   const role = assignedRole(user);

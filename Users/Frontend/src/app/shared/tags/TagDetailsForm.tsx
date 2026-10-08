@@ -1,14 +1,15 @@
 import { useId, useState } from "react";
-import { Eye, EyeOff, Mail, Phone, ShieldAlert, UserRound } from "lucide-react";
+import { useEffect } from "react";
+import { Eye, EyeOff, Mail, MessageCircle, Phone, ShieldAlert, UserRound } from "lucide-react";
 import Modal from "@/app/shared/modal/Modal";
 import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
 import ItemTypePicker from "@/app/shared/tags/ItemTypePicker";
 import LivePhotoField from "@/app/shared/tags/LivePhotoField";
 import { CX } from "@/app/utils/clay";
 import { useCurrentUser } from "@/app/utils/system";
-import type { OwnerTag, TagDetailsInput } from "@/app/utils/tags";
+import { CONTACT_KINDS, tagsApi, type ContactKind, type ContactMethods, type OwnerTag, type TagDetailsInput } from "@/app/utils/tags";
 
-function Switch({ checked, onChange, label, hint, icon }: { checked: boolean; onChange: (value: boolean) => void; label: string; hint: string; icon: React.ReactNode }) {
+function Switch({ checked, onChange, label, hint, icon, disabled = false }: { checked: boolean; onChange: (value: boolean) => void; label: string; hint: string; icon: React.ReactNode; disabled?: boolean }) {
   const id = useId();
   return (
     <div className={`flex items-center gap-3 rounded-2xl border p-3.5 transition-colors ${checked ? "border-gold-300 bg-gold-50" : "border-line bg-white"}`}>
@@ -22,8 +23,9 @@ function Switch({ checked, onChange, label, hint, icon }: { checked: boolean; on
         type="button"
         role="switch"
         aria-checked={checked}
+        disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-iris-500 ${checked ? "bg-gold-500" : "bg-slate-300"}`}
+        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-iris-500 ${checked ? "bg-gold-500" : "bg-slate-300"}`}
       >
         <span className={`absolute left-0.5 top-0.5 size-6 rounded-full bg-[#ffffff] shadow transition-transform ${checked ? "translate-x-5" : ""}`} />
       </button>
@@ -52,13 +54,24 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
   const [showEmail, setShowEmail] = useState(initial?.show_email ?? true);
   const [showPhone, setShowPhone] = useState(initial?.show_phone ?? false);
   const [phone, setPhone] = useState(initial?.contact_phone ?? "");
+  const [shownContacts, setShownContacts] = useState<ContactKind[]>(initial?.shown_contacts ?? []);
+  const [saved, setSaved] = useState<ContactMethods | null>(null);
   const [consent, setConsent] = useState(mode === "edit");
   const [problem, setProblem] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
   const [review, setReview] = useState<{ values: TagDetailsInput; photo: File } | null>(null);
 
+  // The contact methods saved in the profile. Without any, the switches below are off and point to the profile.
+  useEffect(() => {
+    let active = true;
+    tagsApi.contacts().then((result) => { if (active) { setSaved(result.contacts); setShownContacts((current) => current.filter((kind) => Boolean(result.contacts[kind]))); } }).catch(() => { if (active) setSaved(null); });
+    return () => { active = false; };
+  }, []);
+
   const fullName = `${user?.fname ?? ""} ${user?.lname ?? ""}`.trim() || "Your name";
-  const shown = [showName && fullName, showEmail && (user?.email || "your email"), showPhone && (phone || "your phone number")].filter(Boolean) as string[];
+  const shownLabels = CONTACT_KINDS.filter((method) => shownContacts.includes(method.kind)).map((method) => method.label);
+  const shown = [showName && fullName, showEmail && (user?.email || "your email"), showPhone && (phone || "your phone number"), ...shownLabels].filter(Boolean) as string[];
+  const toggleContact = (kind: ContactKind, on: boolean) => setShownContacts((current) => (on ? [...current.filter((item) => item !== kind), kind] : current.filter((item) => item !== kind)));
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -66,7 +79,7 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
     if (showPhone && !phone.trim()) { setProblem("Add a phone number, or switch \"Show my phone number\" off."); return; }
     if (mode === "claim" && !photo) { setProblem("Take a photo of your item with the sticker attached before registering."); return; }
     setProblem("");
-    const values: TagDetailsInput = { item_name: name.trim(), item_description: description.trim(), show_name: showName, show_email: showEmail, show_phone: showPhone, contact_phone: phone.trim() };
+    const values: TagDetailsInput = { item_name: name.trim(), item_description: description.trim(), show_name: showName, show_email: showEmail, show_phone: showPhone, contact_phone: phone.trim(), shown_contacts: shownContacts };
     // Registering is final for the item name, so the user must confirm before anything is sent.
     if (mode === "claim" && photo) { setReview({ values, photo }); return; }
     onSubmit(values, consent, photo);
@@ -94,6 +107,25 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
           <div>
             <label htmlFor="tag-phone" className={CX.label}>Phone number</label>
             <input id="tag-phone" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" maxLength={30} placeholder="0917 123 4567" autoComplete="tel" className={`${CX.input} w-full`} />
+          </div>
+        )}
+        {saved && (
+          <div className="space-y-2.5 pt-1">
+            <p className="text-[13px] font-semibold text-ink-muted">Other ways to reach me</p>
+            {CONTACT_KINDS.map((method) => {
+              const has = Boolean(saved[method.kind]);
+              return (
+                <Switch
+                  key={method.kind}
+                  checked={has && shownContacts.includes(method.kind)}
+                  disabled={!has}
+                  onChange={(value) => toggleContact(method.kind, value)}
+                  label={`Show my ${method.label}`}
+                  hint={has ? `Finders get a button to contact you on ${method.label}.` : "Not saved yet. Add it in your Profile, under Smart Tags."}
+                  icon={method.kind === "phone2" ? <Phone size={18} /> : <MessageCircle size={18} />}
+                />
+              );
+            })}
           </div>
         )}
       </fieldset>

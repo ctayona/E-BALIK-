@@ -53,7 +53,7 @@ A claim the claimant withdraws is removed, not given a status.
 | --- | --- |
 | Scheduled / Live | Before / during bidding. |
 | Awaiting admin | The timer ended with bids; an administrator confirms the winner. |
-| Awaiting pickup | The winner is confirmed and must pay and collect within 72 hours. |
+| Awaiting pickup | The winner is confirmed and must pay and collect within 72 hours. The winner has a Handover PIN; the guard completes the auction with it, or an administrator presses **Mark as picked up**. |
 | **Completed** | Paid and collected. |
 | Forfeited | The winner did not collect in time; the item is ready to be auctioned again. |
 | No bids / Cancelled | Closed without a sale. Cancelled also happens automatically when the owner's claim is approved. |
@@ -82,5 +82,5 @@ A claim the claimant withdraws is removed, not given a status.
 | --- | --- | --- |
 | Reports | Admin menu, tabs Lost reports / Found reports / Items in custody | Lost items, Found items, Chain of custody |
 | Analytics | Admin menu: the summary cards plus the visual charts | Reports and analytics, and the Dashboard charts |
-| Release desk | Admin menu and the guard's only screen | |
+| Release desk | Admin menu and the guard's front page (a guard also uses the normal user pages) | |
 | Handling history | A button on each row of Items in custody (also prints or saves as PDF) | Chain of custody |

@@ -1,3 +1,4 @@
+import PageErrorBoundary from "./components/PageErrorBoundary";
 import { lazy, Suspense, useEffect, useState } from "react";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
@@ -213,9 +214,11 @@ export default function App() {
           onLogout={handleLogout}
         />
         <main className="app-main min-w-0 flex-1 overflow-y-auto">
-          <Suspense fallback={<AdminPageSkeleton />}>
-            {renderPage()}
-          </Suspense>
+          <PageErrorBoundary resetKey={page}>
+            <Suspense fallback={<AdminPageSkeleton />}>
+              {renderPage()}
+            </Suspense>
+          </PageErrorBoundary>
         </main>
       </div>
       <InfoModalHost />

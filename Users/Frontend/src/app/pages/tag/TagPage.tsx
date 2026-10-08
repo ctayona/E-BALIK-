@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, ArrowRight, BadgeCheck, CalendarX, HandHeart, Hourglass, Lock, Mail, MapPin, Phone, QrCode, ShieldAlert, ShieldCheck, UserRound } from "lucide-react";
+import { AlertTriangle, ArrowRight, BadgeCheck, CalendarX, HandHeart, Hourglass, Lock, Mail, MapPin, MessageCircle, Phone, QrCode, ShieldAlert, ShieldCheck, UserRound } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import umakLogo from "@/imports/umaklogo.webp";
 import Modal from "@/app/shared/modal/Modal";
@@ -9,7 +9,7 @@ import { CX, SPRING } from "@/app/utils/clay";
 import { authUtils } from "@/app/utils/api";
 import { useCurrentUser } from "@/app/utils/system";
 import {
-  TagRequestError, extractTagCode, safeMailto, safeTel, spacedCode, tagsApi,
+  TagRequestError, extractTagCode, safeLink, safeMailto, safeTel, spacedCode, tagsApi,
   type FoundResult, type PublicTag, type TagDetailsInput,
 } from "@/app/utils/tags";
 
@@ -248,7 +248,8 @@ export default function TagPage({ rawId }: { rawId: string }) {
   // ---- Logic check 2: an active or lost tag
   const lost = tag.status === "lost";
   const contactInfo = tag.contact ?? {};
-  const hasContact = Boolean(contactInfo.name || contactInfo.email || contactInfo.phone);
+  const links = (contactInfo.links ?? []).filter((link) => safeLink(link.url));
+  const hasContact = Boolean(contactInfo.name || contactInfo.email || contactInfo.phone || links.length);
 
   return (
     <Shell code={tagCode}>
@@ -279,6 +280,15 @@ export default function TagPage({ rawId }: { rawId: string }) {
                 {contactInfo.name && <ContactRow icon={<UserRound size={17} />} label="Name" value={contactInfo.name} />}
                 {contactInfo.email && <ContactRow icon={<Mail size={17} />} label="Email" value={contactInfo.email} href={safeMailto(contactInfo.email)} />}
                 {contactInfo.phone && <ContactRow icon={<Phone size={17} />} label="Phone" value={contactInfo.phone} href={safeTel(contactInfo.phone)} />}
+                {links.map((link) => (
+                  <li key={link.kind} className="flex items-center gap-3 rounded-2xl bg-white/70 px-4 py-3 ring-1 ring-line">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-frost-100 text-navy-700" aria-hidden="true">{link.kind === "phone2" ? <Phone size={17} /> : <MessageCircle size={17} />}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[12px] font-medium text-ink-muted">{link.label}</span>
+                      <a href={safeLink(link.url) ?? undefined} target={link.url.startsWith("https://") ? "_blank" : undefined} rel="noopener noreferrer" className="block break-words text-[15px] font-semibold text-navy-800 underline-offset-2 hover:underline">{link.kind === "phone2" ? link.url.replace("tel:", "") : `Open ${link.label}`}</a>
+                    </span>
+                  </li>
+                ))}
               </ul>
             ) : (
               <p className="mt-2 rounded-2xl border border-dashed border-line-strong px-4 py-4 text-[14px] leading-6 text-ink-muted">The owner keeps their details private. Press the button below and E-Balik will notify them for you.</p>

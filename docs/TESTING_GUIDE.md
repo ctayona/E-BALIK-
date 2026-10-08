@@ -41,7 +41,7 @@ SELECT column_name FROM information_schema.columns WHERE table_schema = 'public'
 SELECT table_name FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'archived_at'
   AND table_name IN ('missing_items', 'found_items', 'claims', 'auctions');   -- 4 rows
 SELECT pg_get_functiondef('public.auction_place_bid(uuid,uuid,numeric)'::regprocedure) LIKE '%bid_not_on_step%';   -- true
-SELECT count(*) FROM public.migration_log;   -- 21 when every migration has been run
+SELECT count(*) FROM public.migration_log;   -- 23 when every migration has been run (21 plus 20261018 and 20261019)
 SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'found_items'
   AND column_name IN ('received_at', 'received_by', 'smart_tag_id');   -- 3 rows
 SELECT to_regclass('public.custody_log');   -- custody_log
@@ -52,6 +52,8 @@ SELECT to_regclass('public.custody_log');   -- custody_log
 > **If `20261015` has not been run:** the app still works, but a guard account cannot release items (the database refuses it), administrators cannot assign the guard role, a claim cannot be linked to a lost report, and a found report cannot be linked to a guard. Run it before testing sections 2.9, 4.2, 6.1, 6.3 and 6.4.
 
 > **If `20261016` has not been run:** the Archive buttons say "run the latest database update" and change nothing, and the exact-step rule for bids is enforced by the server only (the database enforces it after the migration). Run it before testing sections 8 and 9.
+
+> **If `20261018` or `20261019` has not been run:** a won auction has no pickup PIN (an administrator completes it with **Mark as picked up**), and the Profile > Smart Tags contact methods say they switch on after the next database update. Run both before testing 6.6 and 7.14.
 
 > **If `20261017` has not been run:** the app still works. Mark received, the Smart Tag link and the recorded handover steps say "run the latest database update" or fall back to what the database already knows (the history is rebuilt from timestamps), and System control > health scan reports the migration log as missing. Run it before testing sections 6.5, 9.7 and 9.13.10.
 
@@ -226,6 +228,22 @@ Use one found item that Student B hands to the **Guard** (6.1 sets this up) and 
 | 6.5.14 | Check the auction and the leading bidder. | The auction is Cancelled with the reason, the leader got an "Auction cancelled" notice, and the item's history shows "Auction cancelled" then "Claim approved". | ☐ |
 | 6.5.15 | Check the words. | Every finished report, claim and auction says **Completed** (not Returned, Released, Collected or Resolved). The reference is `docs/STATUS_GLOSSARY.md`. | ☐ |
 
+
+### 6.6 Guards as users, and the auction pickup PIN
+
+| # | Do this | You should see | Pass |
+|---|---|---|---|
+| 6.6.1 | Sign in as the **Guard** on the user site. | You land on the **Release desk**, not the student dashboard. | ☐ |
+| 6.6.2 | On the release desk press **Report or browse items**. | The normal user app opens, already signed in. There is no "Not verified yet" banner on the profile, and **Report an item** works without an ID check. | ☐ |
+| 6.6.3 | In the user app open the menu. | **Release desk** is listed (for administrators it says **Admin console**). It returns you to the desk without signing in again. | ☐ |
+| 6.6.4 | Submit a found report as the guard. | It is saved like anyone's. (Choose a guard to receive it, or "Another guard".) | ☐ |
+| 6.6.5 | Win an auction as Student A (or use an Awaiting pickup lot). Open the auction as Student A. | A navy **YOUR HANDOVER PIN** box with the PIN and a QR code. The winner email has the PIN too. | ☐ |
+| 6.6.6 | Admin app, **Auctions**, **Awaiting pickup**. | The row says the winner has a pickup PIN. | ☐ |
+| 6.6.7 | As the guard type the winner's PIN (or scan the QR). | The screen says **Auction winner**, with their name, campus ID, the item and **the amount to collect**. | ☐ |
+| 6.6.8 | Press **Payment received: complete the auction**. | "The auction is complete." The auction is Completed, the found report is Completed, the PIN no longer works, and the item's history shows "Sold and collected". | ☐ |
+| 6.6.9 | On another Awaiting pickup lot, as admin press **Mark as picked up** and type CONFIRM (no PIN). | The auction completes without a PIN. A guard who tries the same address is refused. | ☐ |
+| 6.6.10 | On a lot whose winner has no PIN, press **Send PIN**. | The winner is emailed a new PIN and sees it in the Auction Hall; the row now says the winner has a PIN and the button reads **New PIN**. The old PIN stops working. | ☐ |
+
 ---
 
 
@@ -248,6 +266,10 @@ Read `SMART_TAGS_GUIDE.md` first if `PUBLIC_SITE_URL` is not set. **Do not print
 | 7.11 | Mark the tag as **lost**. | Status becomes lost; the public page shows the lost state. | ☐ |
 | 7.12 | Super admin: deactivate a tag with a reason, then reactivate it. | While deactivated the public page shows nothing; the owner is told why. | ☐ |
 | 7.13 | Try to register more than 25 tags on one account. | The 26th is refused. | ☐ |
+| 7.14 | As the tag owner open **Profile**, scroll to **Smart Tags**. Save a Messenger username, an Instagram username and an alternate phone number. | Saved. A pasted link such as `m.me/your.name` is turned into the username; a value that is not a username or profile link is refused with a plain message. | ☐ |
+| 7.15 | In that section press **Edit** on one of your tags. | Under **What may a finder see?** there is **Other ways to reach me**: Messenger, Instagram and the alternate phone can be switched on; methods you have not saved are greyed out and say to add them in your Profile. | ☐ |
+| 7.16 | Switch Messenger on for that tag only, save, and open the tag address signed out. | The public page shows a **Messenger** button that opens `m.me/<username>`, and nothing about Instagram or the phone. Another tag of yours shows nothing extra. | ☐ |
+| 7.17 | In Profile clear your Messenger username and save. | The Messenger button disappears from the tag page and its switch is off in the editor. | ☐ |
 
 (Expiry and expiry reminders are tested in section 12.)
 
@@ -289,7 +311,8 @@ Read `SMART_TAGS_GUIDE.md` first if `PUBLIC_SITE_URL` is not set. **Do not print
 | 8.2.3 | While it is Awaiting pickup, press **Edit**. | Only the listing fields (title, description, photos) can change. | ☐ |
 | 8.2.4 | Press **Give the winner more time**. | The winner gets a notification and a fresh 72 hour window (the warning and forfeit start again). | ☐ |
 | 8.2.5 | Press **Winner flaked: re-auction** on another awaiting-pickup lot. | A new auction opens and the old sale is forfeited. | ☐ |
-| 8.2.6 | After the winner paid and collected, press **Complete auction** and confirm. | The status becomes **Completed**. The item's found report becomes Completed too, and the finder is told it was sold. | ☐ |
+| 8.2.5b | Look at the Awaiting pickup row in the Auctions list. | A green **Mark as picked up** button and a **New PIN** (or **Send PIN**) button are visible without opening the auction, with a line saying whether the winner has a pickup PIN. | ☐ |
+| 8.2.6 | After the winner paid and collected, press **Mark as picked up** and confirm. | The status becomes **Completed**. The item's found report becomes Completed too, and the finder is told it was sold. | ☐ |
 | 8.2.7 | Create a lot and let it close without bids. | **Ended, no bids**; you can re-auction it. | ☐ |
 | 8.2.8 | Delete a test auction (super admin). | The dialog says it moves to the **Recycle bin**. | ☐ |
 
@@ -333,9 +356,10 @@ Sign in to the admin app as **super admin** unless stated.
 | # | Tab | Do this | You should see | Pass |
 |---|---|---|---|---|
 | 9.13.1 | Controls and health | Run the health scan. | A list of checks with pass/warn results (variable names only, never values). | ☐ |
+| 9.13.11 | Controls and health | Suspend any account (Users page), then run the health scan again. | A **Suspended accounts** line appears with an information icon, and the page keeps working. (This used to turn the whole screen blank.) | ☐ |
 | 9.13.10 | Controls and health | Look at the **Migration log** check. | It says every migration file is recorded. If you skipped one, it names it as missing. | ☐ |
 | 9.13.2 | Controls and health | Turn **maintenance mode** on with a message. In another browser, sign in as Student A. | Student A sees the maintenance screen. Staff can still sign in. Turn it off after. | ☐ |
-| 9.13.3 | Controls and health | Use **force logout**. | Normal users are signed out; staff stay signed in. | ☐ |
+| 9.13.3 | Controls and health | Use **force logout** while a guard and a normal user are signed in. | The user **and the guard** are signed out on their next click and must sign in again. Administrators and super administrators stay signed in. | ☐ |
 | 9.13.4 | Announcement | Publish a banner (choose a tone). | The banner shows on user and admin pages; closing it hides it until you edit it. | ☐ |
 | 9.13.5 | Communications | Search a user and send a message by in-app and email. | The user gets the notification and email. | ☐ |
 | 9.13.6 | Admin access | Open the list of admins. | Admins, two-factor status and last sign-in are shown. You cannot revoke yourself or the last super admin. | ☐ |

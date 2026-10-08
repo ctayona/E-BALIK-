@@ -50,6 +50,8 @@ export interface AdminAuction {
   reauctioned_from?: string | null;
   /** The winner did not collect within 72 hours: forfeited by the scheduler and ready to be listed again. */
   reauction_ready?: boolean;
+  /** The winner has a pickup Handover PIN (shown in their Auction Hall and emailed). Without one, complete the auction by hand. */
+  handover_pin_issued?: boolean;
   /** An ownership claim on this item is waiting or approved. Confirming a winner would promise the item to two people. */
   pending_claim?: boolean;
   auto_forfeited_at?: string | null;
@@ -151,7 +153,9 @@ export const finalizeAdminAuction = (id: string) => mutate<{ success: boolean; o
 export const reauctionAdminAuction = (id: string, form: ReauctionForm) => mutate<{ success: boolean; auction_id?: string; message?: string; suspension?: { applied: boolean; days?: number; error?: string } | null }>(`auctions/${encodeURIComponent(id)}/reauction`, "POST", "Re-auction item", form);
 export const resendAdminWinnerEmail = (id: string) => mutate<{ success: boolean; message?: string; mode?: string }>(`auctions/${encodeURIComponent(id)}/resend-winner-email`, "POST", "Resend winner email");
 export const endAdminAuction = (id: string) => mutate(`auctions/${encodeURIComponent(id)}/end`, "POST", "End auction early");
-export const setAdminAuctionFulfillment = (id: string, action: "collected" | "forfeited") => mutate(`auctions/${encodeURIComponent(id)}/fulfillment`, "POST", action === "collected" ? "Complete auction" : "Forfeit auction sale", { action });
+export const setAdminAuctionFulfillment = (id: string, action: "collected" | "forfeited") => mutate(`auctions/${encodeURIComponent(id)}/fulfillment`, "POST", action === "collected" ? "Mark as picked up" : "Forfeit auction sale", { action });
+/** A new pickup PIN for the winner (the old one stops working), emailed to them. Also fixes a win that never got a PIN. */
+export const reissueAdminAuctionPin = (id: string) => mutate(`auctions/${encodeURIComponent(id)}/handover-pin`, "POST", "Send a new pickup PIN");
 export const extendAdminAuctionPickup = (id: string) => mutate(`auctions/${encodeURIComponent(id)}/extend-pickup`, "POST", "Give the winner more time");
 export const moderateAuctionComment = (id: string, commentId: string, hidden: boolean) => mutate(`auctions/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`, "PATCH", hidden ? "Hide comment" : "Restore comment", { hidden });
 export const deleteAdminAuction = (id: string) => mutate(`auctions/${encodeURIComponent(id)}`, "DELETE", "Delete auction");

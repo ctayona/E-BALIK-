@@ -112,7 +112,7 @@ export function startSessionGuard({ tokenKey, onEnd }: GuardOptions): () => void
   };
 }
 
-const EXPIRED_MESSAGE = /token has expired|invalid token|session was revoked/i;
+const EXPIRED_MESSAGE = /token has expired|invalid token|session was revoked|session was ended by an administrator/i;
 
 /**
  * When any request to the API answers 401 "Token has expired", the sign-in is over: end it at once instead of showing

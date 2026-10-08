@@ -24,7 +24,7 @@ import { useAuth } from "@/app/utils/useAuth";
 import { authUtils } from "@/app/utils/api";
 import MaintenanceScreen from "@/app/shared/system/MaintenanceScreen";
 import AnnouncementBanner from "@/app/shared/system/AnnouncementBanner";
-import { SYSTEM_EVENT, isStaff, useSystemStatus, type SystemEventDetail } from "@/app/utils/system";
+import { SYSTEM_EVENT, isDesk, useSystemStatus, type SystemEventDetail } from '@/app/utils/system';
 import { SESSION_MESSAGES, SESSION_NOTICE_KEY, startSessionGuard, watchForExpiredSessions, type SessionEndReason } from "@/app/utils/sessionGuard";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -105,7 +105,7 @@ function MainApp() {
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     // Check more often while a verification is waiting for an admin, so the approval shows up within seconds.
-    const refreshInterval = window.setInterval(refresh, verificationStatus === "verified" || isStaff(currentUser) ? 20000 : 8000);
+    const refreshInterval = window.setInterval(refresh, verificationStatus === "verified" || isDesk(currentUser) ? 20000 : 8000);
     return () => {
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
@@ -206,7 +206,7 @@ function MainApp() {
     showInfoModal({ variant: "info", title: "Signed out", message: "You have been signed out of E-Balik. Sign in again any time to continue." });
   }
 
-  if (system.maintenance && !isStaff(currentUser)) {
+  if (system.maintenance && !isDesk(currentUser)) {
     return (
       <>
         <MaintenanceScreen status={system} onRefresh={system.refresh} onStaffSignedIn={handleLoginSuccess} />

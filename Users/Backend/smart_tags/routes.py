@@ -69,6 +69,22 @@ def my_tags():
     return _private({'tags': _service().my_tags(_authenticated_account_id())})
 
 
+@smart_tags_bp.route('/contacts', methods=['GET'])
+@_handled('load your contact methods')
+def my_contacts():
+    """The signed-in owner's saved contact methods (Messenger, Facebook, ...). Never shown to anyone else except through a tag the owner chose."""
+    return _private({'contacts': _service().get_contacts(_authenticated_account_id())})
+
+
+@smart_tags_bp.route('/contacts', methods=['PUT'])
+@_handled('save your contact methods')
+def save_contacts():
+    account_id = _authenticated_account_id()
+    if not rate_limit.allow(f'tag-contacts:{account_id}', 30, 3600):
+        raise TagError('Too many changes. Try again in a while.', 429)
+    return _private({'success': True, 'contacts': _service().save_contacts(account_id, request.get_json(silent=True) or {})})
+
+
 @smart_tags_bp.route('/<tag_id>', methods=['GET'])
 @_handled('load the Smart Tag')
 def tag_page(tag_id):

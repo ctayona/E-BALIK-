@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import umakLogo from "../imports/UMak Logo.png";
+import umakLogo from "../imports/umak-logo.png";
 import { AdminUser } from "../utils/api";
 import { useT, tr } from "../utils/preferences";
 import type { StringKey } from "../i18n/strings";

@@ -1,7 +1,7 @@
 """Auction winner email. AUCTION_EMAIL_MODE: auto (default: send when SENDGRID_API_KEY is set, else log), sendgrid or mock."""
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,23 @@ def build_winner_email(recipient_name: str, item_title: str, reference: str, amo
     return {'subject': subject, 'body': body}
 
 
+def _deliver_notice(*, to_email: str, message: Dict[str, str], notice: Dict[str, Any]) -> Dict[str, Any]:
+    """Like `_deliver`, for the richer notice layout (a highlighted code). The code is never written to the log in mock mode."""
+    mode = (os.getenv('AUCTION_EMAIL_MODE') or 'auto').strip().lower()
+    if mode == 'auto':
+        mode = 'sendgrid' if os.getenv('SENDGRID_API_KEY') else 'mock'
+    if mode == 'sendgrid':
+        try:
+            from app.utils.email_service import send_notice_email_best_effort, site_url
+            sent = send_notice_email_best_effort(to_email, message['subject'], cta=('View Auction Details', site_url()), **notice)
+            return {'mode': 'sendgrid', 'sent': bool(sent), 'subject': message['subject']}
+        except Exception as error:  # pragma: no cover - depends on SendGrid configuration
+            logger.exception('Auction email failed: %s', error)
+            return {'mode': 'sendgrid', 'sent': False, 'subject': message['subject']}
+    logger.info('[MOCK EMAIL] to=%s subject="%s" (a Handover PIN is included and not logged)', _mask_email(to_email), message['subject'])
+    return {'mode': 'mock', 'sent': True, 'subject': message['subject']}
+
+
 def _deliver(*, to_email: str, recipient_name: str, message: Dict[str, str], email: Dict[str, Any]) -> Dict[str, Any]:
     """Send through SendGrid or only log, following AUCTION_EMAIL_MODE. Never raises: a failed notice must not undo saved data."""
     mode = (os.getenv('AUCTION_EMAIL_MODE') or 'auto').strip().lower()
@@ -55,9 +72,22 @@ def _deliver(*, to_email: str, recipient_name: str, message: Dict[str, str], ema
     return {'mode': 'mock', 'sent': True, 'subject': message['subject']}
 
 
-def send_auction_won_email(*, to_email: str, recipient_name: str, item_title: str, reference: str, amount: Any) -> Dict[str, Any]:
-    """Return {'mode', 'sent', 'subject'}."""
+def send_auction_won_email(*, to_email: str, recipient_name: str, item_title: str, reference: str, amount: Any, handover_pin: Optional[str] = None) -> Dict[str, Any]:
+    """Return {'mode', 'sent', 'subject'}. With a `handover_pin` the email shows it as the code to give the guard at the desk."""
     message = build_winner_email(recipient_name, item_title, reference, amount)
+    if handover_pin:
+        message['body'] += '\n\nA Handover PIN was created for this win. It is shown in your Auction Hall account and in this email.'
+        return _deliver_notice(to_email=to_email, message=message, notice={
+            'title': 'Congratulations, you won!',
+            'preheader': f"Handover PIN {handover_pin}. Bring your ID, pay and collect {item_title}.",
+            'greeting': f"Hello {recipient_name or 'there'},",
+            'paragraphs': [f"Your bid of {format_peso(amount)} won the auction for {item_title}. {PICKUP_NOTE} Please collect it within 72 hours of this notice.",
+                           'At the desk, pay the amount and show the PIN below to the guard together with your ID. Entering it completes the handover.'],
+            'highlight': ('YOUR HANDOVER PIN', handover_pin),
+            'highlight_note': 'Keep this PIN private. It works once, for this item only, and only together with your ID.',
+            'details': {'Item': item_title, 'Auction item': reference or item_title, 'Winning bid': format_peso(amount), 'Collect within': '72 hours'},
+            'tone': 'success',
+        })
     return _deliver(to_email=to_email, recipient_name=recipient_name, message=message, email={
         'title': 'Congratulations, you won!',
         'summary': f"Your bid of {format_peso(amount)} won the auction for {item_title}. {PICKUP_NOTE} Please collect it within 72 hours of this notice.",

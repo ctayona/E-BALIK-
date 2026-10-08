@@ -52,7 +52,7 @@ export interface AuctionDetail {
   log?: AuctionLogEvent[];
   bids: AuctionBid[];
   comments: AuctionComment[];
-  viewer: { signed_in: boolean; reacted?: boolean; is_leading: boolean; is_winner: boolean; my_best_bid: number | null };
+  viewer: { signed_in: boolean; reacted?: boolean; is_leading: boolean; is_winner: boolean; /** The winner's own pickup PIN while the sale waits for collection. */ handover_pin?: string | null; my_best_bid: number | null };
   server_time: string;
 }
 export interface AuctionFeed { live: Auction[]; past: Auction[]; server_time: string }

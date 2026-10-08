@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bell, ChevronDown, ChevronRight, LockKeyhole, Moon, Sun } from "lucide-react";
-import umakLogo from "../imports/UMak Logo.png";
+import umakLogo from "../imports/umak-logo.png";
 import { AdminUser } from "../utils/api";
 import { fetchPublicSystemStatus } from "../utils/systemApi";
 import { useLanguage, useT, useTheme, tr } from "../utils/preferences";

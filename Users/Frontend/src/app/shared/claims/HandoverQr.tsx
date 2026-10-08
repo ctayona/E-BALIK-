@@ -8,7 +8,7 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
  * signed-in owner only (never cached), is shown white-on-navy for contrast, and disappears quietly if it cannot be loaded:
  * the typed PIN above it always works.
  */
-export default function HandoverQr({ claimId }: { claimId: string }) {
+export default function HandoverQr({ claimId, path }: { claimId?: string; path?: string }) {
   const [src, setSrc] = useState("");
 
   useEffect(() => {
@@ -16,12 +16,14 @@ export default function HandoverQr({ claimId }: { claimId: string }) {
     let url = "";
     const token = authUtils.getToken();
     if (!token) return undefined;
-    fetch(`${API_URL}/api/claims/${encodeURIComponent(claimId)}/handover-qr`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" })
+    const route = path ?? (claimId ? `/api/claims/${encodeURIComponent(claimId)}/handover-qr` : "");
+    if (!route) return undefined;
+    fetch(`${API_URL}${route}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" })
       .then((response) => (response.ok ? response.blob() : Promise.reject(new Error("no qr"))))
       .then((blob) => { if (active) { url = URL.createObjectURL(blob); setSrc(url); } })
       .catch(() => { if (active) setSrc(""); });
     return () => { active = false; if (url) URL.revokeObjectURL(url); };
-  }, [claimId]);
+  }, [claimId, path]);
 
   if (!src) return null;
   return (

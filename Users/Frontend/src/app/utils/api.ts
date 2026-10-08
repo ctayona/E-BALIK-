@@ -481,6 +481,8 @@ export const authUtils = {
   clearAuthData(): void {
     this.clearToken();
     localStorage.removeItem('ebalik_user');
+    localStorage.removeItem('ebalik_admin_token');
+    localStorage.removeItem('ebalik_admin_user');
   },
 };
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Archive, ArchiveRestore, Ban, CheckCheck, EyeOff, Eye, Gavel, Heart, Hourglass, Mail, PackageCheck, Pencil, Repeat2, Timer, Trash2, Trophy, Undo2, UserX } from "lucide-react";
+import { Archive, ArchiveRestore, Ban, CheckCheck, EyeOff, Eye, Gavel, Heart, Hourglass, Mail, PackageCheck, Pencil, Repeat2, Timer, Trash2, Trophy, Undo2, UserX, KeyRound } from "lucide-react";
 import AdminModal from "../../components/ui/AdminModal";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import SuspendUserModal from "../../components/SuspendUserModal";
@@ -7,7 +7,7 @@ import ReauctionModal from "./ReauctionModal";
 import { BTN, INPUT } from "../../components/ui/primitives";
 import { DetailGrid, SegmentedFilter, StatusPill, type Tone } from "../../components/ui/management";
 import {
-  cancelAdminAuction, deleteAdminAuction, endAdminAuction, extendAdminAuctionPickup, fetchAdminAuctionDetail, finalizeAdminAuction, moderateAuctionComment, peso, resendAdminWinnerEmail, setAdminAuctionFulfillment,
+  cancelAdminAuction, deleteAdminAuction, endAdminAuction, extendAdminAuctionPickup, reissueAdminAuctionPin, fetchAdminAuctionDetail, finalizeAdminAuction, moderateAuctionComment, peso, resendAdminWinnerEmail, setAdminAuctionFulfillment,
   type AdminAuction, type AuctionDetail, type AuctionStage,
 } from "../../utils/auctionApi";
 import { setArchived } from "../../utils/archive";
@@ -272,7 +272,8 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
                 )}
                 {auction.fulfillment_status === "awaiting_pickup" && (
                   <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={() => setPending("collected")} className={BTN.success}><PackageCheck size={16} aria-hidden="true" />{tr("Complete auction")}</button>
+                    <button type="button" onClick={() => setPending("collected")} className={BTN.success}><PackageCheck size={16} aria-hidden="true" />{tr("Mark as picked up")}</button>
+                    <button type="button" disabled={busy} onClick={() => void run(() => reissueAdminAuctionPin(auction.id))} className={BTN.ghost}><KeyRound size={16} aria-hidden="true" />{auction.handover_pin_issued ? tr("Send a new pickup PIN") : tr("Create and send pickup PIN")}</button>
                     <button type="button" onClick={() => setPending("extend")} className={BTN.ghost}><Hourglass size={16} aria-hidden="true" />{tr("Give the winner more time")}</button>
                     <button type="button" onClick={() => setReauctionOpen(true)} className={BTN.ghost}><Repeat2 size={16} aria-hidden="true" />{tr("Winner flaked: re-auction")}</button>
                     {auction.winner_detail && <button type="button" onClick={() => setSuspendOpen(true)} className={BTN.ghost}><UserX size={16} aria-hidden="true" />{tr("Suspend winner")}</button>}
@@ -343,17 +344,17 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
 
       {pending && pending !== "finalize" && (
         <ConfirmActionDialog
-          title={{ end: "end this auction now?", delete: "delete this auction and its bids?", collected: "complete this auction?", forfeited: "forfeit this sale?", archive: "archive this auction?", unarchive: "restore this auction from the archive?", extend: "give the winner more time?" }[pending]}
+          title={{ end: "end this auction now?", delete: "delete this auction and its bids?", collected: "mark this auction as picked up?", forfeited: "forfeit this sale?", archive: "archive this auction?", unarchive: "restore this auction from the archive?", extend: "give the winner more time?" }[pending]}
           description={{
             end: "The highest bid wins immediately and the winner is notified.",
             delete: "This moves the auction, its bids and its comments to the Recycle bin. A super admin can restore them.",
-            collected: "Confirm the winner paid and took the item from the Lost and Found Office. This completes the auction and closes the found report.",
+            collected: "Confirm the winner paid and took the item from the Lost and Found Office. This completes the auction and closes the found report. The guard normally does this with the winner's PIN; this button works without one.",
             forfeited: "The winner did not collect. The item returns to unclaimed custody so it can be claimed or auctioned again.",
             archive: "It moves out of the working list into the Archived tab. Nothing is deleted and you can restore it any time.",
             unarchive: "It goes back to the working list.",
             extend: "The winner gets a fresh pickup window (the 48 hour warning and 72 hour forfeit start again) and is told.",
           }[pending]}
-          confirmLabel={{ end: "End auction", delete: "Delete auction", collected: "Complete auction", forfeited: "Forfeit sale", archive: "Archive", unarchive: "Restore", extend: "Give more time" }[pending]}
+          confirmLabel={{ end: "End auction", delete: "Delete auction", collected: "Mark as picked up", forfeited: "Forfeit sale", archive: "Archive", unarchive: "Restore", extend: "Give more time" }[pending]}
           danger={pending === "delete" || pending === "forfeited"}
           busy={busy}
           onCancel={() => { if (!busy) setPending(null); }}

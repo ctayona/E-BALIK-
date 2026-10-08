@@ -142,13 +142,31 @@ Run `manual_migrations/20261017_custody_log_receipts_and_migration_log.sql` afte
 but not stored, and the health check on System control says the migration log does not exist yet. Verify with:
 
 ```sql
-SELECT count(*) FROM public.migration_log;                                                                  -- 21 on a fully migrated database
+SELECT count(*) FROM public.migration_log;                                                                  -- 23 on a fully migrated database (21 plus 20261018 and 20261019)
 SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'found_items'
   AND column_name IN ('received_at', 'received_by', 'smart_tag_id');                                         -- 3 rows
 SELECT to_regclass('public.custody_log');                                                                   -- custody_log
 ```
 
 **Every new migration file must end with** `INSERT INTO public.migration_log (name, note) VALUES ('<file name without .sql>', 'applied') ON CONFLICT (name) DO NOTHING;`
+
+### Auction pickup PIN
+
+Run `manual_migrations/20261018_auction_handover_pin.sql` after `20261017`. It adds `handover_pin_hash` (unique), `handover_pin_encrypted` and `handover_pin_issued_at` to `auctions`. **The app works without it**: a confirmed winner simply has no PIN, the winner email has none, and an administrator completes the sale with **Mark as picked up**. Verify with:
+
+```sql
+SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'auctions'
+  AND column_name IN ('handover_pin_hash', 'handover_pin_encrypted', 'handover_pin_issued_at');                 -- 3 rows
+```
+
+### Smart Tag contact methods
+
+Run `manual_migrations/20261019_tag_contact_links.sql` after `20261018`. It adds `user_profiles.tag_contacts` (the owner's saved Messenger, Facebook, Instagram, Telegram, WhatsApp and alternate phone, as JSON) and `smart_tags.shown_contacts` (which of them a tag shows). **The app works without it**: the Profile section says contact methods switch on after the next database update and tags behave as before. Verify with:
+
+```sql
+SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'
+  AND ((table_name = 'user_profiles' AND column_name = 'tag_contacts') OR (table_name = 'smart_tags' AND column_name = 'shown_contacts'));   -- 2 rows
+```
 
 ### Report lifecycle and guard handover
 

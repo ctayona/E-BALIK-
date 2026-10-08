@@ -115,6 +115,92 @@ def clean_phone(value: Any) -> str:
     return text
 
 
+# --------------------------------------------------------------------------------------------- contact methods
+# Other ways a finder may be offered to reach the owner. The owner types a username (or pastes a profile link) once in their profile and
+# picks, tag by tag, which ones a finder sees. Only these kinds exist and every link is BUILT here from a validated username, so a finder is
+# never sent to an address the owner typed freely (no phishing or script links).
+CONTACT_LABELS = {
+    'phone2': 'Alternate phone number',
+    'messenger': 'Messenger',
+    'facebook': 'Facebook',
+    'instagram': 'Instagram',
+    'telegram': 'Telegram',
+    'whatsapp': 'WhatsApp',
+}
+_HANDLE_RE = {
+    'messenger': re.compile(r'^[A-Za-z0-9.]{5,50}$'),
+    'facebook': re.compile(r'^[A-Za-z0-9.]{5,50}$'),
+    'instagram': re.compile(r'^[A-Za-z0-9._]{1,30}$'),
+    'telegram': re.compile(r'^[A-Za-z0-9_]{5,32}$'),
+}
+_PROFILE_HOSTS = {
+    'messenger': ('m.me', 'messenger.com', 'www.messenger.com', 'facebook.com', 'www.facebook.com', 'm.facebook.com', 'fb.com'),
+    'facebook': ('facebook.com', 'www.facebook.com', 'm.facebook.com', 'fb.com', 'www.fb.com'),
+    'instagram': ('instagram.com', 'www.instagram.com'),
+    'telegram': ('t.me', 'telegram.me'),
+}
+
+
+def _handle_from_link(kind: str, text: str) -> str:
+    """The username inside a pasted profile link, or the text itself when it is already a username."""
+    text = text.strip()
+    if '/' not in text and '.' not in text.split('?')[0] or text.startswith('@'):
+        return text.lstrip('@')
+    from urllib.parse import parse_qs, urlparse
+    parsed = urlparse(text if '://' in text else f'https://{text}')
+    host = (parsed.hostname or '').lower()
+    if host not in _PROFILE_HOSTS.get(kind, ()):
+        return text  # not a link to that service: let the username check reject it
+    segments = [part for part in parsed.path.split('/') if part]
+    if segments and segments[0].lower() == 'profile.php':
+        return (parse_qs(parsed.query).get('id') or [''])[0]
+    if segments and segments[0].lower() == 't' and kind == 'messenger' and len(segments) > 1:
+        return segments[1]
+    return segments[0] if segments else ''
+
+
+def clean_contact(kind: str, value: Any) -> str:
+    """A validated contact value, or '' to clear it. Raises TagError with a plain message when it is not valid."""
+    label = CONTACT_LABELS[kind]
+    text = re.sub(r'\s+', ' ', str(value or '')).strip()
+    if not text:
+        return ''
+    if kind == 'phone2':
+        return clean_phone(text)
+    if kind == 'whatsapp':
+        digits = re.sub(r'\D', '', text)
+        if digits.startswith('0') and len(digits) == 11:
+            digits = '63' + digits[1:]   # 0917 123 4567 -> 63917...
+        if not 8 <= len(digits) <= 15:
+            raise TagError('Enter your WhatsApp number with the country code, for example +63 917 123 4567.')
+        return digits
+    handle = _handle_from_link(kind, text)
+    if not _HANDLE_RE[kind].match(handle or ''):
+        raise TagError(f'That does not look like a valid {label} username or profile link. Paste your link or type the username only.')
+    return handle
+
+
+def contact_url(kind: str, value: str) -> str:
+    """The https (or tel:) address for a stored contact value. Built here, never taken from the user."""
+    if kind == 'messenger':
+        return f'https://m.me/{value}'
+    if kind == 'facebook':
+        return f'https://www.facebook.com/profile.php?id={value}' if value.isdigit() else f'https://www.facebook.com/{value}'
+    if kind == 'instagram':
+        return f'https://www.instagram.com/{value}'
+    if kind == 'telegram':
+        return f'https://t.me/{value}'
+    if kind == 'whatsapp':
+        return f'https://wa.me/{value}'
+    return 'tel:' + re.sub(r'[^0-9+]', '', value)
+
+
+def stored_contacts(profile: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    raw = (profile or {}).get('tag_contacts')
+    raw = raw if isinstance(raw, dict) else {}
+    return {kind: str(raw[kind]) for kind in CONTACT_LABELS if raw.get(kind)}
+
+
 def sniff_image(data: bytes) -> Optional[tuple]:
     """(extension, mimetype) from the file's own bytes. The uploaded filename and content type are never trusted."""
     if data[:3] == b'\xff\xd8\xff':
@@ -226,6 +312,8 @@ class SmartTagService:
         return self.client.table('smart_tags')
 
     def _guard(self, error: Exception):
+        if 'shown_contacts' in str(error) or 'tag_contacts' in str(error):
+            raise TagsUnavailable('Contact links need the latest database update. Run 20261019_tag_contact_links.sql in Supabase.') from error
         if _is_missing_schema(error):
             raise TagsUnavailable('Smart Tags are not set up yet. Run the 20261008_smart_tags.sql, 20261009_tag_expiry_and_auction_buyout.sql and 20261010_tag_photo_and_mission_control.sql migrations in Supabase.') from error
         raise error
@@ -398,13 +486,16 @@ class SmartTagService:
             contact['email'] = str(owner['email'])
         if tag.get('show_phone') and tag.get('contact_phone'):
             contact['phone'] = str(tag['contact_phone'])
+        saved = stored_contacts(owner)
+        links = [{'kind': kind, 'label': CONTACT_LABELS[kind], 'url': contact_url(kind, saved[kind])}
+                 for kind in (tag.get('shown_contacts') if isinstance(tag.get('shown_contacts'), list) else []) if kind in saved and kind in CONTACT_LABELS]
         return {
             'tag_id': tag_id,
             'status': 'lost' if tag.get('status') == 'lost' else 'active',
             'item_name': tag.get('item_name') or 'Registered item',
             'item_description': tag.get('item_description') or '',
             'photo_url': self._photo_url(tag.get('item_image_url')),
-            'contact': contact,
+            'contact': {**contact, **({'links': links} if links else {})},
             'is_owner': bool(viewer_id) and str(tag.get('owner_account_id')) == str(viewer_id),
         }
 
@@ -415,7 +506,8 @@ class SmartTagService:
             'tag_id': row['tag_id'], 'status': row.get('status'), 'item_name': row.get('item_name') or '',
             'item_description': row.get('item_description') or '', 'show_name': bool(row.get('show_name')),
             'show_email': bool(row.get('show_email')), 'show_phone': bool(row.get('show_phone')),
-            'contact_phone': row.get('contact_phone') or '', 'is_disabled': bool(row.get('is_disabled')),
+            'contact_phone': row.get('contact_phone') or '', 'shown_contacts': [k for k in (row.get('shown_contacts') or []) if k in CONTACT_LABELS] if isinstance(row.get('shown_contacts'), list) else [],
+            'is_disabled': bool(row.get('is_disabled')),
             'disabled_reason': row.get('disabled_reason') if row.get('is_disabled') else None,
             'claimed_at': row.get('claimed_at'), 'found_notice_count': int(row.get('found_notice_count') or 0),
             'last_found_notice_at': row.get('last_found_notice_at'), 'url': tag_url(row['tag_id']),
@@ -457,6 +549,56 @@ class SmartTagService:
             raise TagError('Add a phone number first, or switch "Show my phone number" off.')
         return changes
 
+    # ------------------------------------------------------------------ contact methods (profile level)
+    def get_contacts(self, account_id: str) -> Dict[str, str]:
+        """The owner's saved contact methods (every kind present, empty when not set)."""
+        saved = stored_contacts(self._profile(account_id))
+        return {kind: saved.get(kind, '') for kind in CONTACT_LABELS}
+
+    def save_contacts(self, account_id: str, payload: Dict[str, Any]) -> Dict[str, str]:
+        """Validate and save the contact methods named in `payload` (an empty value clears one). Tags that showed a method that is now gone stop showing it."""
+        existing = stored_contacts(self._profile(account_id))
+        merged = dict(existing)
+        for kind in CONTACT_LABELS:
+            if kind in payload:
+                value = clean_contact(kind, payload.get(kind))
+                if value:
+                    merged[kind] = value
+                else:
+                    merged.pop(kind, None)
+        try:
+            self.client.table('user_profiles').update({'tag_contacts': merged}).eq('account_id', account_id).execute()
+        except Exception as error:
+            self._guard(error)
+        removed = [kind for kind in existing if kind not in merged]
+        if removed:
+            try:
+                for row in self._table().select('tag_id,shown_contacts').eq('owner_account_id', account_id).limit(100).execute().data or []:
+                    shown = row.get('shown_contacts') if isinstance(row.get('shown_contacts'), list) else []
+                    kept = [kind for kind in shown if kind not in removed]
+                    if kept != shown:
+                        self._table().update({'shown_contacts': kept}).eq('tag_id', row['tag_id']).execute()
+            except Exception as error:
+                logger.info('Tag contact clean-up skipped: %s', str(error)[:120])
+        return {kind: merged.get(kind, '') for kind in CONTACT_LABELS}
+
+    def _shown_contacts(self, raw: Any, account_id: str) -> List[str]:
+        """The contact methods a tag may show: known kinds, no repeats, each one saved in the owner's profile."""
+        items = raw if isinstance(raw, list) else [part for part in str(raw or '').split(',')]
+        wanted: List[str] = []
+        for item in items:
+            kind = str(item).strip().lower()
+            if kind and kind not in wanted:
+                if kind not in CONTACT_LABELS:
+                    raise TagError('Choose contact methods from the list.')
+                wanted.append(kind)
+        if wanted:
+            saved = stored_contacts(self._profile(account_id))
+            for kind in wanted:
+                if kind not in saved:
+                    raise TagError(f'Add your {CONTACT_LABELS[kind]} in your profile first, or switch it off.')
+        return wanted
+
     def claim(self, raw_tag_id: Any, account_id: str, payload: Dict[str, Any], photo: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         tag_id = normalize_tag_id(raw_tag_id)
         if not tag_id:
@@ -464,6 +606,8 @@ class SmartTagService:
         if not as_bool(payload.get('dpa_consent')):
             raise TagError('You must agree to the Data Privacy Notice (Data Privacy Act of 2012) before registering a tag.', 400, code='dpa_required')
         fields = self._details(payload)
+        if payload.get('shown_contacts'):
+            fields['shown_contacts'] = self._shown_contacts(payload.get('shown_contacts'), account_id)
         try:
             owned = self._table().select('tag_id', count='exact').eq('owner_account_id', account_id).limit(1).execute()
         except Exception as error:
@@ -511,6 +655,8 @@ class SmartTagService:
         if 'item_name' in payload and clean_text(payload.get('item_name'), MAX_ITEM_NAME) != (tag.get('item_name') or ''):
             raise TagError('The item name cannot be changed after a tag is registered. This stops a sticker from being moved to a different item. If the name is wrong, ask the Lost and Found Office.', 403, code='item_locked')
         changes = self._details({key: value for key, value in payload.items() if key != 'item_name'}, current=tag)
+        if 'shown_contacts' in payload:
+            changes['shown_contacts'] = self._shown_contacts(payload.get('shown_contacts'), account_id)
         if 'status' in payload:
             if tag.get('status') == PENDING:
                 raise TagError('This tag is waiting for staff approval. You can mark it lost or found once it is approved.', 409, code='pending')

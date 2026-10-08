@@ -230,6 +230,20 @@ def resend_winner_email(auction_id):
     return jsonify({'success': bool(sent), 'message': message, 'mode': result.get('mode')}), 200 if sent else 502
 
 
+@auctions_bp.route('/auctions/<auction_id>/handover-pin', methods=['POST'])
+@_handled('create the pickup PIN')
+def reissue_handover_pin(auction_id):
+    """A new Handover PIN for the winner (the old one stops working), emailed to them. Also the fix for a win that never got one."""
+    admin = _require_admin()
+    db, service = _service()
+    result = service.reissue_pickup_pin(auction_id, admin['account_id'])
+    row = result['auction']
+    _log_admin_action(db, admin, 'Reissue Auction Pickup PIN', 'Auctions', row.get('title'), row.get('item_reference') or auction_id)
+    message = 'A new Handover PIN was created and emailed to the winner. They can also see it in the Auction Hall.' if result['emailed'] else \
+        'A new Handover PIN was created. The email could not be sent, but the winner can see the PIN in the Auction Hall. You can also complete the auction by hand.'
+    return jsonify({'success': True, 'message': message, 'emailed': result['emailed']}), 200
+
+
 @auctions_bp.route('/auctions/<auction_id>/fulfillment', methods=['POST'])
 @_handled('update pickup status')
 def update_fulfillment(auction_id):
@@ -239,7 +253,7 @@ def update_fulfillment(auction_id):
     action = 'collected' if action == 'completed' else action   # the button is "Complete auction"; the stored value stays `collected`
     updated = service.set_fulfillment(auction_id, action, admin['account_id'])
     _log_admin_action(db, admin, 'Auction Completed' if action == 'collected' else 'Auction Forfeited', 'Auctions', updated.get('title'), updated.get('item_reference') or auction_id)
-    message = 'The auction is complete. The winner paid and collected the item.' if action == 'collected' else 'Marked as forfeited. The item is back in custody.'
+    message = 'The auction is complete. The winner paid and collected the item (completed by hand, without a PIN).' if action == 'collected' else 'Marked as forfeited. The item is back in custody.'
     return jsonify({'success': True, 'message': message}), 200
 
 

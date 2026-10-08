@@ -15,7 +15,8 @@ export interface SystemOverview {
   announcement: Announcement;
 }
 
-export type HealthStatus = "ok" | "warn" | "fail";
+/** `info` is a check that found something worth knowing but nothing to fix (for example, suspended accounts exist). */
+export type HealthStatus = "ok" | "info" | "warn" | "fail";
 export interface HealthCheck { id: string; title: string; status: HealthStatus; detail: string; items?: string[] }
 export interface HealthReport { status: HealthStatus; checked_at: string; duration_ms: number; checks: HealthCheck[] }
 

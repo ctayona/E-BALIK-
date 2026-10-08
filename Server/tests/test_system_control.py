@@ -135,6 +135,27 @@ class EnforcementTests(unittest.TestCase):
         staff_db = fake_db(user=profile(access_level='super_admin'), settings=settings_rows(valid_after=cutoff))
         self.assertEqual(call(staff_db, 'get', '/api/profile', token(issued_ago=3600)).status_code, 200)
 
+    def test_force_logout_also_signs_out_guards_but_not_administrators(self):
+        cutoff = (NOW - timedelta(seconds=60)).isoformat()
+        guard_db = fake_db(user=profile(access_level='guard'), settings=settings_rows(valid_after=cutoff))
+        revoked = call(guard_db, 'get', '/api/profile', token(issued_ago=3600))
+        self.assertEqual(revoked.status_code, 401)
+        self.assertTrue(revoked.get_json()['session_revoked'])
+        self.assertEqual(call(guard_db, 'get', '/api/profile', token()).status_code, 200)    # signing in again works at once
+        admin_db = fake_db(user=profile(access_level='admin'), settings=settings_rows(valid_after=cutoff))
+        self.assertEqual(call(admin_db, 'get', '/api/profile', token(issued_ago=3600)).status_code, 200)
+
+    def test_a_guard_keeps_working_in_maintenance_but_is_blocked_when_suspended(self):
+        guard_db = fake_db(user=profile(access_level='guard'), settings=settings_rows(maintenance=True))
+        self.assertEqual(call(guard_db, 'get', '/api/profile', token()).status_code, 200)
+        suspended = fake_db(user=profile(access_level='guard', is_active=False, suspended_until=None, suspension_reason='Left the desk'))
+        self.assertEqual(call(suspended, 'get', '/api/profile', token()).status_code, 403)
+
+    def test_a_guard_needs_no_id_verification_to_file_a_found_report(self):
+        guard_db = fake_db(user=profile(access_level='guard', verification_status='pending'))
+        for path in ('/api/found-items', '/api/missing-items', '/api/claims'):
+            self.assertEqual(call(guard_db, 'post', path, token()).status_code, 200, path)
+
     def test_suspended_account_is_blocked_with_the_reason_and_date(self):
         until = (NOW + timedelta(days=7)).isoformat()
         db = fake_db(user=profile(is_active=False, suspended_until=until, suspension_reason='Did not collect an auction item'))

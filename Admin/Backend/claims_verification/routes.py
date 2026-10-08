@@ -206,6 +206,9 @@ def handover_release():
             return jsonify({'error': 'Too many PIN attempts. Wait a minute and try again.', 'code': 'rate_limited'}), 429
         db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
         released = HandoverService(db).release((request.get_json(silent=True) or {}).get('pin'), admin['account_id'])
+        if released.get('kind') == 'auction':
+            _log_admin_action(db, admin, 'Complete Auction By Handover PIN', 'Auctions', released.get('claim_reference') or released['claim_id'], released['claim_id'])
+            return jsonify({'success': True, 'claim': released, 'message': f"The auction is complete. {released['item_name']} was handed to {released['claimant_name']}."}), 200
         _send_receipt(db, released['claim_id'])
         _log_admin_action(db, admin, 'Release Item By Handover PIN', 'Claims & Verification', released.get('claim_reference') or released['claim_id'], released['claim_id'])
         return jsonify({'success': True, 'claim': released, 'message': f"{released['item_name']} was released to {released['claimant_name']}."}), 200

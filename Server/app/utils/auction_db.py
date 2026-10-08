@@ -341,18 +341,36 @@ class AuctionService:
         if not winner:
             return
         title, amount = auction.get('title') or 'the item', auction.get('winning_amount')
+        pin = self._pickup_pin(auction)
         try:
             self.db.create_user_notification(
                 str(winner['account_id']),
                 'You won the auction',
-                f"Your bid of {format_peso(amount)} won {title}. Bring your ID to the Lost and Found Office to pay and collect it within {PICKUP_FORFEIT_HOURS} hours, or the win is forfeited.",
+                f"Your bid of {format_peso(amount)} won {title}. Bring your ID to the Lost and Found Office to pay and collect it within {PICKUP_FORFEIT_HOURS} hours, or the win is forfeited."
+                + (' Open the auction to see your Handover PIN for the guard.' if pin else ''),
                 notification_type='auction_won', link_label='View auction', link_page='auction-hall',
             )
         except Exception as error:
             logger.exception('Winner in-app notification failed: %s', error)
-        self._email_winner(auction, winner)
+        self._email_winner(auction, winner, pin)
 
-    def _email_winner(self, auction: Dict[str, Any], winner: Dict[str, Any]) -> Dict[str, Any]:
+    def _pickup_pin(self, auction: Dict[str, Any], create: bool = True) -> Optional[str]:
+        """The winner's Handover PIN: the one already issued, or a new one. None when pickup PINs are not set up (migration 20261018) so the
+        sale still works and an administrator completes it by hand. Never raises."""
+        from app.utils.handover import HandoverError, HandoverService
+        service = HandoverService(self.db)
+        try:
+            existing = service.reveal_for_auction(auction)
+            if existing or not create:
+                return existing
+            return service.issue_for_auction(str(auction['auction_id']))
+        except HandoverError as error:
+            logger.info('No pickup PIN for auction %s: %s', auction.get('auction_id'), error.message)
+        except Exception as error:
+            logger.warning('Pickup PIN for auction %s failed: %s', auction.get('auction_id'), error)
+        return None
+
+    def _email_winner(self, auction: Dict[str, Any], winner: Dict[str, Any], pin: Optional[str] = None) -> Dict[str, Any]:
         """Send the winner email and record how it went (`mode`, or `mode_failed`) so an admin can see and resend it."""
         result = send_auction_won_email(
             to_email=winner.get('email') or '',
@@ -360,6 +378,7 @@ class AuctionService:
             item_title=auction.get('title') or 'the item',
             reference=auction.get('item_reference') or '',
             amount=auction.get('winning_amount'),
+            **({'handover_pin': pin} if pin else {}),
         )
         recorded = result.get('mode') if result.get('sent') else f"{result.get('mode')}_failed"
         self.client.table('auctions').update({'winner_email_mode': recorded}).eq('auction_id', auction['auction_id']).execute()
@@ -385,10 +404,41 @@ class AuctionService:
         winner = (self._profiles([row.get('winner_account_id')]) or {}).get(str(row['winner_account_id']))
         if not winner or not winner.get('email'):
             raise AuctionError('The winner has no email address on file.', 409)
-        result = self._email_winner(row, winner)
+        result = self._email_winner(row, winner, self._pickup_pin(row) if row.get('fulfillment_status') == 'awaiting_pickup' else None)
         # The pickup clock runs from the first notice, so a resend only fills the time in when it was never set.
         self.client.table('auctions').update({'winner_notified_at': _iso(_now())}).eq('auction_id', auction_id).is_('winner_notified_at', 'null').execute()
         return {'auction': row, **result}
+
+    def reissue_pickup_pin(self, auction_id: str, admin_id: Any = None) -> Dict[str, Any]:
+        """Admin action: create a new Handover PIN for a winner who is waiting to collect (the old one stops working) and email it.
+        This is the fix for a win that has no PIN, for example one confirmed before pickup PINs existed."""
+        from app.utils.handover import HandoverError, HandoverService
+        try:
+            row = self._live_row(auction_id)
+        except AuctionError:
+            raise
+        except Exception as error:
+            self._guard(error)
+        if not (row.get('status') == 'ended' and row.get('winner_account_id') and row.get('fulfillment_status') == 'awaiting_pickup'):
+            raise AuctionError('Only a confirmed winner who has not collected yet can get a Handover PIN.', 409)
+        try:
+            pin = HandoverService(self.db).issue_for_auction(auction_id)
+        except HandoverError as error:
+            raise AuctionError(error.message, error.status)
+        winner = (self._profiles([row.get('winner_account_id')]) or {}).get(str(row['winner_account_id'])) or {}
+        emailed: Dict[str, Any] = {'sent': False}
+        if winner.get('email'):
+            emailed = self._email_winner(row, winner, pin)
+        try:
+            self.db.create_user_notification(
+                str(row['winner_account_id']), 'Your pickup PIN',
+                f"A new Handover PIN was created for {row.get('title')}. Open the auction to see it and show it to the guard when you collect.",
+                notification_type='auction_pin', link_label='View auction', link_page='auction-hall',
+            )
+        except Exception as error:
+            logger.warning('Pickup PIN notice failed: %s', error)
+        self._log_item(row.get('found_item_id'), 'auction_confirmed', admin_id, 'A new pickup Handover PIN was issued to the winner.')
+        return {'auction': row, 'emailed': bool(emailed.get('sent'))}
 
     # ------------------------------------------------------------------ pickup deadlines (run by the scheduler)
     def process_overdue_pickups(self, now: Optional[datetime] = None, warning_hours: int = PICKUP_WARNING_HOURS,
@@ -587,6 +637,8 @@ class AuctionService:
                 'reacted': bool(viewer) and str(auction_id) in self.my_reaction_ids(viewer),
                 'is_leading': bool(viewer) and str(row.get('highest_bidder_id')) == viewer,
                 'is_winner': bool(viewer) and str(row.get('winner_account_id')) == viewer and card['status'] == 'ended',
+                # Only the winner ever receives it, and only while the sale waits for pickup.
+                'handover_pin': self._pickup_pin(row, create=False) if bool(viewer) and str(row.get('winner_account_id')) == viewer else None,
                 'my_best_bid': max(my_bids) if my_bids else None,
             },
             'server_time': _iso(now),
@@ -940,7 +992,7 @@ class AuctionService:
         stage = self.stage_of(card, row)
         return {**card, 'stage': stage, 'archived': bool(row.get('archived_at')), 'archived_at': row.get('archived_at'),
                 'found_item_id': str(row['found_item_id']) if row.get('found_item_id') else None,
-                'db_status': row.get('status'), 'fulfillment_status': row.get('fulfillment_status'),
+                'db_status': row.get('status'), 'fulfillment_status': row.get('fulfillment_status'), 'handover_pin_issued': bool(row.get('handover_pin_hash')),
                 'winner_notified_at': row.get('winner_notified_at'), 'winner_email_mode': row.get('winner_email_mode'),
                 'pickup_warning_sent_at': row.get('pickup_warning_sent_at'), 'auto_forfeited_at': row.get('auto_forfeited_at'),
                 'cancelled_at': row.get('cancelled_at'), 'ended_at': row.get('ended_at'), 'created_at': row.get('created_at'),
@@ -1220,6 +1272,8 @@ class AuctionService:
                 # The winner never collected: put the item back in custody so it can be claimed or auctioned again.
                 self.client.table('found_items').update({'status': 'unclaimed', 'custody_status': 'turned_over', 'updated_at': _iso(now)}) \
                     .eq('item_id', row['found_item_id']).eq('status', 'auctioned').execute()
+            from app.utils.handover import HandoverService
+            HandoverService(self.db).clear_auction_pin(auction_id)
             if action == 'collected' and row.get('found_item_id'):
                 # Sold and handed over: the found report is finished too (it moves to Completed for the person who turned it in).
                 ReportLifecycle(self.db).complete_for_auction(row['found_item_id'])

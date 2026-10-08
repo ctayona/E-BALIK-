@@ -83,9 +83,11 @@ Server/manual_migrations/20261014_recycle_bin.sql
 Server/manual_migrations/20261015_report_lifecycle_and_guard_handover.sql
 Server/manual_migrations/20261016_archive_and_bid_steps.sql
 Server/manual_migrations/20261017_custody_log_receipts_and_migration_log.sql
+Server/manual_migrations/20261018_auction_handover_pin.sql
+Server/manual_migrations/20261019_tag_contact_links.sql
 ```
 
-The last thirteen are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo, the Mission Control storage tools staff approval of Smart Tags, Handover PINs, the automatic auction pickup deadlines, the guard role, email preferences, claim and Smart Tag reminders, evidence retention and the recycle bin. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, `20261010`, `20261011`, `20261012`, `20261013`, `20261014`, `20261015`, `20261016`, then `20261017`, which also adds the migration log, guard receipts, the Smart Tag link and the per-item handover log). **Until `20261014` is run, no admin delete works** (the app refuses to delete anything it cannot archive first) and the file-retention rule waits. The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
+The last fifteen are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo, the Mission Control storage tools staff approval of Smart Tags, Handover PINs, the automatic auction pickup deadlines, the guard role, email preferences, claim and Smart Tag reminders, evidence retention and the recycle bin. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, `20261010`, `20261011`, `20261012`, `20261013`, `20261014`, `20261015`, `20261016`, `20261017` (the migration log, guard receipts, the Smart Tag link and the per-item handover log), `20261018` (the auction pickup PIN), then `20261019` (Smart Tag contact methods)). **Until `20261014` is run, no admin delete works** (the app refuses to delete anything it cannot archive first) and the file-retention rule waits. The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
 
 ```sql
 SELECT to_regclass('public.auctions') AS auctions,

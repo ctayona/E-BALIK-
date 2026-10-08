@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Archive, ArchiveRestore, CheckCheck, Database, Eye, Gavel, PackageCheck, Pencil, Plus, RefreshCw, Timer, Trash2, Trophy } from "lucide-react";
+import { Archive, ArchiveRestore, CheckCheck, Database, Eye, Gavel, KeyRound, PackageCheck, Pencil, Plus, RefreshCw, Timer, Trash2, Trophy } from "lucide-react";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import { BTN, PageHeader, RolePill } from "../../components/ui/primitives";
 import { DataTable, ExportButton, IconAction, RowActions, SearchField, SegmentedFilter, StatusPill, TableFooter, Thumb, Toolbar, usePagination } from "../../components/ui/management";
-import { AuctionSetupError, deleteAdminAuction, fetchAdminAuctions, fetchEligibleAuctionItems, peso, type AdminAuction, type AuctionList } from "../../utils/auctionApi";
+import { AuctionSetupError, deleteAdminAuction, fetchAdminAuctions, reissueAdminAuctionPin, setAdminAuctionFulfillment, fetchEligibleAuctionItems, peso, type AdminAuction, type AuctionList } from "../../utils/auctionApi";
 import { downloadCsv } from "../../utils/csv";
 import { ARCHIVED_TAB, setArchived } from "../../utils/archive";
 import { formatDateTime, formatRemaining, serverOffset, useNow } from "../../utils/countdown";
@@ -56,6 +56,7 @@ export default function Auctions() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminAuction | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<AdminAuction | null>(null);
+  const [pickupTarget, setPickupTarget] = useState<AdminAuction | null>(null);
   const [busy, setBusy] = useState(false);
   const isSuperAdmin = canDelete();
   const now = useNow() + offset;
@@ -120,6 +121,34 @@ export default function Auctions() {
     } finally {
       setBusy(false);
       setDeleteTarget(null);
+    }
+  };
+
+  /** Complete the sale by hand. Guards complete it with the winner's PIN; administrators may do it without one, for example when no PIN was created. */
+  const confirmPickup = async () => {
+    if (!pickupTarget || busy) return;
+    setBusy(true);
+    try {
+      await setAdminAuctionFulfillment(pickupTarget.id, "collected");
+      await load();
+    } catch {
+      // Reported by the API helper.
+    } finally {
+      setBusy(false);
+      setPickupTarget(null);
+    }
+  };
+
+  const sendNewPin = async (auction: AdminAuction) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await reissueAdminAuctionPin(auction.id);
+      await load();
+    } catch {
+      // Reported by the API helper.
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -244,6 +273,15 @@ export default function Auctions() {
                 {auction.reauction_ready && <StatusPill tone="rose">{tr("Ready for re-auction")}</StatusPill>}
                 {auction.pending_claim && <StatusPill tone="gold">{tr("Ownership claim pending")}</StatusPill>}
               </div>
+              {auction.stage === "awaiting_pickup" && (
+                <div className="mt-2 space-y-1.5">
+                  <p className="text-[12.5px] text-ink-muted">{auction.handover_pin_issued ? tr("Winner has a pickup PIN") : tr("No pickup PIN yet")}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button type="button" onClick={() => setPickupTarget(auction)} disabled={busy} className={`${BTN.success} min-h-[36px] px-3 text-[13px]`}><PackageCheck size={15} aria-hidden="true" />{tr("Mark as picked up")}</button>
+                    <button type="button" onClick={() => void sendNewPin(auction)} disabled={busy} className={`${BTN.ghost} min-h-[36px] px-3 text-[13px]`}><KeyRound size={15} aria-hidden="true" />{auction.handover_pin_issued ? tr("New PIN") : tr("Send PIN")}</button>
+                  </div>
+                </div>
+              )}
             </td>
             <RowActions>
               <IconAction label={`${tr("View")} ${auction.reference || auction.title}`} onClick={() => setDetailId(auction.id)} icon={<Eye size={17} aria-hidden="true" />} />
@@ -258,6 +296,17 @@ export default function Auctions() {
           </tr>
         ))}
       </DataTable>
+
+      {pickupTarget && (
+        <ConfirmActionDialog
+          title={tr("mark {0} as picked up", { "0": pickupTarget.reference || pickupTarget.title })}
+          description={tr("Confirm the winner paid and took the item. This completes the auction and closes the found report. Normally the guard does this by entering the winner's PIN at the release desk; use this button when no PIN was created or the PIN does not work.")}
+          confirmLabel={tr("Mark as picked up")}
+          busy={busy}
+          onCancel={() => { if (!busy) setPickupTarget(null); }}
+          onConfirm={() => void confirmPickup()}
+        />
+      )}
 
       {form && (form.edit
         ? <AuctionFormModal mode="edit" auction={form.edit} onClose={() => setForm(null)} onSaved={() => { void load(); }} />
