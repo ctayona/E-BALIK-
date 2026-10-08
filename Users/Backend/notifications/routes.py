@@ -73,10 +73,12 @@ def mark_notification_read(notification_id):
             url=current_app.config['SUPABASE_URL'],
             service_key=current_app.config['SUPABASE_SERVICE_KEY']
         )
-        result = db.mark_notification_as_read(notification_id)
+        result = db.mark_notification_as_read(notification_id, user_account_id=user_id)
         return jsonify(result), 200
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except Exception as error:
+        if 'No notification found' in str(error):
+            return jsonify({'error': 'That notice was not found.'}), 404
         current_app.logger.exception(f'Mark notification read error: {error}')
         return jsonify({'error': 'Unable to mark notification as read', 'details': str(error)}), 500

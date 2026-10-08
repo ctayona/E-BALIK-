@@ -324,6 +324,11 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
             <button type="button" disabled={busy} onClick={() => void run(() => finalizeAdminAuction(auction.id))} className={BTN.success}>{busy ? tr("Working…") : tr("Confirm winner")}</button>
           </>}
         >
+          {auction.pending_claim && (
+            <p role="alert" className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13.5px] leading-6 text-rose-800">
+              {tr("Someone has filed an ownership claim on this item. Decide that claim first: approving it cancels this auction, and confirming a winner would promise the item to two people.")}
+            </p>
+          )}
           <div className="rounded-2xl border border-gold-300/60 bg-gold-50 px-4 py-4 dark:bg-gold-500/10">
             <p className="text-[13px] font-medium text-ink-muted">{bidder?.name ?? "—"}</p>
             <p className="font-[family-name:var(--font-heading)] text-[28px] font-semibold tabular-nums text-ink">{peso(auction.current_price)}</p>

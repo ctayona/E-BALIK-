@@ -14,7 +14,7 @@ import { DataTable, DetailGrid, ExportButton, FilterSelect, IconAction, RowActio
 
 type FoundItem = AdminFoundItemRow;
 type FoundStatus = FoundItem["status"];
-type FoundForm = { item: string; description: string; category: string; locationFound: string; dateFound: string; storage: string; photo: string; status?: string };
+type FoundForm = { item: string; description: string; category: string; locationFound: string; dateFound: string; storage: string; photo: string; status?: string; smartTagCode?: string };
 type PendingAction =
   | { type: "save"; data: Partial<FoundForm>; reference?: string }
   | { type: "delete"; reference: string }
@@ -26,10 +26,9 @@ const isFinished = (item: AdminFoundItemRow) => ["returned", "claimed", "closed"
 const STATUS_TONE: Record<FoundStatus, Tone> = {
   "Unclaimed": "gold",
   "Under Review": "iris",
-  "Claimed": "mint",
   "Ready to Release": "mint",
   "Auctioned": "iris",
-  "Released": "slate",
+  "Completed": "slate",
 };
 
 /** Holding states an admin may set directly. Claimed, ready-to-release and returned come from the claim workflow. */
@@ -51,6 +50,7 @@ function FoundItemFormModal({ item, busy, onClose, onSubmit }: { item?: FoundIte
     locationFound: item?.locationFound && item.locationFound !== "Unknown" ? item.locationFound : "",
     dateFound: item?.dateFound?.slice(0, 10) ?? "",
     storage: item?.storage && item.storage !== "Unknown" ? item.storage : "",
+    smartTagCode: "",
     photo: item?.photo ?? "",
     status: item?.rawStatus ?? "unclaimed",
   });
@@ -95,6 +95,7 @@ function FoundItemFormModal({ item, busy, onClose, onSubmit }: { item?: FoundIte
       dateFound: form.dateFound,
       storage: form.storage.trim(),
     };
+    if (!editing && form.smartTagCode?.trim()) data.smartTagCode = form.smartTagCode.trim();
     // Only send the photo when it changed, so edits don't re-upload the stored image.
     if (form.photo && form.photo !== item?.photo) data.photo = form.photo;
     if (editing && !workflowOwnsStatus && form.status !== item?.rawStatus) data.status = form.status;
@@ -158,6 +159,13 @@ function FoundItemFormModal({ item, busy, onClose, onSubmit }: { item?: FoundIte
           <div className="sm:col-span-2">
             <Field label={tr("Storage location")} required>{(id) => <TextInput id={id} value={form.storage} onChange={(e) => set("storage", e.target.value)} maxLength={255} placeholder={tr("Admin locker A-12")} />}</Field>
           </div>
+          {!editing && (
+            <div className="sm:col-span-2">
+              <Field label={tr("Smart Tag code (optional)")} hint={tr("If the item has an E-Balik Smart Tag sticker, type its code. The owner is told right away that the item is here and can claim it.")}>
+                {(id) => <TextInput id={id} value={form.smartTagCode ?? ""} onChange={(e) => set("smartTagCode", e.target.value)} maxLength={40} placeholder="K7M2QX9PA3BD" autoComplete="off" />}
+              </Field>
+            </div>
+          )}
           {editing && (
             <div className="sm:col-span-2">
               <Field label={tr("Holding status")} hint={workflowOwnsStatus ? tr("This item is {0}. The claim workflow manages its status from here.", { "0": item?.status.toLowerCase() }) : tr("Put an item on hold while ownership is being checked.")}>{(id) => (
@@ -206,7 +214,7 @@ export default function FoundItems() {
     return counts;
   }, {}), [working]);
   const categories = useMemo(() => uniqueSorted([...ITEM_CATEGORIES, ...items.map((item) => item.category)]), [items]);
-  const inCustody = working.filter((item) => item.status !== "Released").length;
+  const inCustody = working.filter((item) => item.status !== "Completed").length;
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -254,7 +262,7 @@ export default function FoundItems() {
 
   const statusTabs = [
     { value: ALL, label: t("common.allStatuses"), count: working.length },
-    ...(["Unclaimed", "Under Review", "Claimed", "Ready to Release", "Auctioned", "Released"] as FoundStatus[])
+    ...(["Unclaimed", "Under Review", "Ready to Release", "Auctioned", "Completed"] as FoundStatus[])
       .filter((status) => statusCounts[status])
       .map((status) => ({ value: status, label: status, count: statusCounts[status] })),
     { value: ARCHIVED_TAB, label: "Archived", count: archivedCount },

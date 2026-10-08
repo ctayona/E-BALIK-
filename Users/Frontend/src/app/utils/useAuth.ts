@@ -392,7 +392,7 @@ export function useAuth() {
   }) => {
     const response = await claimsApi.create(data);
     if (response.error) return { success: false, error: response.error, errorCode: response.errorCode };
-    return { success: true, claim: response.data?.claim };
+    return { success: true, claim: response.data?.claim, auctionNotice: (response.data as { auction_notice?: string | null } | undefined)?.auction_notice || undefined };
   }, []);
 
   const cancelClaim = useCallback(async (claimId: string) => {

@@ -242,6 +242,7 @@ export default function Auctions() {
                 {auction.bought_out && <StatusPill tone="gold">{tr("Bought with Buy Now")}</StatusPill>}
                 {auction.fulfillment_status === "awaiting_pickup" && auction.pickup_warning_sent_at && <StatusPill tone="rose">{tr("Final warning sent")}</StatusPill>}
                 {auction.reauction_ready && <StatusPill tone="rose">{tr("Ready for re-auction")}</StatusPill>}
+                {auction.pending_claim && <StatusPill tone="gold">{tr("Ownership claim pending")}</StatusPill>}
               </div>
             </td>
             <RowActions>

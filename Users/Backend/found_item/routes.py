@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from flask import Blueprint, current_app, jsonify, request
 from werkzeug.utils import secure_filename
-from app.utils import get_db
+from app.utils import custody_log, get_db
 from app.utils.email_service import send_reference_email_best_effort
 from app.utils.matching import build_found_match_summaries
 from app.utils.report_guard import ReportRuleError, begin_submission, check_new_report, end_submission
@@ -146,6 +146,8 @@ def create_found_item():
             'status': 'unclaimed',
         })
         user_full_name = f"{reporter.get('fname', '')} {reporter.get('lname', '')}".strip()
+        custody_log.record(db.client, item.get('item_id'), 'turned_over', account_id, user_full_name,
+                           f"Found at {location}; handed to {guard_name_or_id} at {turnover_location}.")
         db.log_user_activity(
             account_id=account_id,
             user_name=user_full_name,

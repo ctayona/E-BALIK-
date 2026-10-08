@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Boxes, Gavel, HandCoins, ShieldAlert, Timer } from "lucide-react";
+import { AlarmClock, Boxes, Gavel, HandCoins, ScrollText, ShieldAlert, Tag, Timer } from "lucide-react";
 import { fetchAdminCustody, type AdminCustodyOverview, type AdminCustodyRow, type CustodyState } from "../../utils/api";
 import { downloadCsv } from "../../utils/csv";
 import { tr } from "../../utils/preferences";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import { BTN } from "../../components/ui/primitives";
 import { DataTable, ExportButton, SearchField, SegmentedFilter, StatusPill, TableFooter, Thumb, Toolbar, usePagination, type Tone } from "../../components/ui/management";
+import CustodyHistoryModal from "./CustodyHistoryModal";
 
 type NavTarget = "claims" | "auctions";
 type Filter = "all" | "review" | "pickup" | "auction" | "waiting" | "hold";
@@ -47,6 +48,7 @@ export default function CustodyView({ onNavigate }: { onNavigate: (target: NavTa
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
+  const [historyOf, setHistoryOf] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -91,7 +93,7 @@ export default function CustodyView({ onNavigate }: { onNavigate: (target: NavTa
         <dl className="grid grid-cols-2 lg:grid-cols-4 [&>*]:border-line max-lg:[&>*:nth-child(-n+2)]:border-b max-lg:[&>*:nth-child(odd)]:border-r lg:divide-x lg:divide-line">
           {[
             { label: "In custody", value: summary.total, hint: tr("Items the office is holding"), icon: <Boxes size={16} aria-hidden="true" /> },
-            { label: "Needs review", value: summary.needsReview, hint: tr("Claims and auction results to decide"), icon: <ShieldAlert size={16} aria-hidden="true" /> },
+            { label: "Needs review", value: summary.needsReview, hint: summary.overdueClaims > 0 ? tr("{0} claims waiting over {1} days", { "0": summary.overdueClaims, "1": summary.staleClaimDays }) : tr("Claims and auction results to decide"), icon: <ShieldAlert size={16} aria-hidden="true" /> },
             { label: "Waiting for pickup", value: summary.awaitingPickup, hint: tr("Approved claims and auction winners"), icon: <HandCoins size={16} aria-hidden="true" /> },
             { label: "Ready to auction", value: summary.auctionEligible, hint: tr("Unclaimed over {0} days", { "0": summary.minCustodyDays }), icon: <Timer size={16} aria-hidden="true" /> },
           ].map((stat) => (
@@ -103,6 +105,12 @@ export default function CustodyView({ onNavigate }: { onNavigate: (target: NavTa
           ))}
         </dl>
       </section>
+
+      {summary.awaitingReceipt > 0 && (
+        <p className="rounded-xl border border-gold-200 bg-gold-50 px-4 py-3 text-[14px] text-ink-soft">
+          {tr("{0} items were handed to a guard who has not confirmed receiving them yet.", { "0": summary.awaitingReceipt })}
+        </p>
+      )}
 
       <SegmentedFilter
         label="Custody status"
@@ -132,6 +140,7 @@ export default function CustodyView({ onNavigate }: { onNavigate: (target: NavTa
           { key: "days", label: tr("Days held"), className: "text-right" },
           { key: "status", label: tr("Status") },
           { key: "next", label: tr("Next step") },
+          { key: "history", label: tr("History") },
         ]}
         isEmpty={paging.pageItems.length === 0}
         empty={rows.length === 0 ? tr("Nothing is in custody right now.") : tr("No items match your search.")}
@@ -152,21 +161,35 @@ export default function CustodyView({ onNavigate }: { onNavigate: (target: NavTa
                 </div>
               </td>
               <td><div className="max-w-[170px] truncate" title={row.storage}>{row.storage || "—"}</div></td>
-              <td><div className="max-w-[150px] truncate" title={row.guard}>{row.guard || "—"}</div></td>
+              <td>
+                <div className="max-w-[150px] truncate" title={row.guard}>{row.guard || "—"}</div>
+                {row.receipt === "waiting" && <div className="mt-1 text-[12.5px] font-medium text-gold-700">{tr("Not confirmed yet")}</div>}
+                {row.receipt === "received" && <div className="mt-1 text-[12.5px] text-mint-700">{tr("Receipt confirmed")}</div>}
+              </td>
               <td className="text-right font-semibold tabular-nums text-ink">{row.daysHeld}</td>
               <td>
                 <StatusPill tone={STATE_TONE[row.state]}>{row.stateLabel}</StatusPill>
                 {row.state === "claim_review" && row.openClaims > 1 && <div className="mt-1 text-[12.5px] text-ink-muted">{tr("{0} claims", { "0": row.openClaims })}</div>}
+                {row.state === "claim_review" && row.claimOverdue && (
+                  <div className="mt-1 flex items-center gap-1 text-[12.5px] font-medium text-rose-700"><AlarmClock size={13} aria-hidden="true" />{tr("Waiting {0} days", { "0": row.claimWaitingDays })}</div>
+                )}
+                {row.smartTag && <div className="mt-1 flex items-center gap-1 text-[12.5px] text-iris-700"><Tag size={13} aria-hidden="true" />{tr("Smart Tag {0}", { "0": row.smartTag })}</div>}
               </td>
               <td>
                 {step
                   ? <button type="button" onClick={() => onNavigate(step.target)} className={step.target === "auctions" && row.state === "waiting" ? BTN.gold : BTN.ghost}>{step.target === "auctions" ? <Gavel size={15} aria-hidden="true" /> : null}{tr(step.label)}</button>
                   : <span className="text-ink-muted">—</span>}
               </td>
+              <td>
+                <button type="button" onClick={() => setHistoryOf(row.reference)} className={BTN.ghost} aria-label={tr("Open the handling history of {0}", { "0": row.reference })}>
+                  <ScrollText size={15} aria-hidden="true" />{tr("History")}
+                </button>
+              </td>
             </tr>
           );
         })}
       </DataTable>
+      {historyOf && <CustodyHistoryModal reference={historyOf} onClose={() => setHistoryOf(null)} />}
     </div>
   );
 }

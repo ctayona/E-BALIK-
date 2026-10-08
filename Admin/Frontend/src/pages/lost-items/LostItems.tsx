@@ -27,7 +27,7 @@ const STATUS_TONE: Record<LostStatus, Tone> = {
   "Searching": "gold",
   "Potential Match": "iris",
   "Found": "iris",
-  "Resolved": "mint",
+  "Completed": "mint",
   "Expired": "rose",
 };
 
@@ -35,7 +35,7 @@ const STATUS_TONE: Record<LostStatus, Tone> = {
 const EDITABLE_STATUSES = [
   { value: "missing", label: "Still searching" },
   { value: "found", label: "Item found, not yet returned" },
-  { value: "returned", label: "Returned to owner" },
+  { value: "returned", label: "Completed (item returned to its owner)" },
 ];
 
 const ALL = "__all__";
@@ -204,7 +204,7 @@ export default function LostItems() {
 
   const statusTabs: { value: string; label: string; count: number }[] = [
     { value: ALL, label: t("common.allStatuses"), count: working.length },
-    ...(["Searching", "Potential Match", "Found", "Resolved", "Expired"] as LostStatus[])
+    ...(["Searching", "Potential Match", "Found", "Completed", "Expired"] as LostStatus[])
       .filter((status) => statusCounts[status])
       .map((status) => ({ value: status, label: status, count: statusCounts[status] })),
     { value: ARCHIVED_TAB, label: "Archived", count: archivedCount },

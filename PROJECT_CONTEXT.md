@@ -48,9 +48,10 @@ Users/
   Backend/shared/              account.py (Home + Profile), request_auth.py (report pages)
 Admin/
   Frontend/                    Admin web app (own package.json and node_modules)
-    src/pages/<page>/          dashboard, reports (lost, found and custody tabs), lost-items, found-items, ai-matching, claims-verification,
-                               chain-of-custody, users, reports-analytics, notifications,
-                               activity-logs, admin-profile
+    src/pages/<page>/          dashboard, reports (lost, found and custody tabs, plus the handling-history dialog), lost-items, found-items,
+                               ai-matching, claims-verification, guard-desk (release desk, assigned items, notices), users,
+                               reports-analytics (Analytics), notifications, activity-logs, admin-profile, smart-tags, auctions,
+                               recycle-bin, system-control
     src/components/            Cross-page admin components
   Backend/<page>/routes.py     dashboard, lost_items, found_items, ai_matching, claims_verification,
                                users, reports_analytics, activity_logs, admin_profile
@@ -88,7 +89,7 @@ Each endpoint lives in the backend folder of the page that uses it. Where severa
 | `/api/claims` | `claim` | Claim |
 | `/api/notifications` | `notifications` | Notifications, UserHeader badge |
 | `/api/auctions/*` | `auctions` | Auction Hall, dashboard Live auctions shelf, Landing showcase |
-| `/api/admin/*` | Admin `Backend/<page>` matching the admin page | Chain of Custody reads found-items + claims; admin Notifications reads activity-logs + claims |
+| `/api/admin/*` | Admin `Backend/<page>` matching the admin page | the Items in custody tab reads found-items + claims + auctions (`/found-items/custody`, `/found-items/<ref>/history`); admin Notifications reads activity-logs + claims |
 
 Page-specific helpers live beside their page (for example `Users/Frontend/src/app/pages/home/OTPModal.tsx`, `Admin/Frontend/src/pages/users/AccountVerificationTab.tsx`). Anything used by more than one page belongs in that side's `shared/` (or `components/` in the admin frontend).
 
@@ -465,6 +466,21 @@ Run `Server/manual_migrations/20261008_smart_tags.sql` after `20261007`. Until t
 - **Admin ("factory"):** `Admin/Frontend/src/pages/smart-tags/SmartTags.tsx`. Generate batch (1 to 500, optional label), filters All / Blank (unsold) / Claimed (sold and registered) / Lost / Deactivated, per-tag QR image (PNG), CSV of codes and URLs for printing. Deactivate and reactivate are super admin only; the owner is notified with the reason.
 - **XSS:** free text is stored as plain text (control characters and angle brackets removed, length capped), rendered only as React text (no `dangerouslySetInnerHTML`), escaped in emails, and email and phone become `mailto:` or `tel:` links only when they match a strict pattern.
 
+## Naming, handover log, receipts, daily summary, startup checks and the migration log
+
+Run `Server/manual_migrations/20261017_custody_log_receipts_and_migration_log.sql` after `20261016` (the code degrades without it, see `Server/DATABASE_SETUP.md`). The word list is `docs/STATUS_GLOSSARY.md`: **Completed** is the one word for a finished report, claim or auction everywhere people read; the database keeps `returned` / `collected`.
+
+- **Handover log (`Server/app/utils/custody_log.py`, table `custody_log`):** one row per fact about a found item: `turned_over` (finder submits), `registered` (office registers), `received` (guard confirms), `tag_matched`, `claim_filed/approved/rejected/expired`, `released`, `completed`, `auction_listed/confirmed/cancelled/completed/forfeited`, `returned_to_custody`. `record()` never raises, so a missing table can never block the action it describes. `timeline(client, reference)` returns `{item, events}` oldest first and **rebuilds** turned over, received, claim filed/approved/rejected and released from timestamps already stored when the log has no event of that kind, so items from before the log have a history too. Shown by `GET /api/admin/found-items/<reference>/history` and the **History** button on each row of Reports > Items in custody (`CustodyHistoryModal.tsx`, with Print or save as PDF). This replaced the Chain of custody page, whose timeline was invented from the item row; the old `chain-of-custody` bookmark opens the Items in custody tab. `custody_log` rows are captured and restored by the Recycle bin with their found item.
+- **Guard receipts:** `POST /api/admin/claims/handover/received {reference}` (guard level). A guard confirms only items handed to **them**; administrators can confirm any. Sets `found_items.received_at/received_by` once (a second call answers `already: true` and tells nobody again), logs `received` and notifies the finder (`guard_received`). The guard's Release desk shows **Mark received** or a Received chip (`AssignedItemsCard.tsx`) and a **New notices** card (`GuardNoticesCard.tsx`) reading `/api/notifications`, so the "an item was handed to you" notice reaches a role that has no other page. Items still unconfirmed show "Not confirmed yet" in Items in custody and are counted in the summary (`awaitingReceipt`). `PATCH /api/notifications/<id>/read` now only changes the signed-in person's own notice (404 otherwise).
+- **Smart Tag match:** Reports > Found reports > Register has an optional **Smart Tag code**. `POST /api/admin/found-items` validates the code before saving (400 not a tag, 404 unknown), stores `found_items.smart_tag_id`, tells the owner in the app and by email (`SmartTagService.link_found_item`, notification `smart_tag_found`, link to Claims) and logs `tag_matched`. A tag that is not active still registers the item and answers `smart_tag_owner_notified: false`.
+- **Claims and auctions:** approving a claim (`PATCH /api/admin/claims/<id>/status`) cancels every open auction of that item (`AuctionService.cancel_open_for_item`; the leading bidder is told, the log records it) and answers `cancelled_auctions`. The claims list carries `inAuction` (the approve dialog warns first), the auction list carries `pending_claim` (a chip, and a warning before **Confirm winner**), and `POST /api/claims` answers `auction_notice` so the claimant knows the item is in an auction. Nothing is auto-rejected: a claim and an auction can coexist until an administrator decides. `GET /api/admin/auctions` is a pure read now (the scheduler settles ended auctions every 15 minutes, and **Confirm winner** settles first).
+- **Stale claims and the daily summary (`Server/app/utils/admin_digest.py`):** a claim waiting 7 days (`CLAIM_REVIEW_STALE_DAYS` in `custody.py`) is flagged in Items in custody (`claimWaitingDays`, `claimOverdue`). Each morning (`ADMIN_DIGEST_HOUR`, default 8, Makati time) the scheduler emails active administrators what is waiting (claims, IDs, tags, auction results, approved claims expiring in 3 days, items a guard has not confirmed for 2 days, items old enough to auction). It is sent at most once per Makati day (the day is claimed by inserting `system_settings.admin_digest:<date>`, unique), only when something is waiting, and only to administrators who have not turned it off (Admin profile > Daily summary email, stored as `email_preferences.admin_digest`, a staff-only preference outside the user's own list).
+- **Analytics:** the Analytics page now holds the summary cards and the visual charts (the Dashboard keeps a link card). All of it counts days in **Philippine time** (`Server/app/utils/localtime.py`: a plain date stays, a timestamp is converted from UTC, so a report filed at 18:30 UTC on the 1st is the 2nd in Makati).
+- **Startup checks (`Server/app/utils/startup_checks.py`):** a production server (`FLASK_ENV=production`, not testing) refuses to start without `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `JWT_SECRET_KEY` (not the development default, at least 24 characters), `APP_ENCRYPTION_KEY` and `CORS_ORIGINS`, and lists every problem in the error. `ALLOW_INSECURE_START=true` is an emergency override that logs a critical warning instead; remove it once the settings are fixed.
+- **Complete list reads (`Server/app/utils/paging.py`):** Supabase silently returns at most 1000 rows per request, so the admin claim list (and other full-table reads) page with `.range()` up to `ADMIN_LIST_MAX` (default 10000, minimum 1000) instead of hiding older rows.
+- **Migration log (`Server/app/utils/migrations.py`, table `migration_log`):** every migration file ends with `INSERT INTO public.migration_log ... ON CONFLICT DO NOTHING`; 20261017 creates the table and records the older files from what the database already contains. System control > health check compares the log with `Server/manual_migrations/*.sql` and warns about a forgotten migration.
+- **AI matching and status:** confirming a match sets the lost report to `found` (never reopens a completed one); rejecting a match that was confirmed earlier supersedes the old confirmation and returns the report to `missing` unless another match is still confirmed. A lost report an administrator completes by hand notifies its owner (`notify_completed_by_hand`).
+
 ## Deployment
 
 Free-tier setup is in `DEPLOYMENT_GUIDE.md`: Vercel serves the user app at `/` and the admin console at `/admin/` from one project (`vercel.json`, `npm run build:vercel`, `scripts/merge-admin-build.mjs`), Render runs the Flask API (`render.yaml`, `Procfile`, gunicorn `Server/run.py:app`) and Supabase stays the database. Production CORS comes from the `CORS_ORIGINS` environment variable. Environment checklists are `Environment_Configs/*/production.env.example`.
@@ -540,6 +556,8 @@ Weekday mapping is Monday `1` through Sunday `7`.
 Found report status starts as `unclaimed`. Found custody is tracked separately using `custody_status`, normally `turned_over`.
 
 `docs/DATABASE_SCHEMA.txt` is older documentation and may not reflect all current fields. Treat `Server/database_schema.sql` as authoritative.
+
+Tables added by migrations rather than the base schema include `auctions`, `auction_bids`, `auction_comments`, `auction_reactions`, `smart_tags`, `system_settings`, `recycle_bin`, `custody_log` and `migration_log`. Found items also carry `handover_guard_id`, `received_at`, `received_by` and `smart_tag_id`.
 
 ## Theme ("Gallery Glass")
 
@@ -639,11 +657,10 @@ showInfoModal({ variant: "success" | "error" | "warning" | "info", title, messag
 ## Known Gaps And Recommended Next Work
 
 
-- Replace repeated modal JSX with a shared accessible modal component.
-- Add keyboard focus trapping and Escape-key close behavior to modals.
 - Add reverse matching for a user's found reports and possible missing owners.
-- Add persisted match candidates and dismiss/confirm actions.
-- Fully connect Claim UI to the `claims` backend table.
+- AI match suggestions are still computed on demand; only the administrator's confirm or reject is stored (`ai_matches`).
+- The user app still has about 120 pre-existing TypeScript errors (mostly untyped API responses). `npm run build` passes because Vite does not type-check; reduce the count before adding a type-check step to CI.
+- `ReportsAnalytics` and `AnalyticsSection` are two components inside one Analytics page with two data calls; merge them into one when the analytics endpoints are next touched.
 - Add system-wide public missing-report endpoint if Dashboard should show all users' missing reports rather than the current user's reports.
 - Add automated tests for image upload, carousel rotation, modal flows, edit confirmation, delete confirmation, and match navigation.
 - Consider React Router when browser back/forward and deep links become important.

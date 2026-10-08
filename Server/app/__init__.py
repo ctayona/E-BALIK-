@@ -36,6 +36,10 @@ def create_app(config_name: str = None):
     # Create Flask app
     app = Flask(__name__)
     app.config.from_object(app_config)
+
+    # A production server with a missing or default secret must not start (see app/utils/startup_checks.py)
+    from app.utils.startup_checks import assert_production_ready
+    assert_production_ready(config_name, testing=bool(app.config.get('TESTING')))
     
     # Configure CORS
     CORS(app, resources={

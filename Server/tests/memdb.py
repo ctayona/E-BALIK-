@@ -31,6 +31,7 @@ class MemTable:
         self.client, self.name = client, name
         self.op, self.payload, self.filters = 'select', None, []
         self.order_key, self.max_rows, self.offset, self.want_count = None, None, 0, False
+        self.single_row = False
 
     # builder
     def select(self, *_a, count=None, **_k):
@@ -94,6 +95,10 @@ class MemTable:
         self.max_rows = n
         return self
 
+    def single(self):
+        self.single_row = True
+        return self
+
     def range(self, start, end):
         self.offset, self.max_rows = start, end - start + 1
         return self
@@ -148,6 +153,10 @@ class MemTable:
         total = len(matched)
         if self.max_rows is not None:
             matched = matched[self.offset: self.offset + self.max_rows]
+        if self.single_row:
+            if len(matched) != 1:
+                raise Exception('JSON object requested, multiple (or no) rows returned (PGRST116)')
+            return SimpleNamespace(data=dict(matched[0]), count=1)
         return SimpleNamespace(data=[dict(r) for r in matched], count=total if self.want_count else None)
 
 

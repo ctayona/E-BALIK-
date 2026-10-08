@@ -31,7 +31,7 @@ On a laptop the background timer is **off** on purpose (so test runs cannot send
 
 ### 1.3 Make sure the database is ready
 
-All migrations must have been run in the Supabase SQL Editor, in order, **ending with `20261016_archive_and_bid_steps.sql`** (the full list is in `DEPLOYMENT_GUIDE.md`). Check the last four quickly:
+All migrations must have been run in the Supabase SQL Editor, in order, **ending with `20261017_custody_log_receipts_and_migration_log.sql`** (the full list is in `DEPLOYMENT_GUIDE.md`). Check the last five quickly:
 
 ```sql
 SELECT to_regclass('public.recycle_bin');
@@ -41,6 +41,10 @@ SELECT column_name FROM information_schema.columns WHERE table_schema = 'public'
 SELECT table_name FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'archived_at'
   AND table_name IN ('missing_items', 'found_items', 'claims', 'auctions');   -- 4 rows
 SELECT pg_get_functiondef('public.auction_place_bid(uuid,uuid,numeric)'::regprocedure) LIKE '%bid_not_on_step%';   -- true
+SELECT count(*) FROM public.migration_log;   -- 21 when every migration has been run
+SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'found_items'
+  AND column_name IN ('received_at', 'received_by', 'smart_tag_id');   -- 3 rows
+SELECT to_regclass('public.custody_log');   -- custody_log
 ```
 
 > **If `20261014` has not been run:** every admin delete is refused with a "setup required" message. That is intentional (the app will not delete something it cannot archive first). Run the migration and try again.
@@ -48,6 +52,8 @@ SELECT pg_get_functiondef('public.auction_place_bid(uuid,uuid,numeric)'::regproc
 > **If `20261015` has not been run:** the app still works, but a guard account cannot release items (the database refuses it), administrators cannot assign the guard role, a claim cannot be linked to a lost report, and a found report cannot be linked to a guard. Run it before testing sections 2.9, 4.2, 6.1, 6.3 and 6.4.
 
 > **If `20261016` has not been run:** the Archive buttons say "run the latest database update" and change nothing, and the exact-step rule for bids is enforced by the server only (the database enforces it after the migration). Run it before testing sections 8 and 9.
+
+> **If `20261017` has not been run:** the app still works. Mark received, the Smart Tag link and the recorded handover steps say "run the latest database update" or fall back to what the database already knows (the history is rebuilt from timestamps), and System control > health scan reports the migration log as missing. Run it before testing sections 6.5, 9.7 and 9.13.10.
 
 ### 1.4 The test accounts you need
 
@@ -198,6 +204,28 @@ After the release in 6.3 (item collected):
 | 6.4.6 | As Student A, try to edit or delete the completed lost report by repeating the request from the browser, or as Student B try to delete a found report that has a claim. | Refused with a clear message: the report is completed, or someone has claimed the item. | ☐ |
 | 6.4.7 | Admin app, **Reports**, tab **Items in custody**. | The released wallet is no longer listed. Items with a claim to review, approved claims and items old enough to auction show their own status and a next-step button. | ☐ |
 
+### 6.5 Receipts, handling history, Smart Tag match and claims against auctions
+
+Use one found item that Student B hands to the **Guard** (6.1 sets this up) and a second one for the auction steps.
+
+| # | Do this | You should see | Pass |
+|---|---|---|---|
+| 6.5.1 | Sign in as the **Guard** right after Student B submits the found report. | The release desk opens with a **New notices** card: "An item was handed to you". **Mark read** removes it. | ☐ |
+| 6.5.2 | Under **Items handed to you**, press **Mark received** on that item. | The button becomes a green **Received**. Student B gets a notice "Your item was received". Pressing it again changes nothing and sends nothing. | ☐ |
+| 6.5.3 | Sign in as a second guard and look at the first guard's item. | It is not listed, and the server refuses a receipt for it. | ☐ |
+| 6.5.4 | As admin: **Reports**, **Items in custody**. Find an item whose guard has not confirmed. | Under **Received by** it says "Not confirmed yet", and a gold line above the table counts such items. The confirmed one says "Receipt confirmed". | ☐ |
+| 6.5.5 | Press **History** on that row. | The handling history lists, oldest first: Turned over, Received by the guard, Claim filed and any later step, each with the person and the time in Makati time. | ☐ |
+| 6.5.6 | In the history press **Print or save as PDF**. | The print preview shows only the item's record, not the admin menu. | ☐ |
+| 6.5.7 | Open an old bookmark to `/admin/` and choose a page called Chain of custody (or set the stored page to `chain-of-custody`). | There is no such menu item now, and the old address opens **Reports** on **Items in custody**. | ☐ |
+| 6.5.8 | A claim that has waited more than 7 days for a decision. | Items in custody shows "Waiting N days" in red under its status, and the Needs review tile says how many claims have waited over 7 days. | ☐ |
+| 6.5.9 | Admin: **Reports**, **Found reports**, **Register a found item**. Type the code of an **active** Smart Tag you own in **Smart Tag code** and save. | The tag's owner gets an in-app notice and an email "Your item is at the Lost and Found Office", with a **Submit a claim** button. The history shows "Matched to a Smart Tag". | ☐ |
+| 6.5.10 | Register another item with a made-up tag code. | Refused with "not a valid Smart Tag code" or "not found". Nothing is registered. | ☐ |
+| 6.5.11 | Put the second item up for auction (section 8.1). As Student A, file a claim for it. | After submitting, the confirmation says the item is in an auction and an approval will cancel it. | ☐ |
+| 6.5.12 | Admin **Auctions**. | The auction shows a gold **Ownership claim pending** chip. In its detail, **Confirm winner** warns that someone has filed an ownership claim. | ☐ |
+| 6.5.13 | Admin **Claims**: review that claim and press **Approve for pickup**. | The confirmation says the auction will be cancelled and its bidders told. After CONFIRM, the result message names the cancelled auction. | ☐ |
+| 6.5.14 | Check the auction and the leading bidder. | The auction is Cancelled with the reason, the leader got an "Auction cancelled" notice, and the item's history shows "Auction cancelled" then "Claim approved". | ☐ |
+| 6.5.15 | Check the words. | Every finished report, claim and auction says **Completed** (not Returned, Released, Collected or Resolved). The reference is `docs/STATUS_GLOSSARY.md`. | ☐ |
+
 ---
 
 
@@ -283,14 +311,14 @@ Sign in to the admin app as **super admin** unless stated.
 
 | # | Page | Do this | You should see | Pass |
 |---|---|---|---|---|
-| 9.1 | **Dashboard** | Open it. Change the date range between 30 days, 90 days, 12 months and All time. | Numbers and charts update for the range. | ☐ |
-| 9.2 | Dashboard | Choose a custom start and end date. | Charts match the dates. | ☐ |
-| 9.3 | Dashboard | Look at the location hotspots. | Busiest locations are listed. | ☐ |
-| 9.4 | Dashboard | Download the CSV, and open the print report. | CSV opens in Excel with no formulas running; the print view is readable. | ☐ |
-| 9.5 | **Analytics** | Open it (this page was called Reports and analytics). | Reports and charts load. | ☐ |
+| 9.1 | **Analytics** | Open it. Change the date range between 30 days, 90 days, 12 months and All time in the **Visual analytics** section. | Numbers and charts update for the range. The Dashboard itself shows a **Trends and analytics** card with an **Open analytics** button instead of the charts. | ☐ |
+| 9.2 | Analytics | Choose a custom start and end date. | Charts match the dates. | ☐ |
+| 9.3 | Analytics | Look at the location hotspots. | Busiest locations are listed. | ☐ |
+| 9.4 | Analytics | Download the CSV, and open the print report. | CSV opens in Excel with no formulas running; the print view is readable. | ☐ |
+| 9.5 | **Analytics** | Scroll the whole page (it was two pages: Reports and analytics, and the Dashboard charts). | The summary cards, trends, categories and locations load first, then the visual analytics. A report filed at 7 AM is counted on that day, not the day before. | ☐ |
 | 9.6 | **Reports** | Open it. Use the tabs **Lost reports**, **Found reports** and **Items in custody**. In each, search, filter, open an item and change its status. | One page with three tabs; lists respond and changes are saved. The old Lost items and Found items menu entries are gone. | ☐ |
 | 9.6b | **Reports**, tab **Items in custody** | Look at the summary, filter by Needs review, Waiting for pickup, In auction, Waiting for the owner and On hold, and click a next-step button. | Each item shows its state, days held and who received it. **Review claim** opens Claims; **Create auction** (items waiting 30+ days) opens Auctions. Export CSV downloads what is on screen. | ☐ |
-| 9.7 | **Chain of custody** | Open an item's history. | Each handover step is listed in order. | ☐ |
+| 9.7 | **Reports**, **Items in custody** | Press **History** on an item. | Each handover step is listed in order (the old Chain of custody page now lives here). | ☐ |
 | 9.8 | **Users** | Search a user; change a role; suspend a user for a number of days with a reason; lift it. | Role changes apply. A suspended user cannot sign in until the date. | ☐ |
 | 9.9 | Users | Use **Change role** to make someone a **Security guard**, then change them back to **User**. | A guard can use only the release desk; a user again has no staff access. | ☐ |
 | 9.9b | **Release desk** | Open it as admin. | Type or scan a Handover PIN to release an item, same as the guard. | ☐ |
@@ -305,6 +333,7 @@ Sign in to the admin app as **super admin** unless stated.
 | # | Tab | Do this | You should see | Pass |
 |---|---|---|---|---|
 | 9.13.1 | Controls and health | Run the health scan. | A list of checks with pass/warn results (variable names only, never values). | ☐ |
+| 9.13.10 | Controls and health | Look at the **Migration log** check. | It says every migration file is recorded. If you skipped one, it names it as missing. | ☐ |
 | 9.13.2 | Controls and health | Turn **maintenance mode** on with a message. In another browser, sign in as Student A. | Student A sees the maintenance screen. Staff can still sign in. Turn it off after. | ☐ |
 | 9.13.3 | Controls and health | Use **force logout**. | Normal users are signed out; staff stay signed in. | ☐ |
 | 9.13.4 | Announcement | Publish a banner (choose a tone). | The banner shows on user and admin pages; closing it hides it until you edit it. | ☐ |
@@ -325,6 +354,9 @@ Sign in to the admin app as **super admin** unless stated.
 | 10.3 | Re-run a reminder test (section 12.1). | Student A does **not** get the reminder. Required emails (codes, claim decisions, receipts) still arrive. | ☐ |
 | 10.4 | Open the unsubscribe link at the bottom of a reminder or announcement email. | A confirmation page; confirm it, and the preference is switched off. | ☐ |
 | 10.5 | Send an announcement from System control while Student A has announcements off. | Student A gets the in-app copy but no email. | ☐ |
+| 10.6 | As admin open **Profile** and find **Daily summary email**. Leave it on. Have at least one claim waiting for review. Run the timed jobs after 8 AM Makati time (section 12.1). | One email "Lost and Found Office: N things waiting for you" with only the lines that have something, and a link to the admin console. A second run the same day sends nothing. | ☐ |
+| 10.7 | Switch **Daily summary email** off, run the jobs again the next day (the summary is sent once per Makati day, so a same-day rerun proves nothing). | No summary email for you. Other administrators who left it on still get theirs. | ☐ |
+| 10.8 | With nothing waiting anywhere, run the jobs after 8 AM. | No summary email is sent. | ☐ |
 
 ---
 
@@ -464,7 +496,7 @@ Copy this table into a note and fill it in.
 ## 15. Known limits of this guide
 
 - It was written from the code and from earlier automated checks (the backend test suite and browser checks with simulated data). The steps in this guide have **not** been walked through end to end on the live system.
-- The recycle bin, migrations `20261014` to `20261016`, and the file copies
+- The recycle bin, migrations `20261014` to `20261017`, and the file copies
 - Evidence retention and bin expiry cannot be sped up safely (test 12.3.7).
 - Email appearance differs by mail app. Gmail is the one to check; others are to be confirmed.
 - The 20-minute, 60-minute, 8-hour and 12-hour sign-out limits are checked by waiting or by the shortcut in section 3.

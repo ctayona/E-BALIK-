@@ -10,6 +10,7 @@ email_prefs_bp = Blueprint('email_prefs', __name__)
 DESCRIPTIONS = {
     'reminders': 'Reminders: pickup reminders for approved claims and Smart Tag expiry reminders.',
     'announcements': 'Announcements: messages the administrators send to everyone.',
+    'admin_digest': 'Daily summary: what is waiting for an administrator (staff only).',
 }
 
 
@@ -36,7 +37,7 @@ def get_preferences():
     try:
         account_id = _account_id()
         row, available = _read_prefs_row(_db(), account_id)
-        return jsonify({'preferences': email_prefs.get_prefs(row), 'available': available, 'descriptions': DESCRIPTIONS}), 200
+        return jsonify({'preferences': email_prefs.get_prefs(row), 'staff': email_prefs.staff_prefs(row), 'available': available, 'descriptions': DESCRIPTIONS}), 200
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except Exception as error:
@@ -50,14 +51,14 @@ def save_preferences():
         account_id = _account_id()
         changes = email_prefs.clean_update(request.get_json(silent=True))
         if not changes:
-            return jsonify({'error': 'Send reminders and/or announcements as true or false.'}), 400
+            return jsonify({'error': 'Send reminders, announcements and/or admin_digest as true or false.'}), 400
         db = _db()
         row, available = _read_prefs_row(db, account_id)
         if not available:
             return jsonify({'error': 'Notification preferences are not set up yet. Ask an administrator to run migration 20261013.', 'setup_required': True}), 503
-        merged = {**email_prefs.get_prefs(row), **changes}
+        merged = email_prefs.merged(row, changes)
         db.client.table('user_profiles').update({'email_preferences': merged}).eq('account_id', account_id).execute()
-        return jsonify({'preferences': merged, 'available': True}), 200
+        return jsonify({'preferences': merged, 'staff': email_prefs.staff_prefs({'email_preferences': merged}), 'available': True}), 200
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except Exception as error:
@@ -100,7 +101,7 @@ def unsubscribe():
         row, available = _read_prefs_row(db, account_id)
         if not available or row is None:
             return _page('Not available yet', '<p style="line-height:1.6;color:#b9c3dc;">We could not update your settings right now. Please try again later or change them in E-Balik, under Profile.</p>', 503)
-        merged = {**email_prefs.get_prefs(row), category: False}
+        merged = email_prefs.merged(row, {category: False})
         db.client.table('user_profiles').update({'email_preferences': merged}).eq('account_id', account_id).execute()
     except Exception as error:
         current_app.logger.exception('Unsubscribe failed: %s', error)

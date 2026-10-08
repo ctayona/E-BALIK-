@@ -8,6 +8,7 @@ import { CX } from "@/app/utils/clay";
 import type { NavigationOptions, Page } from "@/app/types";
 import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
 import { showSubmitError } from "@/app/utils/submitErrors";
+import { isCompletedReport } from "@/app/utils/reportLifecycle";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 import ItemCollection from "@/app/shared/media/ItemCollection";
 import ItemImage, { type GalleryItem } from "@/app/shared/media/ItemImage";
@@ -84,7 +85,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
     return reports.filter((report) => {
       const matchesQuery = !query || [report.fpost_id, report.item_name, report.description, report.location, report.guard_name_or_id].some((value) => (value || "").toLowerCase().includes(query));
       const matchesCategory = !reportCategory || report.category === reportCategory;
-      const matchesStatus = !reportStatus || report.status === reportStatus;
+      const matchesStatus = !reportStatus || (reportStatus === "completed" ? isCompletedReport("Found", report.status) : report.status === reportStatus);
       const matchesLocation = !reportLocation || report.location.toLowerCase().includes(reportLocation.toLowerCase());
       return matchesQuery && matchesCategory && matchesStatus && matchesLocation;
     });
@@ -345,7 +346,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
                 <label className="sr-only" htmlFor="found-report-category">Category</label>
                 <select id="found-report-category" value={reportCategory} onChange={(event) => setReportCategory(event.target.value)} className={`${CX.input} w-full`}><option value="">All types</option>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select>
                 <label className="sr-only" htmlFor="found-report-status">Status</label>
-                <select id="found-report-status" value={reportStatus} onChange={(event) => setReportStatus(event.target.value)} className={`${CX.input} w-full`}><option value="">All statuses</option><option value="unclaimed">Unclaimed</option><option value="claimed">Claimed</option><option value="returned">Returned</option></select>
+                <select id="found-report-status" value={reportStatus} onChange={(event) => setReportStatus(event.target.value)} className={`${CX.input} w-full`}><option value="">All statuses</option><option value="unclaimed">Unclaimed</option><option value="completed">Completed</option></select>
                 <label className="sr-only" htmlFor="found-report-location">Location</label>
                 <input id="found-report-location" value={reportLocation} onChange={(event) => setReportLocation(event.target.value)} placeholder="Location…" className={`${CX.input} w-full`} />
                 <div className="flex items-center justify-end gap-2">

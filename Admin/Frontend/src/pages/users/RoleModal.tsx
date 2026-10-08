@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ShieldCheck, UserCog, UserRound, Shield } from "lucide-react";
-import type { User } from "../../data/mockData";
+import type { User } from "../../data/types";
 import AdminModal from "../../components/ui/AdminModal";
 import { BTN } from "../../components/ui/primitives";
 import { tr } from "../../utils/preferences";

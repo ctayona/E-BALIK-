@@ -16,6 +16,7 @@ for path in (ROOT, ROOT.parent, ROOT / 'tests'):
         sys.path.insert(0, str(path))
 
 from config import Config  # noqa: E402
+from app.utils.localtime import today_pht  # noqa: E402
 from memdb import MemClient  # noqa: E402
 from test_handover_and_timeouts import ADMIN2_ID, ADMIN_ID, CLAIM, ITEM, NOW, OWNER, WINNER, claim_client, claim_store, iso, make_db, profiles  # noqa: E402
 from test_mission_control import fake_db, person  # noqa: E402
@@ -788,7 +789,7 @@ class AnalyticsRangeTests(unittest.TestCase):
         self.assertEqual(len(result['lost_by_month']), analytics.MONTHS_MAX)
 
     def test_the_collector_applies_the_range_to_lost_reports_and_found_items(self):
-        today = datetime.now(timezone.utc).date()
+        today = today_pht()
         store = {
             'missing_items': [{'category': 'Keys', 'last_seen_date': today.isoformat(), 'last_location': 'Library'},
                               {'category': 'Bags', 'last_seen_date': (today - timedelta(days=200)).isoformat(), 'last_location': 'Gym'}],

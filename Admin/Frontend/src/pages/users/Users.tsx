@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Eye, Pencil, Trash2, UserCheck, UserCog, UserPlus, UserRound, UserX } from "lucide-react";
-import type { User } from "../../data/mockData";
+import type { User } from "../../data/types";
 import { deleteAdminUser, fetchAdminAccountVerifications, fetchAdminUsers, getStoredAdmin, updateAdminUserAccessLevel, updateAdminUserStatus, type AdminAccountVerificationRequest } from "../../utils/api";
 import { canDelete } from "../../utils/permissions";
 import { useT } from "../../utils/preferences";

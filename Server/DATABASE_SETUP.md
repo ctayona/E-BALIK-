@@ -133,6 +133,23 @@ SELECT table_name FROM information_schema.columns WHERE table_schema = 'public' 
 SELECT pg_get_functiondef('public.auction_place_bid(uuid,uuid,numeric)'::regprocedure) LIKE '%bid_not_on_step%';   -- true
 ```
 
+### Handover log, guard receipts, Smart Tag link and migration log
+
+Run `manual_migrations/20261017_custody_log_receipts_and_migration_log.sql` after `20261016`. It is additive and safe to re-run. It creates
+`migration_log` (and records the older migration files from what the database already contains), adds `found_items.received_at`,
+`received_by` and `smart_tag_id`, and creates `custody_log` (the per-item handover log). **The app works without it**: Mark received answers
+"run the latest database update", the handover history is rebuilt from existing timestamps only, a Smart Tag code on a new found item is accepted
+but not stored, and the health check on System control says the migration log does not exist yet. Verify with:
+
+```sql
+SELECT count(*) FROM public.migration_log;                                                                  -- 21 on a fully migrated database
+SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'found_items'
+  AND column_name IN ('received_at', 'received_by', 'smart_tag_id');                                         -- 3 rows
+SELECT to_regclass('public.custody_log');                                                                   -- custody_log
+```
+
+**Every new migration file must end with** `INSERT INTO public.migration_log (name, note) VALUES ('<file name without .sql>', 'applied') ON CONFLICT (name) DO NOTHING;`
+
 ### Report lifecycle and guard handover
 
 Run `manual_migrations/20261015_report_lifecycle_and_guard_handover.sql` after `20261014`. It is additive and safe to re-run. It adds
@@ -320,6 +337,10 @@ SUPABASE_URL=https://onwlvwqauptstemmvyhz.supabase.co
 SUPABASE_KEY=sb_publishable_Hsg85D0CSUQvfT3Z_J3crg_4WsyBmmr
 SUPABASE_SERVICE_KEY=<service_key>
 ```
+
+Optional tuning (defaults are sensible): `ADMIN_DIGEST_HOUR` (default 8, Makati time: the earliest hour the daily administrator summary is emailed),
+`ADMIN_LIST_MAX` (default 10000: the most rows an admin list reads before stopping; Supabase returns only 1000 per request, so lists are paged),
+`ALLOW_INSECURE_START` (emergency only: lets a production server start with missing or default secrets; leave unset).
 
 ## Future Enhancements
 

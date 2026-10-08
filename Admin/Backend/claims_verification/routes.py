@@ -1,8 +1,11 @@
 """Claims Verification page: claim queue, history, status changes and deletion."""
+from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, request
 from app.utils import get_db
 from app.utils.claim_status import normalize_claim_status
 from app.utils import housekeeping, rate_limit
+from app.utils import custody_log
+from app.utils.auction_db import AuctionService
 from app.utils.email_service import EmailService
 from app.utils.handover import HandoverError, HandoverService
 from app.utils.recycle_bin import BinError, retention_days
@@ -92,9 +95,17 @@ def update_claim_status(claim_id):
         handover = {'handover_pin_issued': False, 'approval_email_sent': False}
         if status == 'approved_for_pickup' and claim_email_context:
             handover = _issue_pin_and_notify(db, claim_id, claim_email_context, new_deadline=True)
+        # The owner is being given the item back, so an auction of the same item (running or waiting for the administrator) is cancelled
+        # and its leading bidder is told. Without this the item could be promised to two people.
+        cancelled_auctions = []
+        if status == 'approved_for_pickup' and isinstance(updated, dict) and updated.get('found_item_id'):
+            cancelled_auctions = AuctionService(db).cancel_open_for_item(
+                updated['found_item_id'], 'The owner came forward and their ownership claim was approved, so this item is being returned.', admin['account_id'])
+            if cancelled_auctions:
+                _log_admin_action(db, admin, 'Cancel Auction For Approved Claim', 'Auctions', ', '.join(cancelled_auctions), claim_id)
         if status == 'collected':
             _send_receipt(db, claim_id)
-        return jsonify({'claim': updated, **handover}), 200
+        return jsonify({'claim': updated, **handover, 'cancelled_auctions': cancelled_auctions}), 200
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except PermissionError as error:
@@ -209,23 +220,32 @@ def handover_release():
         return jsonify({'error': 'Unable to release the item'}), 500
 
 
+ASSIGNED_COLUMNS = 'item_id,fpost_id,item_name,category,turnover_location,found_date,created_at,status,guard_name_or_id,handover_guard_id'
+
+
+def _assigned_query(db, staff, columns):
+    query = db.client.table('found_items').select(columns).not_.is_('handover_guard_id', 'null') \
+        .in_('status', ['unclaimed', 'pending', 'review', 'ready_to_release'])
+    if staff['access_level'] == 'guard':
+        query = query.eq('handover_guard_id', staff['account_id'])
+    return query.order('created_at', desc=True).limit(100)
+
+
 @claims_verification_bp.route('/claims/handover/assigned', methods=['GET'])
 def handover_assigned():
     """Items finders handed to a guard that are still in custody. A guard sees their own; administrators see every guard's."""
     try:
         staff = _require_admin(required_level='guard')
         db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
-        query = db.client.table('found_items').select(
-            'item_id,fpost_id,item_name,category,turnover_location,found_date,created_at,status,guard_name_or_id,handover_guard_id'
-        ).not_.is_('handover_guard_id', 'null').in_('status', ['unclaimed', 'pending', 'review', 'ready_to_release'])
-        if staff['access_level'] == 'guard':
-            query = query.eq('handover_guard_id', staff['account_id'])
         try:
-            rows = query.order('created_at', desc=True).limit(100).execute().data or []
+            rows = _assigned_query(db, staff, ASSIGNED_COLUMNS + ',received_at').execute().data or []
         except Exception as error:
-            if 'handover_guard_id' in str(error):
+            if 'received_at' in str(error) and 'handover_guard_id' not in str(error):
+                rows = _assigned_query(db, staff, ASSIGNED_COLUMNS).execute().data or []   # migration 20261017 has not been run yet
+            elif 'handover_guard_id' in str(error):
                 return jsonify({'items': [], 'setup_required': True}), 200   # migration 20261015 has not been run yet
-            raise
+            else:
+                raise
         return jsonify({'items': [{
             'reference': row.get('fpost_id'),
             'item': row.get('item_name') or 'Item',
@@ -235,6 +255,7 @@ def handover_assigned():
             'handedOverAt': row.get('created_at') or '',
             'guard': row.get('guard_name_or_id') or '',
             'status': row.get('status') or 'unclaimed',
+            'receivedAt': row.get('received_at') or None,
         } for row in rows]}), 200
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
@@ -243,6 +264,59 @@ def handover_assigned():
     except Exception as error:
         current_app.logger.exception('Assigned handovers failed: %s', error)
         return jsonify({'error': 'Unable to load the items handed to guards'}), 500
+
+
+@claims_verification_bp.route('/claims/handover/received', methods=['POST'])
+def handover_received():
+    """The guard confirms they physically have an item a finder says they handed over. The finder is told, and the handover log records it."""
+    try:
+        staff = _require_admin(required_level='guard')
+        reference = str((request.get_json(silent=True) or {}).get('reference') or '').strip()
+        if not reference:
+            return jsonify({'error': 'Choose the item you received.'}), 400
+        db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        try:
+            rows = db.client.table('found_items').select('item_id,fpost_id,item_name,account_id,reporter_account_id,handover_guard_id,received_at,status') \
+                .eq('fpost_id', reference).limit(1).execute().data or []
+        except Exception as error:
+            if 'received_at' in str(error) or 'handover_guard_id' in str(error):
+                return jsonify({'error': 'Receipts need the latest database update (migration 20261017).', 'code': 'setup_required'}), 503
+            raise
+        if not rows:
+            return jsonify({'error': 'That item was not found.'}), 404
+        item = rows[0]
+        if staff['access_level'] == 'guard' and str(item.get('handover_guard_id') or '') != str(staff['account_id']):
+            return jsonify({'error': 'This item was handed to a different guard.'}), 403
+        if str(item.get('status') or '').lower() not in ('unclaimed', 'pending', 'review', 'ready_to_release'):
+            return jsonify({'error': 'This item has already left custody.'}), 409
+        if item.get('received_at'):
+            return jsonify({'success': True, 'already': True, 'message': 'You already confirmed this item.'}), 200
+        now = datetime.now(timezone.utc).isoformat()
+        updated = db.client.table('found_items').update({'received_at': now, 'received_by': staff['account_id']}) \
+            .eq('item_id', item['item_id']).is_('received_at', 'null').execute().data or []
+        if not updated:
+            return jsonify({'success': True, 'already': True, 'message': 'You already confirmed this item.'}), 200
+        profile = db.get_user_by_account_id(staff['account_id']) or {}
+        actor = f"{profile.get('fname') or ''} {profile.get('lname') or ''}".strip() or 'The guard'
+        custody_log.record(db.client, item['item_id'], 'received', staff['account_id'], actor, 'The guard confirmed they have the item.')
+        finder = item.get('reporter_account_id') or item.get('account_id')
+        if finder and str(finder) != str(staff['account_id']):
+            try:
+                db.create_user_notification(
+                    str(finder), 'Your item was received', f'{actor} confirmed they received "{item.get("item_name") or "your item"}" ({item["fpost_id"]}). It is safe with the Lost and Found Office. Thank you for turning it in.',
+                    found_item_id=item['item_id'], notification_type='guard_received', link_label='View my reports', link_page='my-reports',
+                )
+            except Exception as error:
+                current_app.logger.warning('Receipt notice for %s failed: %s', reference, error)
+        _log_admin_action(db, staff, 'Confirm Item Received', 'Release Desk', reference, item['item_id'])
+        return jsonify({'success': True, 'message': f'Thanks. {item.get("item_name") or "The item"} is recorded as received and the finder was told.'}), 200
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except PermissionError as error:
+        return jsonify({'error': str(error)}), 403
+    except Exception as error:
+        current_app.logger.exception('Receipt confirmation failed: %s', error)
+        return jsonify({'error': 'Unable to record that the item was received'}), 500
 
 
 @claims_verification_bp.route('/claims/<claim_id>/handover-pin', methods=['POST'])

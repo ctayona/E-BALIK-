@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Claim } from "../../data/mockData";
+import type { Claim } from "../../data/types";
 import { deleteAdminClaim, fetchAdminClaimHistory, fetchAdminClaims, updateAdminClaimStatus, type AdminClaimHistoryRow, type AdminClaimRow } from "../../utils/api";
 import { canDelete } from "../../utils/permissions";
 import { setArchived } from "../../utils/archive";
@@ -20,7 +20,7 @@ const CLAIM_TONE: Record<Claim["status"], Tone> = {
   Verified: "iris",
   Approved: "iris",
   "Approved for Pickup": "iris",
-  Collected: "mint",
+  Completed: "mint",
   Rejected: "rose",
   Unknown: "slate",
 };
@@ -133,7 +133,9 @@ function ReviewModal({ claim, onClose, onApprove, onReject, onCollect, onEditRea
   };
 
   const confirmCopy = {
-    approve: { title: tr("Approve this claim for pickup?"), body: tr("This approves the claimant for in-person verification at the office and notifies them."), button: tr("Approve claim"), className: BTN.success },
+    approve: { title: tr("Approve this claim for pickup?"), body: claim.inAuction
+      ? tr("This approves the claimant for in-person verification at the office and notifies them. This item is in an auction, so that auction will be cancelled and its bidders told.")
+      : tr("This approves the claimant for in-person verification at the office and notifies them."), button: tr("Approve claim"), className: BTN.success },
     reject: { title: tr("Reject this claim?"), body: tr("The claimant is notified with the reason you enter below."), button: tr("Reject claim"), className: BTN.danger },
     collect: { title: tr("Record the in-person collection?"), body: tr("Check the claimant's original ID and confirm the item was handed over. This closes the found report and this claim, resolves the claimant's confirmed matching lost report, and closes competing claims for the same item."), button: tr("Record collection"), className: BTN.success },
   } as const;
@@ -331,7 +333,7 @@ export default function ClaimsVerification() {
     if (normalized === "approved_for_pickup" || normalized === "approved for pickup" || normalized === "approved" || normalized === "verified" || normalized === "accepted") {
       return "Approved for Pickup";
     }
-    if (normalized === "collected") return "Collected";
+    if (normalized === "collected" || normalized === "completed") return "Completed";
     if (normalized === "rejected" || normalized === "declined" || normalized === "denied") return "Rejected";
     if (normalized === "pending" || normalized === "under review" || normalized === "under_review" || normalized === "in_review" || normalized === "review") return "Under Review";
     return "Unknown";
@@ -342,6 +344,7 @@ export default function ClaimsVerification() {
       id: item.id,
       claimReference: item.claimReference || item.id,
       foundItemId: item.foundItemId || "",
+      inAuction: Boolean(item.inAuction),
       claimant: item.claimant,
       studentId: item.studentId,
       item: item.item,
@@ -456,10 +459,10 @@ export default function ClaimsVerification() {
   // Archived claims only appear in the Archived tab; the other tabs are about claims still in play.
   const workingClaims = claims.filter((claim) => !claim.archived);
   const archivedClaims = claims.filter((claim) => claim.archived);
-  const closedClaims = workingClaims.filter((claim) => claim.status === "Collected" || claim.status === "Rejected");
-  const activeClaims = workingClaims.filter((claim) => claim.status !== "Collected" && claim.status !== "Rejected");
+  const closedClaims = workingClaims.filter((claim) => claim.status === "Completed" || claim.status === "Rejected");
+  const activeClaims = workingClaims.filter((claim) => claim.status !== "Completed" && claim.status !== "Rejected");
   const tabClaims = activeTab === "claims" ? workingClaims : activeTab === "closed" ? closedClaims : activeTab === "archived" ? archivedClaims : activeClaims;
-  const isClosed = (claim: Claim) => claim.status === "Collected" || claim.status === "Rejected";
+  const isClosed = (claim: Claim) => claim.status === "Completed" || claim.status === "Rejected";
   const filteredClaims = tabClaims.filter((claim) => {
     if (statusFilter !== "All" && claim.status !== statusFilter) return false;
     if (claimantValue && !claim.claimant.toLocaleLowerCase().includes(claimantValue)) return false;
@@ -487,7 +490,7 @@ export default function ClaimsVerification() {
   const visibleClaims = filteredClaims.slice((boundedPage - 1) * pageSize, boundedPage * pageSize);
   const pageWindowStart = Math.max(1, Math.min(boundedPage - 2, totalPages - 5));
   const pageNumbers = Array.from({ length: Math.min(6, totalPages) }, (_, index) => pageWindowStart + index);
-  const availableStatuses: Claim["status"][] = ["Under Review", "Approved for Pickup", "Rejected", "Collected", "Unknown"];
+  const availableStatuses: Claim["status"][] = ["Under Review", "Approved for Pickup", "Rejected", "Completed", "Unknown"];
 
   const clearFilters = () => {
     setClaimantFilter("");
@@ -506,13 +509,14 @@ export default function ClaimsVerification() {
 
   const approve = async (id: string) => {
     const targetClaim = claims.find((entry) => entry.id === id);
-    if (targetClaim && (targetClaim.status === "Approved for Pickup" || targetClaim.status === "Collected" || targetClaim.status === "Rejected")) {
+    if (targetClaim && (targetClaim.status === "Approved for Pickup" || targetClaim.status === "Completed" || targetClaim.status === "Rejected")) {
       showInfoModal({ variant: "warning", title: "Claim already processed", message: "This claim has already been processed and can only move to collection or remain rejected." });
       return;
     }
 
     try {
-      await updateAdminClaimStatus(id, "approved_for_pickup");
+      const result = await updateAdminClaimStatus(id, "approved_for_pickup");
+      const cancelled: string[] = Array.isArray(result?.cancelled_auctions) ? result.cancelled_auctions : [];
       setClaims((current) => current.map((claim) => claim.id === id ? { ...claim, status: "Approved for Pickup" } : claim));
       setReviewClaim(null);
       setActiveTab("all");
@@ -522,7 +526,14 @@ export default function ClaimsVerification() {
         await refreshClaims();
       } catch {
       }
-      showInfoModal({ variant: "success", title: "Claim approved for pickup", message: "The claimant can now complete in-person ownership verification at the office.", replaceAuto: true });
+      showInfoModal({
+        variant: "success",
+        title: "Claim approved for pickup",
+        message: cancelled.length
+          ? tr("The claimant can now complete in-person ownership verification at the office. The auction of this item was cancelled ({0}) and its bidders were told.", { "0": cancelled.join(", ") })
+          : "The claimant can now complete in-person ownership verification at the office.",
+        replaceAuto: true,
+      });
       window.dispatchEvent(new CustomEvent("ebalik-claims-updated"));
     } catch (error) {
       try {

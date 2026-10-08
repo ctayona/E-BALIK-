@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from app.utils.auction_email import format_peso, send_auction_final_warning_email, send_auction_forfeited_email, send_auction_won_email
 from app.utils.profanity import find_profanity
+from app.utils import custody_log
 from app.utils.report_lifecycle import ReportLifecycle
 
 logger = logging.getLogger(__name__)
@@ -194,6 +195,19 @@ class AuctionService:
         self.client = db.client
 
     # ------------------------------------------------------------------ helpers
+    def _log_item(self, found_item_id: Any, event: str, admin_id: Any = None, detail: str = '') -> None:
+        """Add a line to the item's handover log (best effort)."""
+        if not found_item_id:
+            return
+        label = ''
+        if admin_id:
+            try:
+                profile = self.db.get_user_by_account_id(str(admin_id)) or {}
+                label = f"{profile.get('fname') or ''} {profile.get('lname') or ''}".strip()
+            except Exception:
+                label = ''
+        custody_log.record(self.client, found_item_id, event, admin_id, label or ('System' if not admin_id else ''), detail)
+
     def _guard(self, error: Exception):
         if _is_missing_schema(error):
             raise AuctionsUnavailable('The Auction Hall is not set up yet. Run the 20261005_auction_hall.sql and 20261009_tag_expiry_and_auction_buyout.sql migrations in Supabase.') from error
@@ -446,6 +460,8 @@ class AuctionService:
             # The item returns to custody so it can be listed again, or claimed by its real owner.
             self.client.table('found_items').update({'status': 'unclaimed', 'custody_status': 'turned_over', 'updated_at': _iso(now)}) \
                 .eq('item_id', row['found_item_id']).eq('status', 'auctioned').execute()
+            self._log_item(row['found_item_id'], 'auction_forfeited', None, 'The winner did not collect within 72 hours.')
+            self._log_item(row['found_item_id'], 'returned_to_custody', None, 'The item is back in custody and can be claimed or auctioned again.')
         winner_id = str(row.get('winner_account_id') or '')
         winner = (self._profiles([winner_id]) or {}).get(winner_id) or {}
         banned = False
@@ -894,6 +910,7 @@ class AuctionService:
             if '23505' in str(error) or 'uq_auctions_one_live_per_item' in str(error):
                 raise AuctionError('This item already has a live auction.', 409)
             self._guard(error)
+        self._log_item(item['item_id'], 'auction_listed', admin_id, f"Starting bid {format_peso(starting)}.")
         return created[0]
 
     # ------------------------------------------------------------------ admin: reads
@@ -935,13 +952,17 @@ class AuctionService:
     def admin_list(self) -> Dict[str, Any]:
         now = _now()
         try:
-            self.settle_and_notify(force=True)
+            # Reading the list changes nothing: ended auctions are settled by the scheduler (and by Confirm winner), and the status shown
+            # here is computed from the end time either way.
             rows = self.client.table('auctions').select('*').order('created_at', desc=True).limit(300).execute().data or []
         except Exception as error:
             self._guard(error)
         profiles = self._profiles([r.get(k) for r in rows for k in ('highest_bidder_id', 'winner_account_id')])
         reactions = self.reaction_counts([str(r['auction_id']) for r in rows])
         cards = [self._admin_card(r, profiles, now, reactions) for r in rows]
+        claimed_items = self._items_with_open_claims([str(r['found_item_id']) for r in rows if r.get('found_item_id') and r.get('status') in OPEN_STATUSES])
+        for card in cards:
+            card['pending_claim'] = bool(card.get('found_item_id')) and card['found_item_id'] in claimed_items and card['stage'] in ('live', 'scheduled', 'awaiting_admin')
         archived_total = sum(1 for c in cards if c['archived'])
         relisted = {str(r['reauctioned_from']) for r in rows if r.get('reauctioned_from')}
         for card in cards:
@@ -963,10 +984,36 @@ class AuctionService:
         }
         return {'auctions': cards, 'stats': stats, 'server_time': _iso(now), 'min_custody_days': MIN_CUSTODY_DAYS}
 
+    def _items_with_open_claims(self, item_ids: List[str]) -> set:
+        """Which of these found items have an ownership claim waiting or approved. Empty on any error."""
+        found: set = set()
+        try:
+            for chunk in _chunks(item_ids):
+                rows = self.client.table('claims').select('found_item_id').in_('found_item_id', chunk).in_('status', list(OPEN_CLAIM_STATUSES)).execute().data or []
+                found.update(str(r['found_item_id']) for r in rows)
+        except Exception as error:
+            logger.info('Open claims for auctions unavailable: %s', error)
+        return found
+
+    def cancel_open_for_item(self, found_item_id: Any, reason: str, admin_id: Any = None) -> List[str]:
+        """The real owner was approved: cancel every open auction of the item so nobody keeps bidding on something that will be handed over.
+        Returns the titles that were cancelled. Never raises."""
+        cancelled: List[str] = []
+        try:
+            rows = self.client.table('auctions').select('auction_id,title').eq('found_item_id', found_item_id).in_('status', list(OPEN_STATUSES)).execute().data or []
+            for row in rows:
+                try:
+                    done = self.cancel_auction(str(row['auction_id']), reason, admin_id)
+                    cancelled.append(done.get('title') or row.get('title') or 'Auction')
+                except AuctionError:
+                    continue
+        except Exception as error:
+            logger.warning('Auctions of item %s could not be cancelled after a claim was approved: %s', found_item_id, error)
+        return cancelled
+
     def admin_detail(self, auction_id: str) -> Dict[str, Any]:
         now = _now()
         try:
-            self.settle_and_notify()
             rows = self.client.table('auctions').select('*').eq('auction_id', auction_id).limit(1).execute().data or []
             if not rows:
                 raise AuctionError('Auction not found.', 404)
@@ -1129,7 +1176,7 @@ class AuctionService:
         except Exception as error:
             self._guard(error)
 
-    def cancel_auction(self, auction_id: str, reason: str) -> Dict[str, Any]:
+    def cancel_auction(self, auction_id: str, reason: str, admin_id: Any = None) -> Dict[str, Any]:
         now = _now()
         reason = str(reason or '').strip()[:300] or 'Cancelled by an administrator.'
         try:
@@ -1145,6 +1192,7 @@ class AuctionService:
             self._guard(error)
         if not cancelled:
             raise AuctionError('The auction changed while you were cancelling it. Reload and try again.', 409)
+        self._log_item(cancelled[0].get('found_item_id'), 'auction_cancelled', admin_id, reason)
         leader = cancelled[0].get('highest_bidder_id')
         if leader:
             try:
@@ -1156,7 +1204,7 @@ class AuctionService:
                 logger.warning('Auction cancel notification failed: %s', error)
         return cancelled[0]
 
-    def set_fulfillment(self, auction_id: str, action: str) -> Dict[str, Any]:
+    def set_fulfillment(self, auction_id: str, action: str, admin_id: Any = None) -> Dict[str, Any]:
         if action not in ('collected', 'forfeited'):
             raise AuctionError('Choose collected or forfeited.')
         now = _now()
@@ -1175,6 +1223,10 @@ class AuctionService:
             if action == 'collected' and row.get('found_item_id'):
                 # Sold and handed over: the found report is finished too (it moves to Completed for the person who turned it in).
                 ReportLifecycle(self.db).complete_for_auction(row['found_item_id'])
+                self._log_item(row['found_item_id'], 'auction_completed', admin_id, f"Paid and collected for {format_peso(row.get('winning_amount'))}.")
+            if action == 'forfeited' and row.get('found_item_id'):
+                self._log_item(row['found_item_id'], 'auction_forfeited', admin_id, 'The winner did not collect the item.')
+                self._log_item(row['found_item_id'], 'returned_to_custody', admin_id, 'The item is back in custody and can be claimed or auctioned again.')
         except AuctionError:
             raise
         except Exception as error:
@@ -1244,6 +1296,7 @@ class AuctionService:
     def finalize(self, auction_id: str, admin_id: str) -> Dict[str, Any]:
         """An admin confirms the result of an auction awaiting_admin. Sends the winner notice on success."""
         try:
+            self.settle_and_notify(force=True)   # an auction whose timer just ended may not be settled yet (the scheduler runs every few minutes)
             response = self.client.rpc('auction_finalize', {'p_auction_id': auction_id, 'p_admin_id': admin_id}).execute()
         except Exception as error:
             self._guard(error)
@@ -1268,6 +1321,7 @@ class AuctionService:
                 except Exception as error:
                     logger.warning('Cancel notification failed: %s', error)
         else:
+            self._log_item(auction.get('found_item_id'), 'auction_confirmed', admin_id, f"Winner confirmed at {format_peso(auction.get('winning_amount'))}; waiting for payment and pickup.")
             self._notify_pending_winners()
         return {'outcome': result.get('outcome'), 'auction': auction}
 
@@ -1340,6 +1394,10 @@ class AuctionService:
             raise
         except Exception as error:
             self._guard(error)
+        if not auto_forfeited:
+            self._log_item(row.get('found_item_id'), 'auction_forfeited', admin_id, reason)
+            self._log_item(row.get('found_item_id'), 'returned_to_custody', admin_id, 'The item is back in custody and is being auctioned again.')
+        self._log_item(row.get('found_item_id'), 'auction_listed', admin_id, f'Listed again (re-auction) from {format_peso(starting)}.')
         return {'old': closed[0], 'new': created[0], 'previous_winner_id': row.get('winner_account_id')}
 
     def delete_auction(self, auction_id: str, admin_id: Optional[str] = None) -> Dict[str, Any]:

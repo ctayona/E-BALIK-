@@ -11,7 +11,7 @@ import { tr } from "../../utils/preferences";
 
 const TYPE_LABEL: Record<BinType, string> = { claim: "Claim", found_item: "Found item", missing_item: "Lost report", user: "Account", auction: "Auction", evidence: "ID and photo files" };
 const TYPE_TONE: Record<BinType, Tone> = { claim: "iris", found_item: "mint", missing_item: "gold", user: "rose", auction: "iris", evidence: "slate" };
-const TABLE_LABEL: Record<string, string> = { user_profiles: "account", found_items: "found item", missing_items: "lost report", claims: "claim", ai_matches: "match", auctions: "auction", auction_bids: "bid", auction_comments: "comment", auction_reactions: "heart" };
+const TABLE_LABEL: Record<string, string> = { user_profiles: "account", found_items: "found item", missing_items: "lost report", claims: "claim", ai_matches: "match", custody_log: "handover log entry", auctions: "auction", auction_bids: "bid", auction_comments: "comment", auction_reactions: "heart" };
 const ALL = "all";
 
 /** What came with it, in plain words: "1 account, 2 found items, 3 claims, 5 files". */

@@ -7,9 +7,8 @@ import { fetchAdminAuctions, fetchAuctionReadySummary } from "../../utils/auctio
 import { isSuperAdmin } from "../../utils/permissions";
 import { useTheme, tr } from "../../utils/preferences";
 
-type DeskPage = "claims" | "ai-matching" | "lost-items" | "found-items" | "items-in-custody" | "users" | "activity-logs" | "auctions";
+type DeskPage = "claims" | "ai-matching" | "lost-items" | "found-items" | "items-in-custody" | "users" | "activity-logs" | "auctions" | "reports";
 import { AdminMetricSkeleton, SkeletonBlock, AdminTableSkeleton } from "../../components/LoadingSkeleton";
-import AnalyticsSection from "./AnalyticsSection";
 import HandoverPinCard from "./HandoverPinCard";
 
 interface DonutProps { value: number; color: string; size?: number; }
@@ -307,7 +306,15 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
         </section>
       </div>
 
-      <AnalyticsSection />
+      <section className="admin-card flex flex-wrap items-center justify-between gap-3 p-5 sm:p-6" aria-label={tr("Analytics")}>
+        <div>
+          <h2 className="font-[family-name:var(--font-heading)] text-[18px] font-semibold text-ink">{tr("Trends and analytics")}</h2>
+          <p className="text-[13px] text-ink-muted">{tr("Reports over time, recovery rates, categories and locations are on the Analytics page.")}</p>
+        </div>
+        <button type="button" onClick={() => onNavigate?.("reports")} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[14px] font-semibold text-iris-700 hover:bg-iris-50">
+          {tr("Open analytics")} <ChevronRight size={15} aria-hidden="true" />
+        </button>
+      </section>
 
       <section className="admin-card p-5 sm:p-6" aria-labelledby="activity-heading">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">

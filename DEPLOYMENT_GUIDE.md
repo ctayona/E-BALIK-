@@ -82,9 +82,10 @@ Server/manual_migrations/20261013_guard_role_reminders_and_retention.sql
 Server/manual_migrations/20261014_recycle_bin.sql
 Server/manual_migrations/20261015_report_lifecycle_and_guard_handover.sql
 Server/manual_migrations/20261016_archive_and_bid_steps.sql
+Server/manual_migrations/20261017_custody_log_receipts_and_migration_log.sql
 ```
 
-The last twelve are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo, the Mission Control storage tools staff approval of Smart Tags, Handover PINs, the automatic auction pickup deadlines, the guard role, email preferences, claim and Smart Tag reminders, evidence retention and the recycle bin. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, `20261010`, `20261011`, `20261012`, `20261013`, `20261014`, `20261015`, then `20261016`). **Until `20261014` is run, no admin delete works** (the app refuses to delete anything it cannot archive first) and the file-retention rule waits. The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
+The last thirteen are required for auctions, maintenance mode, verification roles, suspensions, saved auction hearts, duplicate-claim protection, Smart Tags, tag expiry, the auction Buy Now price, the Smart Tag registration photo, the Mission Control storage tools staff approval of Smart Tags, Handover PINs, the automatic auction pickup deadlines, the guard role, email preferences, claim and Smart Tag reminders, evidence retention and the recycle bin. Run them in order (`20261005`, `20261006`, `20261007`, `20261008`, `20261009`, `20261010`, `20261011`, `20261012`, `20261013`, `20261014`, `20261015`, `20261016`, then `20261017`, which also adds the migration log, guard receipts, the Smart Tag link and the per-item handover log). **Until `20261014` is run, no admin delete works** (the app refuses to delete anything it cannot archive first) and the file-retention rule waits. The tag photo camera needs the site to be served over https (Vercel does this); on plain http a phone falls back to its camera app. Then check them:
 
 ```sql
 SELECT to_regclass('public.auctions') AS auctions,
@@ -136,6 +137,8 @@ UPDATE public.user_profiles SET access_level = 'super_admin' WHERE email = 'you@
 | `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` | your SendGrid values, or leave blank if unused |
 | `CRON_SECRET` | a long random string you invent. Optional: it switches on `POST /api/cron/run`, so an outside timer can wake the free service and run the auction deadlines (see below). |
 
+**The API refuses to start in production** if `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `JWT_SECRET_KEY`, `APP_ENCRYPTION_KEY` or `CORS_ORIGINS` is missing, or if the JWT secret is the development default or shorter than 24 characters. The deploy log then names every problem. (`ALLOW_INSECURE_START=true` overrides this in an emergency; remove it as soon as the settings are right.)
+
 Render fills in `JWT_SECRET_KEY` itself, and `render.yaml` already sets `FLASK_ENV`, `PYTHON_VERSION` and `AUCTION_EMAIL_MODE=auto`. Leave those alone. With `auto`, auction winner emails (and AI-match emails) are really sent as soon as `SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL` are set. The same list as a checklist file is `Environment_Configs/backend/production.env.example`.
 
 #### Automatic auction deadlines (48h warning, 72h forfeit)
@@ -159,6 +162,8 @@ On a paid plan you can instead add a Render Cron Job running `python Server/scri
 | `TAG_EXPIRY_REMINDER_DAYS` | 30 | How many days before a Smart Tag expires its owner is reminded. |
 | `EVIDENCE_RETENTION_DAYS` | 30 | ID documents and proof photos are deleted this many days after a claim closes or a verification is reviewed. **`0` switches deletion off.** Update the numbers on the data privacy page (`PrivacyPage.tsx`) if you change it. |
 | `RECYCLE_BIN_DAYS` | 30 | How long a deleted record, and any ID document removed by the retention rule, waits in the recycle bin before it is deleted for good. The privacy page says 30: update it if you change this. |
+| `ADMIN_DIGEST_HOUR` | 8 | The earliest hour (Makati time) the daily summary email goes to administrators. Each administrator can turn it off in their profile. |
+| `ADMIN_LIST_MAX` | 10000 | The most rows an admin list reads (Supabase returns 1000 per request, so lists are paged up to this). |
 | `PUBLIC_API_URL` | Render's own address | The address used in unsubscribe links. Render provides `RENDER_EXTERNAL_URL` itself, so you normally set nothing. |
 
 Existing 30-day sign-ins stop working as soon as this is deployed (the server refuses any token older than the limits above), so everyone signs in once more.

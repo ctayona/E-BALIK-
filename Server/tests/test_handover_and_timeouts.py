@@ -12,6 +12,7 @@ for path in (ROOT, ROOT.parent):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
+from app.utils.localtime import today_pht  # noqa: E402
 from memdb import MemClient  # noqa: E402
 from Admin.Backend.claims_verification import routes as claim_routes  # noqa: E402
 from app.utils import analytics, auction_email, handover, rate_limit, scheduler  # noqa: E402
@@ -565,8 +566,8 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_the_collector_pages_through_rows_and_tolerates_unmigrated_columns(self):
         store = {
-            'missing_items': [{'category': 'Keys', 'last_seen_date': datetime.now(timezone.utc).date().isoformat(), 'created_at': datetime.now(timezone.utc).date().isoformat(), 'last_location': 'Library'}],
-            'found_items': [{'status': 'returned', 'created_at': datetime.now(timezone.utc).date().isoformat(), 'location': 'Library'}, {'status': 'unclaimed', 'created_at': datetime.now(timezone.utc).date().isoformat()}],
+            'missing_items': [{'category': 'Keys', 'last_seen_date': today_pht().isoformat(), 'created_at': today_pht().isoformat(), 'last_location': 'Library'}],
+            'found_items': [{'status': 'returned', 'created_at': today_pht().isoformat(), 'location': 'Library'}, {'status': 'unclaimed', 'created_at': today_pht().isoformat()}],
             'claims': [{'claim_id': 'a', 'status': 'collected'}, {'claim_id': 'b', 'status': 'approved_for_pickup'}],
         }
         result = analytics.collect_visual_analytics(make_db(store))

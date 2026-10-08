@@ -19,7 +19,6 @@ const AIMatching = lazy(() => import("./pages/ai-matching/AIMatching"));
 const Auctions = lazy(() => import("./pages/auctions/Auctions"));
 const SmartTags = lazy(() => import("./pages/smart-tags/SmartTags"));
 const ClaimsVerification = lazy(() => import("./pages/claims-verification/ClaimsVerification"));
-const ChainOfCustody = lazy(() => import("./pages/chain-of-custody/ChainOfCustody"));
 const Users = lazy(() => import("./pages/users/Users"));
 const ReportsAnalytics = lazy(() => import("./pages/reports-analytics/ReportsAnalytics"));
 const Notifications = lazy(() => import("./pages/notifications/Notifications"));
@@ -29,7 +28,7 @@ const SystemControl = lazy(() => import("./pages/system-control/SystemControl"))
 const GuardDesk = lazy(() => import("./pages/guard-desk/GuardDesk"));
 const RecycleBin = lazy(() => import("./pages/recycle-bin/RecycleBin"));
 
-type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "admin-profile";
+type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "admin-profile";
 
 const PAGE_META: Record<Page, StringKey> = {
   "dashboard": "nav.dashboard",
@@ -39,7 +38,6 @@ const PAGE_META: Record<Page, StringKey> = {
   "auctions": "nav.auctions",
   "smart-tags": "nav.smartTags",
   "claims": "nav.claims",
-  "chain-of-custody": "nav.custody",
   "users": "nav.users",
   "reports": "nav.reports",
   "notifications": "nav.notifications",
@@ -53,8 +51,8 @@ const ADMIN_PAGE_STORAGE_KEY = "ebalik_admin_last_page";
 const REPORT_TAB_STORAGE_KEY = "ebalik_admin_reports_tab";
 
 /** Places other screens (and old bookmarks) can ask for. The lost, found and custody lists now live on one Reports page. */
-type NavTarget = Page | "lost-items" | "found-items" | "items-in-custody";
-const REPORT_TAB_FOR: Partial<Record<NavTarget, ReportsTab>> = { "lost-items": "lost", "found-items": "found", "items-in-custody": "custody" };
+type NavTarget = Page | "lost-items" | "found-items" | "items-in-custody" | "chain-of-custody";
+const REPORT_TAB_FOR: Partial<Record<NavTarget, ReportsTab>> = { "lost-items": "lost", "found-items": "found", "items-in-custody": "custody", "chain-of-custody": "custody" };
 
 export default function App() {
   const [user, setUser] = useState<AdminUser | null>(() => getStoredAdmin());
@@ -182,7 +180,6 @@ export default function App() {
       case "auctions": return <Auctions />;
       case "smart-tags": return <SmartTags />;
       case "claims": return <ClaimsVerification />;
-      case "chain-of-custody": return <ChainOfCustody />;
       case "users": return <Users />;
       case "reports": return <ReportsAnalytics />;
       case "notifications": return <Notifications />;

@@ -11,11 +11,17 @@ from uuid import UUID
 
 from app.utils.matching import match_percentage
 from app.utils.report_lifecycle import ReportLifecycle
+from app.utils import custody_log
 from app.utils.archive import flag_archived
+from app.utils.paging import fetch_all
 from app.utils.crypto_service import CryptoService
 from app.utils.claim_status import normalize_claim_status
 
 logger = logging.getLogger(__name__)
+
+# A found report is finished once the item left custody (the same list as report_lifecycle.COMPLETED_FOUND). Shown as "Completed".
+FINISHED_FOUND_STATUSES = frozenset({'returned', 'claimed', 'closed', 'collected'})
+
 
 class SupabaseDB:
     """Supabase database connection and query handler"""
@@ -496,17 +502,19 @@ class SupabaseDB:
                 'account_id', 'fpost_id', 'reporter_account_id', 'reporter_email',
                 'reporter_campus_id', 'reporter_name', 'item_name', 'category', 'description',
                 'location', 'found_date', 'image_url', 'turnover_location',
-                'guard_name_or_id', 'handover_guard_id', 'custody_status', 'status'
+                'guard_name_or_id', 'handover_guard_id', 'smart_tag_id', 'custody_status', 'status'
             }
             payload = {key: value for key, value in item_data.items() if key in allowed_fields and value is not None}
-            try:
-                response = self.client.table('found_items').insert(payload).execute()
-            except Exception as insert_error:
-                if 'handover_guard_id' not in payload or 'handover_guard_id' not in str(insert_error):
-                    raise
-                # Migration 20261015 has not been run yet: keep the guard's name (guard_name_or_id) and save the report without the link.
-                payload.pop('handover_guard_id')
-                response = self.client.table('found_items').insert(payload).execute()
+            while True:
+                try:
+                    response = self.client.table('found_items').insert(payload).execute()
+                    break
+                except Exception as insert_error:
+                    # Migrations 20261015 and 20261017 add these columns. Without them the report is still saved, minus the link.
+                    missing = next((column for column in ('handover_guard_id', 'smart_tag_id') if column in payload and column in str(insert_error)), None)
+                    if not missing:
+                        raise
+                    payload.pop(missing)
             logger.info(f"✓ Found item created: {payload.get('item_name')}")
             return response.data[0] if response.data else {}
         except Exception as e:
@@ -654,7 +662,7 @@ class SupabaseDB:
         """Return missing fields needed for private server-side matching."""
         response = self.client.table('missing_items').select(
             'mpost_id,item_name,category,description,distinctive_marks,last_location,last_seen_date,status'
-        ).eq('status', 'missing').order('created_at', desc=True).limit(1000).execute()
+        ).in_('status', ['missing', 'found']).order('created_at', desc=True).limit(1000).execute()
         return response.data or []
 
     def next_mpost_id(self, last_seen_date: str, weekday_code: str) -> str:
@@ -986,8 +994,7 @@ class SupabaseDB:
             columns = 'account_id, campus_id, fname, mname, lname, email, user_role, access_level, is_active, created_at, last_login_at, verification_status'
             if self.supports_governance_fields:
                 columns += ', user_category, suspended_until'
-            response = self.client.table('user_profiles').select(columns).order('created_at', desc=True).execute()
-            users = response.data or []
+            users = fetch_all(lambda: self.client.table('user_profiles').select(columns).order('created_at', desc=True))
 
             def count_by_account(table_name: str, account_column: str) -> Dict[str, int]:
                 counts: Dict[str, int] = {}
@@ -1117,10 +1124,9 @@ class SupabaseDB:
     def list_admin_missing_items(self) -> list[Dict[str, Any]]:
         """Return lost-item records in the shape the admin Lost Items page expects."""
         try:
-            response = self.client.table('missing_items').select(
+            items = fetch_all(lambda: self.client.table('missing_items').select(
                 'item_id, mpost_id, account_id, reporter_account_id, reporter_name, item_name, category, description, last_location, last_seen_date, image_url, status, created_at, reporter_email, reporter_campus_id, distinctive_marks'
-            ).order('created_at', desc=True).execute()
-            items = response.data or []
+            ).order('created_at', desc=True))
             reporter_ids = []
             for item in items:
                 reporter_id = item.get('reporter_account_id') or item.get('account_id')
@@ -1150,7 +1156,7 @@ class SupabaseDB:
                     'studentId': reporter_profile.get('campus_id') or item.get('reporter_campus_id') or 'N/A',
                     'photo': item.get('image_url') or '',
                     'aiMatch': None,
-                    'status': 'Resolved' if report_status in {'returned', 'resolved', 'closed'} else 'Found' if report_status == 'found' else 'Potential Match' if report_status == 'matched' else 'Searching',
+                    'status': 'Completed' if report_status in {'returned', 'resolved', 'closed'} else 'Found' if report_status == 'found' else 'Potential Match' if report_status == 'matched' else 'Searching',
                     'rawStatus': report_status or 'missing',
                 })
             flag_archived(self.client, mapped, 'missing_items', 'mpost_id')
@@ -1162,15 +1168,14 @@ class SupabaseDB:
     def list_admin_found_items(self) -> list[Dict[str, Any]]:
         """Return found-item records in the shape the admin Found Items page expects."""
         try:
-            missing_response = self.client.table('missing_items').select(
+            # Only open lost reports can still match something, so completed ones are not compared.
+            missing_items = fetch_all(lambda: self.client.table('missing_items').select(
                 'mpost_id, item_id, item_name, category, description, distinctive_marks, last_location, last_seen_date, status'
-            ).order('created_at', desc=True).execute()
-            missing_items = missing_response.data or []
+            ).in_('status', ['missing', 'found', 'open', 'matched']).order('created_at', desc=True))
 
-            response = self.client.table('found_items').select(
+            items = fetch_all(lambda: self.client.table('found_items').select(
                 'item_id, fpost_id, account_id, reporter_account_id, reporter_name, item_name, category, description, location, found_date, image_url, turnover_location, guard_name_or_id, status, custody_status, created_at, reporter_email, reporter_campus_id'
-            ).order('created_at', desc=True).execute()
-            items = response.data or []
+            ).order('created_at', desc=True))
 
             best_match_scores = {}
             best_match_names = {}
@@ -1178,6 +1183,10 @@ class SupabaseDB:
                 item_key = str(item.get('fpost_id') or item.get('item_id') or '')
                 best_score = 0.0
                 best_name = ''
+                if str(item.get('status') or '').lower() in FINISHED_FOUND_STATUSES:
+                    best_match_scores[item_key] = best_score
+                    best_match_names[item_key] = best_name
+                    continue   # an item that already left custody has nothing left to match
                 for missing in missing_items:
                     score = match_percentage(missing, item)
                     if score > best_score:
@@ -1202,7 +1211,7 @@ class SupabaseDB:
             for item in items:
                 item_key = str(item.get('fpost_id') or item.get('item_id') or '')
                 report_status = str(item.get('status') or '').lower()
-                ui_status = 'Claimed' if report_status == 'claimed' else 'Released' if report_status == 'returned' else 'Under Review' if report_status in {'pending', 'review'} else 'Ready to Release' if report_status == 'ready_to_release' else 'Auctioned' if report_status == 'auctioned' else 'Unclaimed'
+                ui_status = 'Completed' if report_status in FINISHED_FOUND_STATUSES else 'Under Review' if report_status in {'pending', 'review'} else 'Ready to Release' if report_status == 'ready_to_release' else 'Auctioned' if report_status == 'auctioned' else 'Unclaimed'
                 ai_score = float(best_match_scores.get(item_key, 0.0) or 0.0)
                 ai_matched = ai_score >= 55
                 mapped.append({
@@ -1402,6 +1411,8 @@ class SupabaseDB:
         if not item:
             return {}
         response = self.client.table('missing_items').update(update).eq('item_id', item['item_id']).execute()
+        if update.get('status') == 'returned' and str(item.get('status') or '').lower() != 'returned':
+            ReportLifecycle(self).notify_completed_by_hand(item)   # same notice as a release, so the owner is never left guessing
         return response.data[0] if response.data else {}
 
     def delete_admin_missing_item(self, reference: str, admin_account_id: str) -> bool:
@@ -1592,10 +1603,9 @@ class SupabaseDB:
     def list_admin_claims(self) -> list[Dict[str, Any]]:
         """Return claim rows in admin-friendly shape."""
         try:
-            response = self.client.table('claims').select(
+            claims = fetch_all(lambda: self.client.table('claims').select(
                 'claim_id, claim_reference, found_item_id, claimant_account_id, claim_reason, proof_image_url, proof_image_path, identity_document_path, identity_document_type, identity_document_name, rejection_reason, status, created_at, reviewed_at, updated_at, collected_at'
-            ).order('created_at', desc=True).execute()
-            claims = response.data or []
+            ).order('created_at', desc=True))
 
             found_item_ids = list({
                 str(row.get('found_item_id'))
@@ -1628,6 +1638,15 @@ class SupabaseDB:
                     for row in (claimant_response.data or [])
                 }
 
+            # Claims on an item that is in an auction right now: approving one cancels that auction, so the admin is warned first.
+            auctioned_items: set = set()
+            try:
+                for start in range(0, len(found_item_ids), 100):
+                    rows = self.client.table('auctions').select('found_item_id').in_('found_item_id', found_item_ids[start:start + 100])                         .in_('status', ['scheduled', 'active', 'awaiting_admin']).execute().data or []
+                    auctioned_items.update(str(r['found_item_id']) for r in rows)
+            except Exception as auction_error:
+                logger.info('Auction flags for claims unavailable: %s', auction_error)
+
             mapped = []
             for claim in claims:
                 decrypted_claim = self._decrypt_claim_sensitive_fields(claim)
@@ -1639,6 +1658,7 @@ class SupabaseDB:
                     'id': str(decrypted_claim.get('claim_id')),
                     'claimReference': decrypted_claim.get('claim_reference') or '',
                     'foundItemId': str(decrypted_claim.get('found_item_id') or ''),
+                    'inAuction': str(decrypted_claim.get('found_item_id') or '') in auctioned_items,
                     'claimant': f"{claimant.get('fname') or ''} {claimant.get('lname') or ''}".strip() or 'Unknown User',
                     'studentId': claimant.get('campus_id') or 'N/A',
                     'claimantEmail': claimant.get('email') or '',
@@ -1660,7 +1680,7 @@ class SupabaseDB:
                         'pending': 'Under Review',
                         'approved_for_pickup': 'Approved for Pickup',
                         'rejected': 'Rejected',
-                        'collected': 'Collected',
+                        'collected': 'Completed',
                     }.get(normalize_claim_status(claim.get('status')), 'Unknown'),
                 })
             flag_archived(self.client, mapped, 'claims', 'claim_id')
@@ -1756,6 +1776,20 @@ class SupabaseDB:
 
         return deleted_claim
 
+    def _log_claim_step(self, claim: Dict[str, Any], status: str, actor_id: str, reason: Optional[str]) -> None:
+        """Write the approval, release or rejection to the item's handover log (best effort)."""
+        event = {'approved_for_pickup': 'claim_approved', 'collected': 'released', 'rejected': 'claim_rejected'}.get(status)
+        if not event or not isinstance(claim, dict) or not claim.get('found_item_id'):
+            return
+        try:
+            profile = self.get_user_by_account_id(str(actor_id)) or {}
+        except Exception:
+            profile = {}
+        reference = claim.get('claim_reference') or 'the claim'
+        detail = {'claim_approved': f'Claim {reference} was approved for pickup.', 'released': f'Released to the owner (claim {reference}).',
+                  'claim_rejected': (reason or '').strip() or f'Claim {reference} was rejected.'}[event]
+        custody_log.record(self.client, claim['found_item_id'], event, actor_id, f"{profile.get('fname') or ''} {profile.get('lname') or ''}".strip(), detail)
+
     def update_claim_status(self, claim_id: str, status: str, admin_account_id: str, rejection_reason: str = None) -> Dict[str, Any]:
         try:
             normalized = normalize_claim_status(status)
@@ -1775,6 +1809,7 @@ class SupabaseDB:
             if normalized == 'collected':
                 # The item is released: finish the reports around it (the lost report, and tell the finder). Never undoes the release.
                 ReportLifecycle(self).complete_for_claim(claim_id)
+            self._log_claim_step(updated_claim, normalized, admin_account_id, rejection_reason)
             return updated_claim
         except Exception as e:
             try:
@@ -1832,6 +1867,12 @@ class SupabaseDB:
                 'confirmed_at': confirmed_at,
             }
             match_response = self.client.table('ai_matches').insert(match_payload).execute()
+            # A confirmed match means the item has been found: the lost report says so until the item is released (then it is Completed).
+            try:
+                self.client.table('missing_items').update({'status': 'found', 'updated_at': self._utc_now_iso()}) \
+                    .eq('item_id', missing_item.get('item_id')).eq('status', 'missing').execute()
+            except Exception as status_error:
+                logger.warning('Lost report status was not updated after a confirmed match: %s', status_error)
 
             admin_name = 'Admin'
             if confirmed_by_account_id:
@@ -1923,6 +1964,17 @@ class SupabaseDB:
                 'rejected_at': rejected_at,
             }
             match_response = self.client.table('ai_matches').insert(match_payload).execute()
+            # If that was the only confirmed match, the lost report is searching again.
+            try:
+                # Changing their mind about a pair they confirmed earlier: the old confirmation no longer counts.
+                self.client.table('ai_matches').update({'status': 'rejected', 'rejected_by': rejected_by_account_id, 'rejected_at': rejected_at}) \
+                    .eq('missing_item_id', missing_item.get('item_id')).eq('found_item_id', found_item.get('item_id')).eq('status', 'confirmed').execute()
+                still_confirmed = self.client.table('ai_matches').select('match_id').eq('missing_item_id', missing_item.get('item_id')).eq('status', 'confirmed').limit(1).execute().data
+                if not still_confirmed:
+                    self.client.table('missing_items').update({'status': 'missing', 'updated_at': self._utc_now_iso()}) \
+                        .eq('item_id', missing_item.get('item_id')).eq('status', 'found').execute()
+            except Exception as status_error:
+                logger.warning('Lost report status was not restored after a rejected match: %s', status_error)
 
             admin_name = 'Admin'
             if rejected_by_account_id:
@@ -2009,14 +2061,17 @@ class SupabaseDB:
             logger.error(f"✗ Error fetching notifications: {e}")
             return []
 
-    def mark_notification_as_read(self, notification_id: str) -> Dict[str, Any]:
-        """Mark a notification as read"""
+    def mark_notification_as_read(self, notification_id: str, user_account_id: str = None) -> Dict[str, Any]:
+        """Mark a notification as read. With `user_account_id` only that person's own notification can be changed."""
         try:
             payload = {
                 'is_read': True,
                 'read_at': self._utc_now_iso(),
             }
-            response = self.client.table('user_notifications').update(payload).eq('notification_id', notification_id).execute()
+            query = self.client.table('user_notifications').update(payload).eq('notification_id', notification_id)
+            if user_account_id:
+                query = query.eq('user_account_id', user_account_id)
+            response = query.execute()
             if not response.data:
                 raise RuntimeError(f"No notification found: {notification_id}")
             return response.data[0]

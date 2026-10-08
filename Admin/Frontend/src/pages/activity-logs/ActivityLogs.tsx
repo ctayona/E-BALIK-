@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ActivityLog } from "../../data/mockData";
+import type { ActivityLog } from "../../data/types";
 import { fetchAdminActivityLogs, fetchAdminAdministratorActivityLogs, reportAdminProcess, type UserActivityLog } from "../../utils/api";
 import { isSuperAdmin as isSuperAdminRole } from "../../utils/permissions";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
@@ -13,7 +13,6 @@ const moduleColors: Record<string, { bg: string; text: string }> = {
   "Claims & Verification": { bg: "#eff6ff", text: "#2563eb" },
   "Found Items": { bg: "#ecfdf5", text: "#059669" },
   "Lost Items": { bg: "#f0fdf4", text: "#15803d" },
-  "Chain of Custody": { bg: "#fef2f2", text: "#dc2626" },
   "Admin Security": { bg: "#fef3c7", text: "#92400e" },
   Users: { bg: "#eff6ff", text: "#1d4ed8" },
   "AI Matching": { bg: "#f5f3ff", text: "#7c3aed" },
@@ -23,7 +22,6 @@ const moduleToFilter: Record<string, FilterType> = {
   "Claims & Verification": "Claim Actions",
   "Found Items": "Found Item",
   "Lost Items": "Lost Item",
-  "Chain of Custody": "Lost Item",
   "AI Matching": "AI Matching",
   Users: "Admin & Security",
   "Admin Security": "Admin & Security",

@@ -38,7 +38,7 @@ SPECS: Dict[str, Dict[str, Any]] = {
                    ('claims', 'missing_report_id', 'missing_items', 'item_id', 'null')],
     },
     'found_item': {
-        'tables': [('found_items', 'item_id'), ('claims', 'claim_id')], 'optional': [('ai_matches', 'match_id')],
+        'tables': [('found_items', 'item_id'), ('claims', 'claim_id')], 'optional': [('ai_matches', 'match_id'), ('custody_log', 'log_id')],
         'checks': [('found_items', 'account_id', 'user_profiles', 'account_id', 'fail'), ('claims', 'claimant_account_id', 'user_profiles', 'account_id', 'skip'),
                    ('found_items', 'handover_guard_id', 'user_profiles', 'account_id', 'null'), ('claims', 'missing_report_id', 'missing_items', 'item_id', 'null')],
     },
@@ -47,7 +47,7 @@ SPECS: Dict[str, Dict[str, Any]] = {
         'checks': [('missing_items', 'account_id', 'user_profiles', 'account_id', 'fail')],
     },
     'user': {
-        'tables': [('user_profiles', 'account_id'), ('found_items', 'item_id'), ('missing_items', 'item_id'), ('claims', 'claim_id')], 'optional': [('ai_matches', 'match_id')],
+        'tables': [('user_profiles', 'account_id'), ('found_items', 'item_id'), ('missing_items', 'item_id'), ('claims', 'claim_id')], 'optional': [('ai_matches', 'match_id'), ('custody_log', 'log_id')],
         'checks': [('claims', 'claimant_account_id', 'user_profiles', 'account_id', 'skip'), ('claims', 'missing_report_id', 'missing_items', 'item_id', 'null'),
                    ('found_items', 'handover_guard_id', 'user_profiles', 'account_id', 'null')],
     },
@@ -151,6 +151,13 @@ class RecycleBin:
             found.extend(self.client.table(table).select('*').in_(column, chunk).execute().data or [])
         return found
 
+    def _log_rows(self, item_ids: List[Any]) -> List[Dict[str, Any]]:
+        """The handover log of these items. Empty when migration 20261017 has not been run."""
+        try:
+            return self._rows_in('custody_log', 'found_item_id', item_ids)
+        except Exception:
+            return []
+
     def _claim_files(self, claim: Dict[str, Any]) -> List[Tuple[str, str]]:
         decrypted = self.db._decrypt_claim_sensitive_fields(dict(claim)) or claim
         proof = claim.get('proof_image_path') or self.db._legacy_claim_storage_path(decrypted.get('proof_image_url'), 'claim-proof-images') \
@@ -188,7 +195,7 @@ class RecycleBin:
         for claim in claims:
             files += self._claim_files(claim)
         return Capture('found_item', reference, f"Found item {reference}: {item.get('item_name') or 'item'}",
-                       {'found_items': rows, 'claims': claims, 'ai_matches': matches}, files)
+                       {'found_items': rows, 'claims': claims, 'ai_matches': matches, 'custody_log': self._log_rows([item['item_id']])}, files)
 
     def _capture_missing_item(self, reference: str) -> Capture:
         rows = self._rows('missing_items', 'mpost_id', reference, 1)
@@ -221,7 +228,8 @@ class RecycleBin:
         for claim in claims.values():
             files += self._claim_files(claim)
         return Capture('user', account_id, f"Account {_name(profile)} ({profile.get('email') or 'no email'})",
-                       {'user_profiles': rows, 'found_items': found, 'missing_items': missing, 'claims': list(claims.values()), 'ai_matches': list(matches.values())}, files)
+                       {'user_profiles': rows, 'found_items': found, 'missing_items': missing, 'claims': list(claims.values()), 'ai_matches': list(matches.values()),
+                        'custody_log': self._log_rows([f['item_id'] for f in found])}, files)
 
     def _capture_auction(self, auction_id: str) -> Capture:
         rows = self._rows('auctions', 'auction_id', auction_id, 1)

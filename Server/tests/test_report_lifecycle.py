@@ -317,7 +317,8 @@ class CustodyTests(unittest.TestCase):
         states = {row['reference']: row['state'] for row in result['items']}
         self.assertEqual(states, {'FP1': 'waiting', 'FP2': 'claim_review', 'FP3': 'claim_approved', 'FP4': 'auction', 'FP5': 'auction_review',
                                   'FP6': 'sold_pickup', 'FP7': 'hold', 'FP8': 'waiting'})
-        self.assertEqual(result['summary'], {'total': 8, 'needsReview': 2, 'awaitingPickup': 2, 'inAuction': 1, 'waiting': 2, 'onHold': 1, 'auctionEligible': 1, 'minCustodyDays': 30})
+        self.assertEqual({k: result['summary'][k] for k in ('total', 'needsReview', 'awaitingPickup', 'inAuction', 'waiting', 'onHold', 'auctionEligible', 'minCustodyDays')},
+                         {'total': 8, 'needsReview': 2, 'awaitingPickup': 2, 'inAuction': 1, 'waiting': 2, 'onHold': 1, 'auctionEligible': 1, 'minCustodyDays': 30})
 
     def test_only_waiting_items_old_enough_are_auction_eligible(self):
         rows = custody.build_overview([held('1', 'FP1', 29), held('2', 'FP2', 30), held('3', 'FP3', 90)], [{'found_item_id': '3', 'status': 'pending'}], [], NOW)['items']

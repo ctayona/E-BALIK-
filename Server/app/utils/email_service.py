@@ -215,6 +215,37 @@ class EmailService:
             tone='warning',
         )
 
+    def send_admin_digest_email(self, to_email: str, recipient_name: str, digest: dict, date_text: str, unsubscribe_url: str = '') -> bool:
+        """The daily summary for administrators: only the things that are waiting, with the oldest claims named."""
+        counts = digest.get('counts') or {}
+        rows = [
+            ('Claims waiting for review', counts.get('claims', 0)),
+            ('IDs waiting for verification', counts.get('users', 0)),
+            ('Smart Tags waiting for approval', counts.get('smart-tags', 0)),
+            ('Auction results to confirm', counts.get('auctions', 0)),
+            (f"Approved claims expiring within {digest.get('dueSoonDays', 3)} days", len(digest.get('dueSoon') or [])),
+            ('Items a guard has not confirmed receiving', digest.get('lateReceipts', 0)),
+            ('Items old enough to auction', digest.get('auctionReady', 0)),
+        ]
+        details = {label: str(value) for label, value in rows if value}
+        notes = []
+        for claim in digest.get('overdue') or []:
+            notes.append(f"{claim['item']} ({claim['reference']}): a claim has waited {claim['days']} days for a decision.")
+        total = digest.get('attention', 0)
+        return self.send_notice_email(
+            to_email, f"Lost and Found Office: {total} thing{'s' if total != 1 else ''} waiting for you",
+            unsubscribe_url=unsubscribe_url, unsubscribe_label='the daily summary',
+            title="Waiting for you today",
+            preheader=f"{total} item{'s' if total != 1 else ''} need an administrator today.",
+            eyebrow=date_text,
+            greeting=f"Good morning {recipient_name or 'there'},",
+            paragraphs=["Here is what is waiting for an administrator in E-Balik. Nothing is listed that does not need someone."],
+            details=details,
+            cta=("Open the admin console", site_url().rstrip('/') + '/admin/'),
+            notes=notes,
+            tone='default',
+        )
+
     def send_claim_expired_email(self, to_email: str, recipient_name: str, item_name: str, claim_reference: str, deadline_text: str) -> bool:
         """The pickup window closed. Always sent: the claimant must know the claim is no longer open."""
         return self.send_notice_email(

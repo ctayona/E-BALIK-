@@ -705,6 +705,41 @@ class SmartTagService:
             except Exception as error:
                 logger.warning('Smart tag email failed: %s', error)
 
+    def link_found_item(self, raw_tag_id: Any, reference: str, item_name: str, found_item_id: Any = None) -> Dict[str, Any]:
+        """The office registered an item from this Smart Tag: tell the owner it is safe at the office and how to collect it.
+
+        Returns the tag. Raises TagError when the tag does not exist or is not an active, registered tag with an owner.
+        """
+        tag_id = normalize_tag_id(raw_tag_id)
+        if not tag_id:
+            raise TagError('That is not a valid Smart Tag code.', 400)
+        tag = self._refresh(self._get(tag_id))
+        if tag.get('is_disabled') or tag.get('status') not in ('active', 'lost') or not tag.get('owner_account_id'):
+            raise TagError('That Smart Tag is not active, so its owner cannot be told.', 409)
+        owner = self._profile(tag.get('owner_account_id')) or {}
+        label = tag.get('item_name') or item_name or 'your item'
+        text = (f'Your item "{label}" (Smart Tag {tag_id}) was handed in and is stored at the Lost and Found Office as {reference}. '
+                'Submit a claim with your ID to collect it.')
+        try:
+            self.db.create_user_notification(
+                str(tag['owner_account_id']), 'Your Smart Tag item is at the office', text, found_item_id=found_item_id,
+                notification_type='smart_tag_found', link_label='Submit a claim', link_page='claim',
+            )
+        except Exception as error:
+            logger.warning('Smart tag office notice failed: %s', error)
+        if owner.get('email'):
+            try:
+                from app.utils.email_service import send_reference_email_best_effort
+                send_reference_email_best_effort(
+                    to_email=owner['email'], recipient_name=str(owner.get('fname') or '').strip(),
+                    subject=f'Your item is at the Lost and Found Office: {label}',
+                    summary='Your Smart Tag item was handed in. Log in to E-Balik, open Claims and submit a claim with your ID. You collect it in person with your Handover PIN.',
+                    reference_label='Found item reference', reference=reference, details={'Item': label, 'Smart Tag code': tag_id},
+                )
+            except Exception as error:
+                logger.warning('Smart tag office email failed: %s', error)
+        return tag
+
     def _log(self, account_id: str, action: str, row: Dict[str, Any]) -> None:
         try:
             profile = self._profile(account_id) or {}

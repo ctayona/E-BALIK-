@@ -274,7 +274,7 @@ class HealthScanTests(unittest.TestCase):
         db.get_admin_mfa.return_value = None
         report = control.health_scan(db)
         ids = [c['id'] for c in report['checks']]
-        self.assertEqual(len(ids), 10)
+        self.assertEqual(len(ids), 11)
         self.assertEqual(next(c for c in report['checks'] if c['id'] == 'unverified_activity')['status'], 'warn')
 
     def test_unverified_users_with_heavy_activity_are_flagged(self):
@@ -350,10 +350,11 @@ class AuctionLifecycleTests(unittest.TestCase):
 
     def test_finalize_success_notifies_the_winner(self):
         service, db = self.service(rpc_result={'ok': True, 'outcome': 'finalized', 'auction': auction_row(status='ended', fulfillment_status='awaiting_pickup')})
-        with patch.object(service, '_notify_pending_winners') as notify:
+        with patch.object(service, '_notify_pending_winners') as notify, patch.object(service, 'settle_and_notify') as settle:
             result = service.finalize('a1', ACCOUNT)
         self.assertEqual(result['outcome'], 'finalized')
         notify.assert_called_once()
+        settle.assert_called_once_with(force=True)   # a timer that just ended is settled before the decision is recorded
         self.assertEqual(db.client.rpc_calls[0][0], 'auction_finalize')
 
     def test_finalize_errors_map_to_statuses(self):
@@ -365,7 +366,7 @@ class AuctionLifecycleTests(unittest.TestCase):
 
     def test_finalize_cancel_outcome_tells_the_bidder_and_sends_no_winner_notice(self):
         service, db = self.service(rpc_result={'ok': True, 'outcome': 'cancelled', 'auction': auction_row(status='cancelled', cancel_reason='An ownership claim for this item is under review.')})
-        with patch.object(service, '_notify_pending_winners') as notify:
+        with patch.object(service, '_notify_pending_winners') as notify, patch.object(service, 'settle_and_notify'):
             result = service.finalize('a1', ACCOUNT)
         self.assertEqual(result['outcome'], 'cancelled')
         notify.assert_not_called()

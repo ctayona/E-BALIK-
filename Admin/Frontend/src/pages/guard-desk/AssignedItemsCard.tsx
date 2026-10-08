@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { PackageOpen, RefreshCw } from "lucide-react";
-import { fetchAssignedHandovers, type AssignedHandover } from "../../utils/api";
+import { CheckCheck, PackageOpen, RefreshCw } from "lucide-react";
+import { confirmItemReceived, fetchAssignedHandovers, type AssignedHandover } from "../../utils/api";
 import { BTN } from "../../components/ui/primitives";
 import { tr } from "../../utils/preferences";
 
@@ -18,6 +18,19 @@ export default function AssignedItemsCard({ showGuard = false }: { showGuard?: b
   const [setupRequired, setSetupRequired] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [receiving, setReceiving] = useState("");
+
+  const markReceived = async (reference: string) => {
+    setReceiving(reference);
+    try {
+      await confirmItemReceived(reference);
+      setItems((current) => current && current.map((row) => row.reference === reference ? { ...row, receivedAt: new Date().toISOString() } : row));
+    } catch {
+      // adminMutationRequest already told the person what went wrong
+    } finally {
+      setReceiving("");
+    }
+  };
 
   const load = () => {
     setLoading(true);
@@ -55,6 +68,9 @@ export default function AssignedItemsCard({ showGuard = false }: { showGuard?: b
               </div>
               {showGuard && <p className="text-[13px] font-medium text-ink-soft">{item.guard || "—"}</p>}
               <p className="text-[13px] text-ink-muted">{tr("Handed over {0}", { "0": formatDate(item.handedOverAt) })}</p>
+              {item.receivedAt
+                ? <span className="inline-flex items-center gap-1 text-[13px] font-medium text-mint-700"><CheckCheck size={15} aria-hidden="true" />{tr("Received")}</span>
+                : <button type="button" onClick={() => markReceived(item.reference)} disabled={receiving === item.reference} className={BTN.gold}>{receiving === item.reference ? tr("Saving…") : tr("Mark received")}</button>}
             </li>
           ))}
         </ul>

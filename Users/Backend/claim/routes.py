@@ -152,11 +152,17 @@ def claims():
         if not email_sent:
             current_app.logger.warning('Claim %s was saved, but confirmation email was not sent', claim_reference)
         claim_response = dict(claim)
+        auction_notice = None
+        try:
+            if db.client.table('auctions').select('auction_id').eq('found_item_id', found_item['item_id']).in_('status', ['scheduled', 'active', 'awaiting_admin']).limit(1).execute().data:
+                auction_notice = 'This item is in an auction right now. If an administrator approves your claim, the auction is cancelled and the item goes back to you.'
+        except Exception:
+            auction_notice = None
         claim_response.pop('identity_document_path', None)
         claim_response.pop('proof_image_path', None)
         claim_response['proof_image_url'] = _signed_url(db, proof_bucket, proof_path)
         claim_response['identity_document_url'] = _signed_url(db, identity_bucket, identity_path)
-        return jsonify({'message': 'Claim submitted and awaiting administrator review', 'claim': claim_response}), 201
+        return jsonify({'message': 'Claim submitted and awaiting administrator review', 'claim': claim_response, 'auction_notice': auction_notice}), 201
     except ReportRuleError as error:
         return jsonify({'error': 'You already submitted a claim for this item a moment ago.' if error.code == 'duplicate_submission' else error.message, 'code': error.code}), error.status
     except ValueError as error:

@@ -9,6 +9,7 @@
    super admin can restore them, and are purged for good when the bin period ends. Nothing is removed from the claim until the copy exists.
 4. Recycle bin expiry: entries older than RECYCLE_BIN_DAYS (default 30) are purged: their files and snapshot are removed.
 5. Report sync: the lost report behind a recently collected claim is closed if the release itself missed it (report_lifecycle.py).
+6. Daily summary: one email a day to the administrators listing what is waiting for them (admin_digest.py).
 
 Every step claims its row with a conditional update before it sends anything, so overlapping runs never send twice, and every step
 degrades quietly (logs, changes nothing) on a database that has not run migration 20261013 yet.
@@ -18,14 +19,14 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from app.utils import email_prefs
+from app.utils import custody_log, email_prefs
 from app.utils.crypto_service import CryptoService
+from app.utils.localtime import PHT   # people in Makati read local time, not UTC
 from app.utils.recycle_bin import RecycleBin
 from app.utils.report_lifecycle import ReportLifecycle
 
 logger = logging.getLogger(__name__)
 
-PHT = timezone(timedelta(hours=8))  # people in Makati read local time, not UTC
 BATCH = 200
 CLOSED_CLAIM_STATUSES = ('collected', 'rejected')
 
@@ -127,7 +128,7 @@ def process_claim_pickups(db, now: Optional[datetime] = None) -> Dict[str, int]:
     pickup_days, reminder_days = claim_pickup_days(), claim_reminder_days()
     try:
         rows = db.client.table('claims').select(
-            'claim_id,claim_reference,claimant_account_id,reviewed_at,pickup_deadline,pickup_reminder_sent_at'
+            'claim_id,claim_reference,found_item_id,claimant_account_id,reviewed_at,pickup_deadline,pickup_reminder_sent_at'
         ).eq('status', 'approved_for_pickup').limit(BATCH).execute().data or []
     except Exception as error:
         logger.warning('Claim pickup check skipped: %s', error)
@@ -192,6 +193,7 @@ def _expire_claim(db, row: Dict[str, Any], deadline: datetime) -> bool:
         logger.warning('PIN cleanup failed for expired claim %s: %s', row['claim_id'], error)
     context = db.get_claim_email_context(row['claim_id']) or {}
     item = context.get('item_name') or 'your item'
+    custody_log.record(db.client, row.get('found_item_id'), 'claim_expired', None, 'System', f"Claim {context.get('claim_reference') or row['claim_id']} was not collected by {format_date(deadline)}.")
     _notify(db, row['claimant_account_id'], 'Your claim has closed',
             f'The pickup deadline for "{item}" passed, so the claim closed. You can submit a new claim while the item is still in custody.',
             'claim_update', 'View my claims', 'claim')
@@ -374,11 +376,18 @@ def process_report_sync(db, now: Optional[datetime] = None) -> Dict[str, int]:
     return ReportLifecycle(db).reconcile(now=now)
 
 
+# ------------------------------------------------------------------------------------------------ 6. daily summary for administrators
+def process_admin_digest(db, now: Optional[datetime] = None) -> Dict[str, int]:
+    """Send the daily summary email once per Makati day (see admin_digest.py)."""
+    from app.utils import admin_digest
+    return admin_digest.process_admin_digest(db, now)
+
+
 # ------------------------------------------------------------------------------------------------ all together
 def run_housekeeping(db, now: Optional[datetime] = None) -> Dict[str, Any]:
     """Every step, each isolated so one failure cannot stop the others."""
     result: Dict[str, Any] = {}
-    for name, step in (('claim_pickups', process_claim_pickups), ('tag_reminders', process_tag_expiry_reminders), ('evidence', purge_old_evidence), ('recycle_bin', process_recycle_bin), ('report_sync', process_report_sync)):
+    for name, step in (('claim_pickups', process_claim_pickups), ('tag_reminders', process_tag_expiry_reminders), ('evidence', purge_old_evidence), ('recycle_bin', process_recycle_bin), ('report_sync', process_report_sync), ('admin_digest', process_admin_digest)):
         try:
             result[name] = step(db, now)
         except Exception as error:

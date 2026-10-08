@@ -153,7 +153,7 @@ export default function Claim({ foundItemId = "", missingReportId = "", onNaviga
       title: "Claim submitted for review",
       message: "An administrator will review your ownership proof and ID. You'll be notified when there is a decision.",
       reference: result.claim?.claim_reference || result.claim?.claim_id || undefined,
-      details: ["Track the review status in Claim history.", "Bring the same ID when collecting the item in person."],
+      details: ["Track the review status in Claim history.", "Bring the same ID when collecting the item in person.", ...(result.auctionNotice ? [result.auctionNotice] : [])],
     });
     setReason(""); setProof(null); setProofPreview(""); setIdentityDocument(null); setLostReportId("");
     await loadClaims();
@@ -172,7 +172,7 @@ export default function Claim({ foundItemId = "", missingReportId = "", onNaviga
 
   function statusStyle(status: string) {
     if (status === "approved" || status === "approved_for_pickup") return { icon: <CheckCircle2 size={14} />, badge: CX.badgeGreen, label: "Approved for office verification" };
-    if (status === "collected") return { icon: <CheckCircle2 size={14} />, badge: CX.badgeGreen, label: "Collected" };
+    if (status === "collected") return { icon: <CheckCircle2 size={14} />, badge: CX.badgeGreen, label: "Completed" };
     if (status === "rejected") return { icon: <XCircle size={14} />, badge: CX.badgeRed, label: "Rejected" };
     return { icon: <Clock3 size={14} />, badge: "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-bold text-amber-800 bg-amber-50 border border-amber-300/60", label: status === "pending" ? "Pending review" : status };
   }
@@ -354,7 +354,7 @@ export default function Claim({ foundItemId = "", missingReportId = "", onNaviga
                   ["pending",            "Pending"],
                   ["approved_for_pickup", "Approved"],
                   ["rejected",           "Rejected"],
-                  ["collected",          "Collected"],
+                  ["collected",          "Completed"],
                 ] as const).map(([f, label]) => (
                   <button
                     key={f}

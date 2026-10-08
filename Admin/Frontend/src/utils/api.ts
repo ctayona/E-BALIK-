@@ -124,6 +124,8 @@ export interface AdminClaimRow {
   id: string;
   claimReference: string;
   foundItemId: string;
+  /** The item is in a scheduled, live or waiting-for-decision auction: approving this claim cancels that auction. */
+  inAuction?: boolean;
   claimant: string;
   studentId: string;
   claimantEmail?: string;
@@ -142,7 +144,7 @@ export interface AdminClaimRow {
   submitted: string;
   submittedAt?: string;
   archived?: boolean;
-  status: "Under Review" | "Pending" | "Verified" | "Rejected" | "Approved" | "Approved for Pickup" | "Collected" | "Unknown";
+  status: "Under Review" | "Pending" | "Verified" | "Rejected" | "Approved" | "Approved for Pickup" | "Completed" | "Unknown";
 }
 
 export interface AdminClaimHistoryRow {
@@ -173,7 +175,7 @@ export interface AdminFoundItemRow {
   aiStatus: string;
   aiPercent: number | null;
   matchedItem?: string;
-  status: "Ready to Release" | "Under Review" | "Released" | "Claimed" | "Unclaimed" | "Auctioned";
+  status: "Ready to Release" | "Under Review" | "Completed" | "Unclaimed" | "Auctioned";
   /** Stored found_items.status (unclaimed, review, claimed, ready_to_release, returned...). */
   rawStatus?: string;
   photo?: string;
@@ -191,7 +193,7 @@ export interface AdminLostItemRow {
   studentId: string;
   photo?: string;
   aiMatch: number | null;
-  status: "Searching" | "Potential Match" | "Found" | "Resolved" | "Expired";
+  status: "Searching" | "Potential Match" | "Found" | "Completed" | "Expired";
   /** Stored missing_items.status: missing | found | returned. */
   rawStatus?: string;
   archived?: boolean;
@@ -494,11 +496,17 @@ export interface AdminCustodyRow {
   stateLabel: string;
   openClaims: number;
   auctionEligible: boolean;
+  /** Days the oldest claim waiting for a decision has waited, and whether that is too long. */
+  claimWaitingDays: number;
+  claimOverdue: boolean;
+  /** none: no guard was chosen. waiting: the guard has not confirmed receiving it. received. */
+  receipt: "none" | "waiting" | "received";
+  smartTag: string;
 }
 
 export interface AdminCustodyOverview {
   items: AdminCustodyRow[];
-  summary: { total: number; needsReview: number; awaitingPickup: number; inAuction: number; waiting: number; onHold: number; auctionEligible: number; minCustodyDays: number };
+  summary: { total: number; needsReview: number; awaitingPickup: number; inAuction: number; waiting: number; onHold: number; auctionEligible: number; minCustodyDays: number; overdueClaims: number; awaitingReceipt: number; staleClaimDays: number };
 }
 
 /** Every found item the office still holds, with what is happening to each one. */
@@ -776,7 +784,69 @@ export async function releaseByHandoverPin(pin: string): Promise<string> {
   return (await handoverRequest<{ message?: string }>("release", pin)).message ?? tr("The item was released to its owner.");
 }
 
+export interface CustodyEvent { type: string; label: string; at: string | null; actor: string; detail: string }
+export interface CustodyHistory {
+  item: { fpost_id: string; item_name: string; category: string; description: string; location: string; turnover_location: string; found_date: string; status: string; guard_name_or_id: string; image_url: string; received_at?: string | null; smart_tag_id?: string | null };
+  events: CustodyEvent[];
+}
+
+/** Every step of one found item's handling, oldest first (turned over, received, claims, release, auction steps). */
+export async function fetchCustodyHistory(reference: string): Promise<CustodyHistory> {
+  const response = await fetch(`${API_URL}/api/admin/found-items/${encodeURIComponent(reference)}/history`, { headers: getAuthHeaders() });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : tr("Unable to load the item history."));
+  return payload as CustodyHistory;
+}
+
+/** The guard (or an administrator) confirms the item a finder handed over is physically here. */
+export async function confirmItemReceived(reference: string): Promise<string> {
+  const response = await adminMutationRequest(`${API_URL}/api/admin/claims/handover/received`, {
+    method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ reference }),
+  }, "Confirm item received");
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : tr("Unable to record that the item was received."));
+  return typeof payload.message === "string" ? payload.message : tr("Recorded.");
+}
+
+/** Whether the daily summary email is on for the signed-in administrator, and whether the preferences column exists yet. */
+export async function fetchDigestPreference(): Promise<{ enabled: boolean; available: boolean }> {
+  const response = await fetch(`${API_URL}/api/email/preferences`, { headers: getAuthHeaders() });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : tr("Unable to load your email choices."));
+  return { enabled: payload.staff?.admin_digest !== false, available: payload.available !== false };
+}
+
+export async function saveDigestPreference(enabled: boolean): Promise<boolean> {
+  const response = await fetch(`${API_URL}/api/email/preferences`, { method: "PUT", headers: getAuthHeaders(), body: JSON.stringify({ admin_digest: enabled }) });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : tr("Unable to save your email choice."));
+  return payload.staff?.admin_digest !== false;
+}
+
+export interface StaffNotice { id: string; title: string; message: string; read: boolean; createdAt: string; type: string }
+
+/** The signed-in staff member's own notices (a guard is told here when a finder hands them an item). Uses the same endpoint as the user app. */
+export async function fetchMyNotices(limit = 20): Promise<StaffNotice[]> {
+  const response = await fetch(`${API_URL}/api/notifications?limit=${limit}`, { headers: getAuthHeaders() });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : tr("Unable to load your notices."));
+  return ((payload.notifications ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    id: String(row.notification_id ?? ""),
+    title: String(row.title ?? ""),
+    message: String(row.message ?? ""),
+    read: Boolean(row.is_read),
+    createdAt: String(row.created_at ?? ""),
+    type: String(row.notification_type ?? ""),
+  }));
+}
+
+export async function markNoticeRead(id: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/notifications/${encodeURIComponent(id)}/read`, { method: "PATCH", headers: getAuthHeaders() });
+  if (!response.ok) throw new Error(tr("Unable to mark the notice as read."));
+}
+
 export interface AssignedHandover {
+  receivedAt?: string | null;
   reference: string;
   item: string;
   category: string;

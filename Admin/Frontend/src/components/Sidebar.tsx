@@ -5,7 +5,7 @@ import { useT, tr } from "../utils/preferences";
 import type { StringKey } from "../i18n/strings";
 import { ArchiveRestore, ClipboardList, Gavel, KeyRound, QrCode, SlidersHorizontal } from "lucide-react";
 
-type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "chain-of-custody" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "admin-profile";
+type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "admin-profile";
 
 interface SidebarProps {
   currentPage: Page;
@@ -38,9 +38,6 @@ const navItems = [
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/></svg>
   )},
   { id: "release-desk" as Page, group: "Claims & people", label: "nav.releaseDesk" as StringKey, icon: <KeyRound size={18} aria-hidden="true" /> },
-  { id: "chain-of-custody" as Page, group: "Items", label: "nav.custody" as StringKey, icon: (
-    <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-  )},
   { id: "users" as Page, group: "Claims & people", label: "nav.users" as StringKey, icon: (
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="2"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0-3-3.85" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
   )},

@@ -3,6 +3,7 @@ import { getStoredAdmin, fetchAdminMfaStatus, beginAdminMfaSetup, verifyAdminMfa
 import { ShieldCheck, Smartphone, KeyRound } from "lucide-react";
 import { SkeletonBlock } from "../../components/LoadingSkeleton";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
+import DailySummaryCard from "./DailySummaryCard";
 
 import { tr } from "../../utils/preferences";
 export default function AdminProfile() {
@@ -199,6 +200,7 @@ export default function AdminProfile() {
           </form>
         )}
       </section>
+      {user && user.access_level !== "guard" && <DailySummaryCard />}
       {pendingMfaAction && <ConfirmActionDialog
         title={pendingMfaAction === "disable" ? tr("disable authenticator MFA") : pendingMfaAction === "verify" ? tr("enable authenticator MFA") : tr("begin authenticator enrollment")}
         description={tr("This changes the security settings for your admin account.")}

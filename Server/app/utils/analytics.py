@@ -9,6 +9,8 @@ from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from app.utils.localtime import to_pht_date, today_pht
+
 logger = logging.getLogger(__name__)
 
 WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -33,11 +35,8 @@ class RangeError(ValueError):
 
 
 def _day(value: Any) -> Optional[date]:
-    text = str(value or '')[:10]
-    try:
-        return date.fromisoformat(text)
-    except ValueError:
-        return None
+    """The Makati calendar day of a stored value (a plain date as it is, a timestamp converted from UTC; see localtime.py)."""
+    return to_pht_date(value)
 
 
 def _month_index(day: date) -> int:
@@ -61,7 +60,7 @@ def _clean_place(value: Any) -> str:
 
 def resolve_range(range_key: Optional[str] = None, start: Any = None, end: Any = None, today: Optional[date] = None) -> Tuple[Optional[date], Optional[date], str]:
     """Turn the request into (start, end, key). `all` has no start; explicit dates win over a preset."""
-    today = today or datetime.now(timezone.utc).date()
+    today = today or today_pht()
     if start or end:
         first, last = _day(start) if start else None, _day(end) if end else today
         if (start and not first) or (end and not last):
@@ -91,7 +90,7 @@ def build_visual_analytics(
 
     `found_rows` (optional, dicts with `location`) only feed the hotspot list. `start`/`end` limit lost reports by their date.
     """
-    today = today or datetime.now(timezone.utc).date()
+    today = today or today_pht()
     last_day = end or today
     if start:
         keys = _month_keys(start, last_day)

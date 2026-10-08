@@ -614,3 +614,36 @@ CREATE INDEX IF NOT EXISTS idx_missing_items_archived ON public.missing_items (a
 CREATE INDEX IF NOT EXISTS idx_found_items_archived   ON public.found_items   (archived_at) WHERE archived_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_claims_archived        ON public.claims        (archived_at) WHERE archived_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_auctions_archived      ON public.auctions      (archived_at) WHERE archived_at IS NOT NULL;
+
+-- ============================================================================
+-- Handover log, guard receipts, Smart Tag link and migration log
+-- Mirrors manual_migrations/20261017_custody_log_receipts_and_migration_log.sql (run that file on an existing database; it also records the
+-- older migration files in migration_log from what the database already contains).
+-- found_items.received_at / received_by: the guard confirmed they physically received the item the finder handed over.
+-- found_items.smart_tag_id: the Smart Tag code of an item the office registered from a tag (its owner is told and can claim it).
+-- custody_log: one row per fact about an item (turned over, received, claim approved, released, auction steps).
+-- migration_log: one row per migration file that has been run, so System control can show what is missing.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.migration_log (
+    name VARCHAR(120) PRIMARY KEY,
+    applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    note TEXT
+);
+ALTER TABLE public.migration_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.found_items
+    ADD COLUMN IF NOT EXISTS received_at TIMESTAMP WITH TIME ZONE,
+    ADD COLUMN IF NOT EXISTS received_by UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS smart_tag_id VARCHAR(40);
+CREATE INDEX IF NOT EXISTS idx_found_items_awaiting_receipt ON public.found_items (handover_guard_id) WHERE handover_guard_id IS NOT NULL AND received_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_found_items_smart_tag ON public.found_items (smart_tag_id) WHERE smart_tag_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS public.custody_log (
+    log_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    found_item_id UUID NOT NULL REFERENCES public.found_items(item_id) ON DELETE CASCADE,
+    event VARCHAR(40) NOT NULL,
+    actor_account_id UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL,
+    actor_label TEXT,
+    detail TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_custody_log_item ON public.custody_log (found_item_id, created_at);
+ALTER TABLE public.custody_log ENABLE ROW LEVEL SECURITY;

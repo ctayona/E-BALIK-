@@ -414,6 +414,18 @@ def health_scan(db) -> Dict[str, Any]:
             return _check('environment', 'Environment variables', 'warn', 'Optional settings are not configured. Related features may not work.', [f'Not set: {name}' for name in optional])
         return _check('environment', 'Environment variables', 'ok', 'All required and optional settings are present.')
 
+    def migration_log_check():
+        from app.utils import migrations as migration_log
+        status = migration_log.migration_status(db.client)
+        if not status['available']:
+            return _check('migration_log', 'Migration log', 'warn',
+                          'The migration log does not exist yet, so applied migrations cannot be checked. Run 20261017_custody_log_receipts_and_migration_log.sql.',
+                          ['Not recorded: ' + name for name in status['missing'][-5:]])
+        if status['missing']:
+            return _check('migration_log', 'Migration log', 'warn', f"{len(status['missing'])} migration file(s) are not recorded as run. Run them in order in the Supabase SQL Editor.",
+                          ['Not run: ' + name for name in status['missing']])
+        return _check('migration_log', 'Migration log', 'ok', f"All {len(status['applied'])} migrations are recorded as run.")
+
     def database():
         began = time.monotonic()
         db.client.table('user_profiles').select('account_id').limit(1).execute()
@@ -515,7 +527,7 @@ def health_scan(db) -> Dict[str, Any]:
         return _check('controls', 'System controls', 'warn' if on else 'ok', detail + (f' Last forced logout: {stamp}.' if stamp else ''))
 
     for check_id, title, func in (
-        ('environment', 'Environment variables', environment), ('database', 'Database connection', database), ('schema', 'Database migrations', schema),
+        ('environment', 'Environment variables', environment), ('database', 'Database connection', database), ('schema', 'Database migrations', schema), ('migration_log', 'Migration log', migration_log_check),
         ('unverified_activity', 'Unverified users with high activity', unverified_activity), ('admin_mfa', 'Admin two-factor authentication', admin_mfa),
         ('verification_backlog', 'Verification requests', verification_backlog), ('suspensions', 'Suspended accounts', suspensions),
         ('bloat', 'Database size', bloat), ('auctions_waiting', 'Auctions awaiting an admin', auctions_waiting), ('controls', 'System controls', controls),

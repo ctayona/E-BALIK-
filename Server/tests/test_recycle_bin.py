@@ -90,7 +90,7 @@ def world():
 
 # What the database does when a parent is deleted (the cascades we mirror in the fake RPCs).
 CASCADE = {
-    'found_items': [('claims', 'found_item_id'), ('ai_matches', 'found_item_id')],
+    'found_items': [('claims', 'found_item_id'), ('ai_matches', 'found_item_id'), ('custody_log', 'found_item_id')],
     'missing_items': [('ai_matches', 'missing_item_id')],
     'user_profiles': [('found_items', 'account_id'), ('missing_items', 'account_id'), ('claims', 'claimant_account_id'), ('user_notifications', 'user_account_id')],
     'auctions': [('auction_bids', 'auction_id'), ('auction_comments', 'auction_id'), ('auction_reactions', 'auction_id')],
@@ -222,6 +222,17 @@ class ArchiveAndRestoreTests(unittest.TestCase):
         self.assertEqual((len(store['found_items']), len(store['claims']), len(store['ai_matches'])), (1, 2, 1))
         self.assertEqual(storage.files[('found-item-images', 'u1.jpg')], b'UMB')
         self.assertEqual(storage.files[('claim-id-documents', 'id/1.pdf')], b'IDPDF')
+
+    def test_the_handover_log_of_a_deleted_found_item_goes_to_the_bin_and_comes_back(self):
+        store = world()
+        store['custody_log'] = [{'log_id': 'l1', 'found_item_id': FOUND, 'event': 'received', 'created_at': '2026-10-01T04:00:00+00:00'},
+                                {'log_id': 'l2', 'found_item_id': FOUND, 'event': 'released', 'created_at': '2026-10-02T04:00:00+00:00'}]
+        db, store, _ = make(store)
+        self.assertTrue(db.delete_admin_found_item('FP1001', ADMIN))
+        self.assertEqual(bin_row(store)['summary']['custody_log'], 2)
+        self.assertEqual(store['custody_log'], [])
+        rb.RecycleBin(db).restore(bin_row(store)['archive_id'], ADMIN)
+        self.assertEqual(sorted(r['log_id'] for r in store['custody_log']), ['l1', 'l2'])
 
     def test_deleting_something_that_does_not_exist_answers_false_without_archiving(self):
         db, store, _ = make()

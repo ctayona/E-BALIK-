@@ -171,6 +171,14 @@ class ReportLifecycle:
             logger.warning('Report sync for found item %s failed: %s', found_item_id, error)
         return closed
 
+    def notify_completed_by_hand(self, report: Dict[str, Any]) -> bool:
+        """An administrator set a lost report to returned from the Reports page: tell the owner exactly as a release would."""
+        return self._notify(
+            _owner(report), 'Your lost report is completed',
+            f'Your lost report "{report.get("item_name") or "your item"}" ({report.get("mpost_id") or "report"}) was marked completed by the Lost and Found Office.',
+            'report_completed', None, report.get('item_id'), 'View completed reports',
+        )
+
     # ------------------------------------------------------------------------------------------------ an auction winner collected the item
     def complete_for_auction(self, found_item_id: Any) -> bool:
         """The winner collected the item: the found report is finished and the finder is told it was sold. Never raises."""

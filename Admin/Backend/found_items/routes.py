@@ -1,4 +1,4 @@
-"""Found Items page: list, create, edit and delete found reports (also read by Chain of Custody)."""
+"""Found Items page: list, create, edit and delete found reports (the history of one item is read by the Items in custody tab)."""
 import base64
 import binascii
 import re
@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, request
 from app.utils.recycle_bin import BinError, retention_days
 from app.utils import get_db
+from app.utils import custody_log
 from app.utils.custody import load_overview
+from app.utils.smart_tags import SmartTagService, TagError, normalize_tag_id
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
 
 found_items_bp = Blueprint('admin_found_items', __name__)
@@ -53,6 +55,25 @@ def list_found_items():
         return jsonify({'error': 'Unable to load found items'}), 500
 
 
+@found_items_bp.route('/found-items/<reference>/history', methods=['GET'])
+def item_history(reference):
+    """The handover log of one item: every step from being turned over to being released, sold or returned to custody."""
+    try:
+        _require_admin()
+        db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        history = custody_log.timeline(db.client, reference)
+        if not history:
+            return jsonify({'error': 'That found item was not found.'}), 404
+        return jsonify(history), 200
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 401
+    except PermissionError as error:
+        return jsonify({'error': str(error)}), 403
+    except Exception as error:
+        current_app.logger.error(f'Custody history error: {error}')
+        return jsonify({'error': 'Unable to load the item history'}), 500
+
+
 @found_items_bp.route('/found-items/custody', methods=['GET'])
 def custody_overview():
     """Items the office is still holding, with what is happening to each (claims, auctions, who received it)."""
@@ -82,8 +103,19 @@ def create_found_item():
         if not all((item_name, category, location, date_found, storage)):
             return jsonify({'error': 'Item, category, location, date found, and storage are required'}), 400
         datetime.strptime(date_found, '%Y-%m-%d')
+        tag_code = str(payload.get('smartTagCode') or '').strip()
+        tag_id = None
+        if tag_code:
+            tag_id = normalize_tag_id(tag_code)
+            if not tag_id:
+                return jsonify({'error': 'That is not a valid Smart Tag code.'}), 400
 
         db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        if tag_id:
+            try:
+                SmartTagService(db)._refresh(SmartTagService(db)._get(tag_id))   # fail before anything is saved when the tag does not exist
+            except TagError as error:
+                return jsonify({'error': error.message}), error.status
         profile = db.get_user_by_account_id(admin['account_id']) or {}
         weekday_code = str(datetime.strptime(date_found, '%Y-%m-%d').weekday() + 1)
         reference = db.next_fpost_id(date_found, weekday_code)
@@ -105,9 +137,23 @@ def create_found_item():
             'guard_name_or_id': f"{profile.get('fname') or ''} {profile.get('lname') or ''}".strip() or 'Admin',
             'custody_status': 'turned_over',
             'status': 'unclaimed',
+            'smart_tag_id': tag_id,
         })
+        actor = f"{profile.get('fname') or ''} {profile.get('lname') or ''}".strip()
+        custody_log.record(db.client, created.get('item_id'), 'registered', admin['account_id'], actor, f'Registered at {storage}.')
+        tag_notified = False
+        if tag_id:
+            try:
+                SmartTagService(db).link_found_item(tag_id, reference, item_name, created.get('item_id'))
+                custody_log.record(db.client, created.get('item_id'), 'tag_matched', admin['account_id'], actor, f'Matched to Smart Tag {tag_id}; its owner was told.')
+                tag_notified = True
+            except TagError as error:
+                current_app.logger.warning('Smart Tag %s was not linked to %s: %s', tag_id, reference, error.message)
         _log_admin_action(db, admin, 'Create Found Item', 'Found Items', item_name, reference)
-        return jsonify({'success': True, 'reference': reference, 'item': created}), 201
+        message = f'Found item {reference} was registered.'
+        if tag_id:
+            message += ' The Smart Tag owner was told it is here and can claim it.' if tag_notified else ' The Smart Tag owner could not be told because that tag is not active.'
+        return jsonify({'success': True, 'reference': reference, 'item': created, 'smart_tag_owner_notified': tag_notified, 'message': message}), 201
     except BinError as error:
         return jsonify({'error': error.message, 'code': error.code}), error.status
     except ValueError as error:

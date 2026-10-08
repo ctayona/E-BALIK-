@@ -8,6 +8,7 @@ import {
 } from "../../utils/api";
 import { AdminMetricSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import { T } from "../../components/ui/management";
+import AnalyticsSection from "../dashboard/AnalyticsSection";
 
 import { tr } from "../../utils/preferences";
 const categoryColors = ["#1f3160", "#d1a153", "#0f8077", "#6a84b8", "#b45309", "#94a3b8"];
@@ -254,6 +255,8 @@ export default function ReportsAnalytics() {
               <div className="text-sm text-slate-400 text-center py-8">{tr("No location records available yet")}</div>
             )}
           </div>
+
+          <AnalyticsSection />
 
           <div className="print-hide flex flex-wrap justify-center gap-3">
             <button onClick={exportCsv} className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-navy-50 sm:w-auto">

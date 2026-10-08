@@ -50,6 +50,8 @@ export interface AdminAuction {
   reauctioned_from?: string | null;
   /** The winner did not collect within 72 hours: forfeited by the scheduler and ready to be listed again. */
   reauction_ready?: boolean;
+  /** An ownership claim on this item is waiting or approved. Confirming a winner would promise the item to two people. */
+  pending_claim?: boolean;
   auto_forfeited_at?: string | null;
   pickup_warning_sent_at?: string | null;
   reauction_reason?: string | null;

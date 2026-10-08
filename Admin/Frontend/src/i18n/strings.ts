@@ -15,7 +15,6 @@ const en = {
   "nav.auctions": "Auctions",
   "nav.smartTags": "Smart tags",
   "nav.claims": "Claims and verification",
-  "nav.custody": "Chain of custody",
   "nav.users": "Users",
   "nav.reports": "Analytics",
   "nav.notifications": "Notifications",
@@ -117,7 +116,6 @@ const en = {
 
   // Other pages
   "page.aiMatching": "AI matching",
-  "page.custody": "Chain of custody",
   "page.reports": "Reports and analytics",
   "page.notifications": "Notifications",
   "page.activityLogs": "Activity logs",
@@ -140,7 +138,6 @@ const tl: Partial<Record<StringKey, string>> = {
   "nav.auctions": "Mga auction",
   "nav.smartTags": "Mga Smart tag",
   "nav.claims": "Mga claim at beripikasyon",
-  "nav.custody": "Kadena ng pag-iingat",
   "nav.users": "Mga user",
   "nav.reports": "Analytics",
   "nav.notifications": "Mga abiso",
@@ -235,7 +232,6 @@ const tl: Partial<Record<StringKey, string>> = {
   "users.tab.verification": "Beripikasyon ng account",
 
   "page.aiMatching": "Pagtutugma ng AI",
-  "page.custody": "Kadena ng pag-iingat",
   "page.reports": "Mga ulat at analytics",
   "page.notifications": "Mga abiso",
   "page.activityLogs": "Talaan ng aktibidad",

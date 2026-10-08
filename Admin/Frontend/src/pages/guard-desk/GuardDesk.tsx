@@ -1,6 +1,7 @@
 import { LogOut, ShieldCheck } from "lucide-react";
 import HandoverPinCard from "../dashboard/HandoverPinCard";
 import AssignedItemsCard from "./AssignedItemsCard";
+import GuardNoticesCard from "./GuardNoticesCard";
 import AnnouncementBanner from "../../components/AnnouncementBanner";
 import { BTN } from "../../components/ui/primitives";
 import type { AdminUser } from "../../utils/api";
@@ -25,6 +26,7 @@ export default function GuardDesk({ user, onLogout }: { user: AdminUser; onLogou
         </div>
       </header>
       <main className="mx-auto w-full max-w-[860px] flex-1 space-y-5 p-4 sm:p-8">
+        <GuardNoticesCard />
         <HandoverPinCard />
         <AssignedItemsCard />
         <section className="admin-card p-5 text-[14px] leading-6 text-ink-soft" aria-label={tr("How to release an item")}>
