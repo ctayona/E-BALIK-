@@ -661,3 +661,43 @@ ALTER TABLE public.auctions
 CREATE UNIQUE INDEX IF NOT EXISTS uq_auctions_handover_pin_hash ON public.auctions (handover_pin_hash) WHERE handover_pin_hash IS NOT NULL;
 ALTER TABLE public.user_profiles ADD COLUMN IF NOT EXISTS tag_contacts JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE public.smart_tags    ADD COLUMN IF NOT EXISTS shown_contacts JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- ============================================================================
+-- One-time code attempts, comments and reactions on reports
+-- Mirrors manual_migrations/20261020_otp_attempts.sql and 20261021_report_comments_and_reactions.sql (run those files on an existing database).
+-- otp_tokens.attempts: wrong guesses against a code; at 5 the code is retired.
+-- report_comments / report_reactions: short public comments and "helpful" reactions under one found or one missing report (the home feed).
+-- ============================================================================
+ALTER TABLE public.otp_tokens ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_otp_tokens_email_created ON public.otp_tokens (email, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.report_comments (
+    comment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    found_item_id UUID REFERENCES public.found_items(item_id) ON DELETE CASCADE,
+    missing_item_id UUID REFERENCES public.missing_items(item_id) ON DELETE CASCADE,
+    account_id UUID NOT NULL REFERENCES public.user_profiles(account_id) ON DELETE CASCADE,
+    body TEXT NOT NULL CHECK (char_length(btrim(body)) BETWEEN 1 AND 500),
+    is_hidden BOOLEAN NOT NULL DEFAULT false,
+    hidden_by UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL,
+    hidden_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    CONSTRAINT report_comments_one_report CHECK ((found_item_id IS NOT NULL)::int + (missing_item_id IS NOT NULL)::int = 1)
+);
+CREATE INDEX IF NOT EXISTS idx_report_comments_found ON public.report_comments (found_item_id, created_at DESC) WHERE found_item_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_report_comments_missing ON public.report_comments (missing_item_id, created_at DESC) WHERE missing_item_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_report_comments_account ON public.report_comments (account_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS public.report_reactions (
+    reaction_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    found_item_id UUID REFERENCES public.found_items(item_id) ON DELETE CASCADE,
+    missing_item_id UUID REFERENCES public.missing_items(item_id) ON DELETE CASCADE,
+    account_id UUID NOT NULL REFERENCES public.user_profiles(account_id) ON DELETE CASCADE,
+    kind VARCHAR(12) NOT NULL DEFAULT 'helpful' CHECK (kind IN ('helpful')),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    CONSTRAINT report_reactions_one_report CHECK ((found_item_id IS NOT NULL)::int + (missing_item_id IS NOT NULL)::int = 1)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_report_reactions_found ON public.report_reactions (found_item_id, account_id, kind) WHERE found_item_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_report_reactions_missing ON public.report_reactions (missing_item_id, account_id, kind) WHERE missing_item_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_report_reactions_account ON public.report_reactions (account_id);
+ALTER TABLE public.report_comments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.report_reactions ENABLE ROW LEVEL SECURITY;

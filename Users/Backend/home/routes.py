@@ -1,4 +1,5 @@
 """Home page: registration, OTP, login, Google login, admin MFA login, password reset, session check, landing found items."""
+import hmac
 import logging
 import re
 import uuid
@@ -7,7 +8,8 @@ from flask import Blueprint, current_app, jsonify, request
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from email_validator import EmailNotValidError, validate_email
-from app.utils import EmailService, get_db, JWTService, OTPGenerator, PasswordService
+from app.utils import EmailService, get_db, JWTService, OTPGenerator, PasswordService, otp_guard
+from app.utils.otp_guard import OtpBlocked
 from app.utils.admin_mfa import hash_recovery_code, matched_totp_step
 from app.utils.crypto_service import CryptoService
 from app.utils.system_control import login_block, public_status
@@ -16,6 +18,32 @@ from Users.Backend.shared.account import _ensure_email_normalized, _infer_user_r
 logger = logging.getLogger(__name__)
 home_bp = Blueprint('user_home', __name__)
 _LOGIN_FAILURE_STORE = {}
+
+
+def _blocked_response(error: OtpBlocked):
+    """The JSON answer for a code rule (cooldown, daily limit, disposable email, too many guesses), with Retry-After when there is a wait."""
+    response = jsonify(error.body())
+    response.status_code = error.status
+    if error.retry_after:
+        response.headers['Retry-After'] = str(error.retry_after)
+    return response
+
+
+def _send_otp(db, email: str, otp_type: str) -> bool:
+    """Retire the older unused codes, create a fresh one and email it. A code that could not be emailed is removed again, so a mail
+    problem never uses up the person's daily limit."""
+    db.invalidate_otps(email, otp_type)
+    otp_code = OTPGenerator.generate_otp()
+    stored = db.store_otp(
+        email=email,
+        otp_code=otp_code,
+        otp_type=otp_type,
+        expires_at=OTPGenerator.get_otp_expiration(minutes=current_app.config['OTP_EXPIRATION_MINUTES']),
+    )
+    sent = EmailService().send_otp_email(to_email=email, otp_code=otp_code, otp_type=otp_type)
+    if not sent:
+        db.discard_otp((stored or {}).get('id'))
+    return bool(sent)
 
 
 def _is_admin_profile(user: dict) -> bool:
@@ -155,7 +183,10 @@ def register():
             validate_email(normalized_email, check_deliverability=False)
         except EmailNotValidError as e:
             return jsonify({'error': 'Invalid email format'}), 400
-        
+
+        otp_guard.block_disposable(normalized_email)
+        otp_guard.check_ip(otp_guard.client_ip())
+
         # Validate password strength
         password = data['password']
         if len(password) < 16:
@@ -186,41 +217,24 @@ def register():
         elif not str(data.get('campus_id') or '').strip():
             data['campus_id'] = inferred_campus_id
 
-        # Generate OTP
-        otp_code = OTPGenerator.generate_otp()
-        otp_expiration = OTPGenerator.get_otp_expiration(
-            minutes=current_app.config['OTP_EXPIRATION_MINUTES']
-        )
-        
-        # Store OTP
-        db.store_otp(
-            email=normalized_email,
-            otp_code=otp_code,
-            otp_type='registration',
-            expires_at=otp_expiration
-        )
-        
-        # Send OTP email
-        email_service = EmailService()
-        email_sent = email_service.send_otp_email(
-            to_email=normalized_email,
-            otp_code=otp_code,
-            otp_type='registration'
-        )
-        
-        if not email_sent:
+        otp_guard.check_issue(db.client, normalized_email)
+
+        if not _send_otp(db, normalized_email, 'registration'):
             return jsonify({'error': 'Failed to send verification email'}), 500
-        
+
         # Store registration data temporarily (in production, use cache like Redis)
         # For now, we'll return success and require OTP verification
         logger.info(f"Registration initiated for {normalized_email}")
-        
+
         return jsonify({
             'message': 'Registration initiated. Please check your email for verification code.',
             'email': normalized_email,
-            'step': 'otp_verification'
+            'step': 'otp_verification',
+            'cooldown': otp_guard.COOLDOWN_SECONDS,
         }), 200
-    
+
+    except OtpBlocked as error:
+        return _blocked_response(error)
     except Exception as e:
         logger.error(f"Registration error: {e}")
         return jsonify({'error': 'Registration failed', 'details': str(e)}), 500
@@ -245,12 +259,13 @@ def verify_otp():
         data = request.get_json() or {}
         data['email'] = _ensure_email_normalized(data.get('email'))
         data['otp_code'] = ''.join(str(data.get('otp_code') or '').split())
-        
+
         # Validate required fields
         required_fields = ['email', 'otp_code', 'fname', 'lname', 'campus_id', 'password']
         if not all(field in data for field in required_fields):
             return jsonify({'error': 'Missing required fields'}), 400
-        
+        otp_guard.check_verify_ip(otp_guard.client_ip())
+
         # Get database instance
         db = get_db(
             url=current_app.config['SUPABASE_URL'],
@@ -264,14 +279,16 @@ def verify_otp():
         if not otp_record:
             return jsonify({'error': 'Invalid or expired OTP'}), 400
         
-        # Check if OTP matches
-        if str(otp_record['otp_code']).strip() != data['otp_code']:
-            return jsonify({'error': 'Invalid OTP code'}), 400
-        
         # Check if OTP is expired
         if OTPGenerator.is_otp_expired(otp_record['expires_at']):
             return jsonify({'error': 'OTP has expired'}), 400
-        
+
+        # Check if OTP matches. The fifth wrong guess kills the code (OtpBlocked), so it cannot be brute-forced.
+        if not hmac.compare_digest(str(otp_record['otp_code']).strip(), data['otp_code']):
+            remaining = otp_guard.register_failure(db.client, otp_record, normalized_email, 'registration')
+            message = 'Invalid OTP code' + (f'. {remaining} attempt{"s" if remaining != 1 else ""} left.' if remaining is not None else '')
+            return jsonify({'error': message, 'code': 'otp_invalid', **({'attempts_left': remaining} if remaining is not None else {})}), 400
+
         # Generate account ID
         account_id = str(uuid.uuid4())
         inferred_role, inferred_campus_id = _infer_user_role_and_campus(normalized_email, data.get('campus_id'))
@@ -334,6 +351,8 @@ def verify_otp():
             'token': token
         }), 201
     
+    except OtpBlocked as error:
+        return _blocked_response(error)
     except Exception as e:
         logger.error(f"OTP verification error: {e}")
         return jsonify({'error': 'Verification failed', 'details': str(e)}), 500
@@ -674,59 +693,78 @@ def forgot_password():
     }
     """
     try:
-        data = request.get_json()
-        
+        data = request.get_json(silent=True) or {}
+
         if not data.get('email'):
             return jsonify({'error': 'Email is required'}), 400
-        
-        # Get database instance
+        return _password_reset_code(str(data['email']))
+    except OtpBlocked as error:
+        return _blocked_response(error)
+    except Exception as e:
+        logger.error(f"Forgot password error: {e}")
+        return jsonify({'error': 'Failed to initiate password reset', 'details': str(e)}), 500
+
+
+def _password_reset_code(raw_email: str):
+    """Send a password reset code. The answer is the same whether or not the account exists. The cooldown and the daily limit are kept
+    per email address in memory, so they cannot be used to find out which emails have accounts; the database-counted daily limit only
+    ever changes whether a code is sent, never what is said."""
+    email = raw_email.strip().lower()
+    generic = {'message': 'If the email exists, a password reset link has been sent', 'cooldown': otp_guard.COOLDOWN_SECONDS}
+    otp_guard.check_ip(otp_guard.client_ip())
+    otp_guard.check_memory(email)
+    db = get_db(
+        url=current_app.config['SUPABASE_URL'],
+        service_key=current_app.config['SUPABASE_SERVICE_KEY']
+    )
+    user = db.get_user_by_email(email) or db.get_user_by_email(raw_email)
+    if not user or otp_guard.daily_limit_reached(db.client, email):
+        return jsonify(generic), 200
+    if not _send_otp(db, user.get('email') or email, 'password_reset'):
+        return jsonify({'error': 'Failed to send password reset email'}), 500
+    logger.info(f"Password reset initiated for {email}")
+    return jsonify(generic), 200
+
+
+@home_bp.route('/auth/resend-otp', methods=['POST'])
+def resend_otp():
+    """
+    Send a fresh code. The older code stops working.
+    Expected JSON: {"email": "john.doe@umak.edu.ph", "type": "registration" | "password_reset"}
+    Subject to the same 60 second cooldown, daily limit and disposable-email rules as the first request.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        otp_type = str(data.get('type') or 'registration').strip().lower()
+        if otp_type not in ('registration', 'password_reset'):
+            return jsonify({'error': 'Choose registration or password_reset.'}), 400
+        if not str(data.get('email') or '').strip():
+            return jsonify({'error': 'Email is required'}), 400
+        if otp_type == 'password_reset':
+            return _password_reset_code(str(data['email']))
+
+        email = _ensure_email_normalized(data.get('email'))
+        try:
+            validate_email(email, check_deliverability=False)
+        except EmailNotValidError:
+            return jsonify({'error': 'Invalid email format'}), 400
+        otp_guard.block_disposable(email)
+        otp_guard.check_ip(otp_guard.client_ip())
         db = get_db(
             url=current_app.config['SUPABASE_URL'],
             service_key=current_app.config['SUPABASE_SERVICE_KEY']
         )
-        
-        # Check if user exists
-        user = db.get_user_by_email(data['email'])
-        if not user:
-            # For security, return generic message
-            return jsonify({
-                'message': 'If the email exists, a password reset link has been sent'
-            }), 200
-        
-        # Generate OTP
-        otp_code = OTPGenerator.generate_otp()
-        otp_expiration = OTPGenerator.get_otp_expiration(
-            minutes=current_app.config['OTP_EXPIRATION_MINUTES']
-        )
-        
-        # Store OTP
-        db.store_otp(
-            email=data['email'],
-            otp_code=otp_code,
-            otp_type='password_reset',
-            expires_at=otp_expiration
-        )
-        
-        # Send OTP email
-        email_service = EmailService()
-        email_sent = email_service.send_otp_email(
-            to_email=data['email'],
-            otp_code=otp_code,
-            otp_type='password_reset'
-        )
-        
-        if not email_sent:
-            return jsonify({'error': 'Failed to send password reset email'}), 500
-        
-        logger.info(f"Password reset initiated for {data['email']}")
-        
-        return jsonify({
-            'message': 'If the email exists, a password reset link has been sent'
-        }), 200
-    
+        if db.get_user_by_email(email):
+            return jsonify({'error': 'Email already registered'}), 409
+        otp_guard.check_issue(db.client, email)
+        if not _send_otp(db, email, 'registration'):
+            return jsonify({'error': 'Failed to send verification email'}), 500
+        return jsonify({'message': 'A new code was sent. The previous code no longer works.', 'email': email, 'cooldown': otp_guard.COOLDOWN_SECONDS}), 200
+    except OtpBlocked as error:
+        return _blocked_response(error)
     except Exception as e:
-        logger.error(f"Forgot password error: {e}")
-        return jsonify({'error': 'Failed to initiate password reset', 'details': str(e)}), 500
+        logger.error(f"Resend OTP error: {e}")
+        return jsonify({'error': 'Could not send a new code', 'details': str(e)}), 500
 
 
 @home_bp.route('/auth/reset-password', methods=['POST'])
@@ -752,23 +790,27 @@ def reset_password():
         password = data['new_password']
         if len(password) < 16:
             return jsonify({'error': 'Password must be at least 16 characters'}), 400
-        
+        otp_guard.check_verify_ip(otp_guard.client_ip())
+
         # Get database instance
         db = get_db(
             url=current_app.config['SUPABASE_URL'],
             service_key=current_app.config['SUPABASE_SERVICE_KEY']
         )
-        
+
         # Verify OTP
         otp_record = db.get_otp_by_email(data['email'], 'password_reset')
         if not otp_record:
             return jsonify({'error': 'Invalid or expired OTP'}), 400
-        
-        if otp_record['otp_code'] != data['otp_code']:
-            return jsonify({'error': 'Invalid OTP code'}), 400
-        
+
         if OTPGenerator.is_otp_expired(otp_record['expires_at']):
             return jsonify({'error': 'OTP has expired'}), 400
+
+        # The fifth wrong guess kills the code (OtpBlocked), so it cannot be brute-forced.
+        if not hmac.compare_digest(str(otp_record['otp_code']).strip(), ''.join(str(data['otp_code']).split())):
+            remaining = otp_guard.register_failure(db.client, otp_record, str(data['email']).strip().lower(), 'password_reset')
+            message = 'Invalid OTP code' + (f'. {remaining} attempt{"s" if remaining != 1 else ""} left.' if remaining is not None else '')
+            return jsonify({'error': message, 'code': 'otp_invalid', **({'attempts_left': remaining} if remaining is not None else {})}), 400
         
         # Get user
         user = db.get_user_by_email(data['email'])
@@ -790,6 +832,8 @@ def reset_password():
             'message': 'Password reset successful'
         }), 200
     
+    except OtpBlocked as error:
+        return _blocked_response(error)
     except Exception as e:
         logger.error(f"Reset password error: {e}")
         return jsonify({'error': 'Password reset failed', 'details': str(e)}), 500

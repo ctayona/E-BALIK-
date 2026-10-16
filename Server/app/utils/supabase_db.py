@@ -352,6 +352,21 @@ class SupabaseDB:
             logger.error(f"✗ Error storing OTP: {e}")
             raise
 
+    def invalidate_otps(self, email: str, otp_type: str) -> None:
+        """Retire every unused code of this email and type, so only the newest code can ever be used. Never raises."""
+        try:
+            self.client.table('otp_tokens').update({'is_used': True}).eq('email', email).eq('otp_type', otp_type).eq('is_used', False).execute()
+        except Exception as e:
+            logger.warning(f"Could not retire older OTPs for {email}: {e}")
+
+    def discard_otp(self, otp_id: Any) -> None:
+        """Remove a code that was never delivered, so it does not count against the person's daily limit. Never raises."""
+        try:
+            if otp_id:
+                self.client.table('otp_tokens').delete().eq('id', otp_id).execute()
+        except Exception as e:
+            logger.warning(f"Could not discard an undelivered OTP: {e}")
+
     def verify_otp(self, email: str, otp_code: str, otp_type: str) -> bool:
         """Verify OTP code (decrypts code and compares with provided code)"""
         try:

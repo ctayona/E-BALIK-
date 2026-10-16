@@ -84,7 +84,7 @@ export default function Register({
   const [submitError, setSubmitError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [googleReady, setGoogleReady] = useState(false);
-  const { register, verifyOtp, googleLogin, isLoading, error, clearError } = useAuth();
+  const { register, verifyOtp, resendOtp, googleLogin, isLoading, error, clearError } = useAuth();
 
   const pwChecks = checkPassword(password);
   const pwValid = Object.values(pwChecks).every(Boolean);
@@ -234,6 +234,11 @@ export default function Register({
     setShowOtpModal(true);
   }
 
+  async function handleOtpResend() {
+    const result = await resendOtp(email, "registration");
+    return result.success ? { success: true, cooldown: result.cooldown } : { success: false, error: result.error, retryAfter: result.retryAfter };
+  }
+
   async function handleOtpSubmit(otp: string) {
     const result = await verifyOtp(email, otp);
 
@@ -258,6 +263,7 @@ export default function Register({
           showInfoModal({ variant: "info", title: "Registration paused", message: "Your details are kept. Submit the form again whenever you are ready for a new code." });
         }}
         onSubmit={handleOtpSubmit}
+        onResend={handleOtpResend}
         email={email}
         title="Verify your account"
         description="Enter the 6-digit code sent to your university email to complete registration."

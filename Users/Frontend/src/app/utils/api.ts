@@ -23,6 +23,10 @@ interface ApiResponse<T = unknown> {
   status: number;
   /** The server's machine-readable reason (report_limit, duplicate_report, dpa_required...) when it sent one. */
   errorCode?: string;
+  /** Seconds to wait before trying again (cooldown, daily limit, rate limit), when the server said so. */
+  retryAfter?: number;
+  /** Wrong-code guesses left before the one-time code is retired. */
+  attemptsLeft?: number;
   /** Set when the server blocked the request for a system reason (maintenance, suspension, revoked session, unverified account). */
   code?: SystemCode;
 }
@@ -33,7 +37,7 @@ interface ApiResponse<T = unknown> {
  * users always see their own changes. Auth and notification reads are never cached.
  */
 const GET_CACHE_TTL_MS = 15_000;
-const UNCACHED_PREFIXES = ['/api/auth', '/api/notifications'];
+const UNCACHED_PREFIXES = ['/api/auth', '/api/notifications', '/api/feed'];
 const getCache = new Map<string, { at: number; promise: Promise<ApiResponse<unknown>> }>();
 
 export function invalidateApiCache() {
@@ -125,6 +129,8 @@ async function rawApiCall<T = unknown>(
         status: response.status,
         code,
         errorCode: typeof data.code === 'string' ? data.code : undefined,
+        retryAfter: typeof data.retry_after === 'number' ? data.retry_after : undefined,
+        attemptsLeft: typeof data.attempts_left === 'number' ? data.attempts_left : undefined,
       };
     }
 
@@ -171,6 +177,16 @@ export const authApi = {
     password: string;
   }) {
     return apiCall('/api/auth/register', {
+      method: 'POST',
+      body: data,
+    });
+  },
+
+  /**
+   * Send a fresh one-time code (the older one stops working). Subject to a 60 second cooldown and a daily limit.
+   */
+  async resendOtp(data: { email: string; type: 'registration' | 'password_reset' }) {
+    return apiCall<{ message?: string; cooldown?: number }>('/api/auth/resend-otp', {
       method: 'POST',
       body: data,
     });
@@ -504,3 +520,50 @@ export const notificationsAPI = {
 };
 
 export default apiCall;
+
+/**
+ * Home feed: open reports as posts, with comments and "helpful" reactions.
+ */
+export interface FeedComment { id: string; author: string; body: string; created_at: string; is_mine: boolean }
+export interface FeedPost {
+  kind: 'found' | 'missing';
+  reference: string;
+  item_name: string;
+  category: string;
+  description: string;
+  location: string;
+  date: string;
+  image_url: string;
+  status: string;
+  created_at: string;
+  comment_count: number;
+  helpful_count: number;
+  reacted: boolean;
+  /** The last two comments, oldest first. */
+  comments: FeedComment[];
+}
+export type FeedStory = Omit<FeedPost, 'comment_count' | 'helpful_count' | 'reacted' | 'comments'>;
+export interface FeedCounts { found: number; missing: number; found_this_week: number }
+export interface FeedPage { posts: FeedPost[]; has_more: boolean; next_before: string | null; stories?: FeedStory[]; counts?: FeedCounts }
+export interface FeedSocial { comment_count: number; helpful_count: number; reacted: boolean }
+
+export const feedApi = {
+  /** The first page also carries the stories bar and the campus numbers. Pass the previous page's `next_before` for the next page. */
+  async page(kind: 'all' | 'found' | 'missing' = 'all', before?: string | null, limit = 12) {
+    const query = new URLSearchParams({ kind, limit: String(limit) });
+    if (before) query.set('before', before);
+    return apiCall<FeedPage>(`/api/feed?${query.toString()}`, { requiresAuth: true });
+  },
+  async comments(kind: string, reference: string) {
+    return apiCall<{ comments: FeedComment[] }>(`/api/feed/${kind}/${encodeURIComponent(reference)}/comments`, { requiresAuth: true });
+  },
+  async addComment(kind: string, reference: string, body: string) {
+    return apiCall<FeedSocial & { comment: FeedComment }>(`/api/feed/${kind}/${encodeURIComponent(reference)}/comments`, { method: 'POST', body: { body }, requiresAuth: true });
+  },
+  async deleteComment(commentId: string) {
+    return apiCall<{ success: boolean }>(`/api/feed/comments/${encodeURIComponent(commentId)}`, { method: 'DELETE', requiresAuth: true });
+  },
+  async react(kind: string, reference: string, on: boolean) {
+    return apiCall<FeedSocial>(`/api/feed/${kind}/${encodeURIComponent(reference)}/reaction`, { method: on ? 'PUT' : 'DELETE', requiresAuth: true });
+  },
+};

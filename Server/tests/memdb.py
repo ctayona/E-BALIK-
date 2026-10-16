@@ -5,8 +5,12 @@ Supports the query-builder calls the services use: select / insert / update / de
 (`unique={'claims': 'handover_pin_hash'}`) so a duplicate insert or update raises like Postgres does.
 """
 import uuid
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional
+
+
+_DEFAULT_ID = {'otp_tokens': 'id', 'report_comments': 'comment_id', 'report_reactions': 'reaction_id'}
 
 
 class _Not:
@@ -130,6 +134,11 @@ class MemTable:
                 full = {**row}
                 if self.name == 'auctions' and 'auction_id' not in full:
                     full['auction_id'] = str(uuid.uuid4())
+                if self.name in _DEFAULT_ID:   # what the database fills in on its own
+                    full.setdefault(_DEFAULT_ID[self.name], str(uuid.uuid4()))
+                    full.setdefault('created_at', datetime.now(timezone.utc).isoformat())
+                    if self.name == 'report_comments':
+                        full.setdefault('is_hidden', False)
                 rows.append(full)
                 out.append(dict(full))
             return SimpleNamespace(data=out, count=len(out))

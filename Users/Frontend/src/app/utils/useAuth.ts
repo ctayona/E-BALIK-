@@ -96,7 +96,7 @@ export function useAuth() {
           isLoading: false,
           error: response.error,
         }));
-        return { success: false, error: response.error };
+        return { success: false, error: response.error, retryAfter: response.retryAfter };
       }
 
       // Store email for OTP verification step
@@ -104,7 +104,7 @@ export function useAuth() {
       sessionStorage.setItem('ebalik_register_data', JSON.stringify(data));
 
       setState((prev) => ({ ...prev, isLoading: false }));
-      return { success: true };
+      return { success: true, cooldown: (response.data as { cooldown?: number } | undefined)?.cooldown };
     },
     []
   );
@@ -593,14 +593,26 @@ export function useAuth() {
         isLoading: false,
         error: response.error,
       }));
-      return { success: false, error: response.error };
+      return { success: false, error: response.error, retryAfter: response.retryAfter };
     }
 
     // Store email for reset step
     sessionStorage.setItem('ebalik_reset_email', email);
 
     setState((prev) => ({ ...prev, isLoading: false }));
-    return { success: true };
+    return { success: true, cooldown: (response.data as { cooldown?: number } | undefined)?.cooldown };
+  }, []);
+
+  /**
+   * Ask for a fresh one-time code. Does not touch the shared loading flag, so the code dialog keeps its own state.
+   * `retryAfter` is how many seconds to wait when the server refused (cooldown, daily limit); `cooldown` is the wait before the next resend.
+   */
+  const resendOtp = useCallback(async (email: string, type: 'registration' | 'password_reset') => {
+    const response = await authApi.resendOtp({ email, type });
+    if (response.error) {
+      return { success: false as const, error: response.error, retryAfter: response.retryAfter, errorCode: response.errorCode };
+    }
+    return { success: true as const, cooldown: response.data?.cooldown ?? 60, message: response.data?.message };
   }, []);
 
   /**
@@ -674,6 +686,7 @@ export function useAuth() {
     refreshSessionFromStorage,
     logout,
     forgotPassword,
+    resendOtp,
     resetPassword,
     uploadVerificationDocument,
     refreshProfile,

@@ -41,7 +41,7 @@ SELECT column_name FROM information_schema.columns WHERE table_schema = 'public'
 SELECT table_name FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'archived_at'
   AND table_name IN ('missing_items', 'found_items', 'claims', 'auctions');   -- 4 rows
 SELECT pg_get_functiondef('public.auction_place_bid(uuid,uuid,numeric)'::regprocedure) LIKE '%bid_not_on_step%';   -- true
-SELECT count(*) FROM public.migration_log;   -- 23 when every migration has been run (21 plus 20261018 and 20261019)
+SELECT count(*) FROM public.migration_log;   -- 25 when every migration has been run (21 plus 20261018 to 20261021)
 SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'found_items'
   AND column_name IN ('received_at', 'received_by', 'smart_tag_id');   -- 3 rows
 SELECT to_regclass('public.custody_log');   -- custody_log
@@ -52,6 +52,8 @@ SELECT to_regclass('public.custody_log');   -- custody_log
 > **If `20261015` has not been run:** the app still works, but a guard account cannot release items (the database refuses it), administrators cannot assign the guard role, a claim cannot be linked to a lost report, and a found report cannot be linked to a guard. Run it before testing sections 2.9, 4.2, 6.1, 6.3 and 6.4.
 
 > **If `20261016` has not been run:** the Archive buttons say "run the latest database update" and change nothing, and the exact-step rule for bids is enforced by the server only (the database enforces it after the migration). Run it before testing sections 8 and 9.
+
+> **If `20261020` or `20261021` has not been run:** the code limits still work (wrong guesses are counted in the server's memory), and the home feed loads but comments and reactions say they are not available yet. Run both before testing 2.16 to 2.22 and section 4.4.
 
 > **If `20261018` or `20261019` has not been run:** a won auction has no pickup PIN (an administrator completes it with **Mark as picked up**), and the Profile > Smart Tags contact methods say they switch on after the next database update. Run both before testing 6.6 and 7.14.
 
@@ -100,6 +102,13 @@ Each row is one test. Tick the **Pass** box in your own copy, or copy the result
 | 2.13 | Admin app, **Users**, tab **Account verification**: open **Verify** on a request, pick a role and press Continue without ticking the box. | A message asks you to open the submitted ID and tick the box that it matches the account. Verification only goes through once it is ticked. | ☐ |
 | 2.14 | While **unverified**, click a report in **Browse** or on the **Dashboard**. | A pop-up says "Verify your ID first" with a **Go to my profile to verify** button that opens the Profile page. The report itself does not open. | ☐ |
 | 2.15 | While unverified, press the submit button on the Found form, the Lost form or the Claim form. | The same pop-up appears (the buttons are no longer greyed out). | ☐ |
+| 2.16 | Register, and on the code screen look at **Resend**. | It reads **Resend in 0:59** and counts down second by second; it cannot be pressed yet. | ☐ |
+| 2.17 | Submit the register form again straight away (or press Resend before the countdown ends, using the browser's address if needed). | "Please wait N seconds before asking for another code." Nothing is emailed. | ☐ |
+| 2.18 | When the countdown ends press **Resend**. | A second email arrives, the screen says "A new code was sent. The old code no longer works.", the 10 minute timer restarts, and the first code is refused if you try it. | ☐ |
+| 2.19 | Ask for codes for the same email until you have had five in one day (wait a minute between them). | The sixth is refused: "You have asked for too many codes today (the limit is 5). Try again in about N hours." and Resend shows the wait in hours. | ☐ |
+| 2.20 | Register with an address at a throwaway provider such as `x@mailinator.com`. | "Disposable email addresses cannot be used." No code is sent. | ☐ |
+| 2.21 | Type a wrong 6-digit code four times, then a fifth time. | Each wrong try says how many attempts are left; the fifth says "Too many wrong codes. This code no longer works, so please ask for a new one." Even the correct code is refused afterwards until you resend. | ☐ |
+| 2.22 | On **Forgot password** use an email that has no account, then one that does, twice each in a row. | Both answer the same way every time ("If the email exists..."), and both are asked to wait a minute before a second request. | ☐ |
 
 ---
 
@@ -136,6 +145,23 @@ Sign in as **Student B** (the finder) and **Student A** (the owner).
 | 4.8 | Open **Browse**. Check both tabs (Missing Items and Items in Custody), search, filter by category, switch between tile and list. | Items show with photo, category, place. **No email or campus ID is visible anywhere.** | ☐ |
 | 4.9 | Open the **Dashboard**. | Recent Found and Recent Missing panels load real data; clicking one opens its details. | ☐ |
 | 4.10 | Open **My Reports**. | The tabs are All, Missing, Found and **Completed**. A new report is under In progress; the Completed tab is empty until an item is released (section 6.4). | ☐ |
+
+
+### 4.4 Home feed, comments and reactions
+
+| # | Do this | You should see | Pass |
+|---|---|---|---|
+| 4.4.1 | Sign in as a verified student and open **Home** on a wide screen. | Three columns: your name, verified state, campus ID and shortcuts on the left; search, the "What did you find or lose?" box, the urgent stories bar and the posts in the middle; the Lost and Found Office and urgent bulletins on the right. On a phone the columns stack. | ☐ |
+| 4.4.2 | Look at the stories bar. | Cards for IDs, cards, wallets, phones and keys reported this week, newest first, each marked Found or Missing with its age. The first card starts a new report. A story opens the photo. | ☐ |
+| 4.4.3 | Use the **All posts / Found / Missing** tabs and **Show more posts**. | The feed filters and loads older posts without repeating any. Closed or claimed reports never appear. | ☐ |
+| 4.4.4 | Press **Helpful** on a post, then again. | The count goes up and the button turns gold, then back. Reloading keeps it. | ☐ |
+| 4.4.5 | Press **Comment**, write a short comment and send. | It appears at once as "Your first name and last initial (you)". The post's owner gets a notification "New comment on your report". | ☐ |
+| 4.4.6 | Try a comment with a phone number or an email address, then one with a swear word. | Refused with a plain message each time; nothing is posted. | ☐ |
+| 4.4.7 | Post the identical comment twice within a minute; then post six comments within a minute. | The second is refused as a duplicate; after the fifth in a minute you are told to wait. | ☐ |
+| 4.4.8 | On a post with several comments press **View all comments**, then **Delete** on your own comment and confirm. | The full thread loads oldest first; your comment disappears and the count drops. Other people's comments have no Delete. | ☐ |
+| 4.4.9 | While **unverified**, press Helpful or send a comment. | The "Verify your ID first" pop-up appears. You can still read the feed and the comments. | ☐ |
+| 4.4.10 | The post action: on a found item press **This is mine**; on your own missing report press **See matches**; on someone else's missing report press **I found this**. | Each opens the claim form, your matches, or the found form. | ☐ |
+| 4.4.11 | Admin: hide a comment (`PATCH /api/admin/report-comments/<id>` with `{"hidden": true}`, there is no screen for it yet). | It disappears from the feed and the count. Restoring it brings it back. | ☐ |
 
 ---
 

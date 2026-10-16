@@ -12,6 +12,10 @@ interface OTPModalProps {
   isLoading?: boolean;
   error?: string;
   backLabel?: string;
+  /** Asks the server for a fresh code. Without it the Resend button is not shown. */
+  onResend?: () => Promise<{ success: boolean; error?: string; retryAfter?: number; cooldown?: number }>;
+  /** Seconds before the first resend is allowed. A code was just sent, so the default is the server's 60 second cooldown. */
+  initialCooldown?: number;
 }
 
 export default function OTPModal({
@@ -25,12 +29,18 @@ export default function OTPModal({
   isLoading = false,
   error = "",
   backLabel = "Back",
+  onResend,
+  initialCooldown = 60,
 }: OTPModalProps) {
   const [otp, setOtp] = useState("");
   const [otpError, setOtpError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [timeLeft, setTimeLeft] = useState(600); // 10 minutes in seconds
+  const [resendLeft, setResendLeft] = useState(initialCooldown);   // seconds until Resend works again
+  const [resending, setResending] = useState(false);
+  const [resendNotice, setResendNotice] = useState("");
+  const [resendError, setResendError] = useState("");
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Timer for OTP expiration
@@ -50,7 +60,43 @@ export default function OTPModal({
     return () => clearInterval(timer);
   }, [isOpen]);
 
+  // Live countdown for the Resend button
+  useEffect(() => {
+    if (!isOpen || resendLeft <= 0) return;
+    const timer = setInterval(() => setResendLeft((prev) => (prev <= 1 ? 0 : prev - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [isOpen, resendLeft > 0]);
+
   if (!isOpen) return null;
+
+  const handleResend = async () => {
+    if (!onResend || resending || resendLeft > 0) return;
+    setResending(true);
+    setResendError("");
+    setResendNotice("");
+    try {
+      const result = await onResend();
+      if (result.success) {
+        setOtp("");
+        setOtpError("");
+        setTimeLeft(600);
+        setResendLeft(result.cooldown ?? 60);
+        setResendNotice("A new code was sent. The old code no longer works.");
+      } else {
+        setResendError(result.error || "Could not send a new code. Please try again.");
+        if (result.retryAfter && result.retryAfter > 0) setResendLeft(Math.min(result.retryAfter, 86400));
+      }
+    } catch {
+      setResendError("Could not send a new code. Check your connection and try again.");
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const formatWait = (seconds: number) => {
+    if (seconds >= 3600) return `${Math.ceil(seconds / 3600)} h`;
+    return formatTime(seconds);
+  };
 
   const handleOtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/\D/g, ""); // Only digits
@@ -85,11 +131,11 @@ export default function OTPModal({
     }
   };
 
-  const formatTime = (seconds: number) => {
+  function formatTime(seconds: number) {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:px-4" role="presentation">
@@ -197,12 +243,23 @@ export default function OTPModal({
           {/* Resend Link */}
           {!success && (
             <div className="space-y-3 text-center">
-              <p className="text-[13px] text-ink-soft">
-                Didn't receive the code?{" "}
-                <button type="button" className="font-semibold text-navy-800 transition-colors hover:text-[#d1a153]">
-                  Resend
-                </button>
-              </p>
+              {onResend && (
+                <div aria-live="polite">
+                  <p className="text-[13px] text-ink-soft">
+                    Didn't receive the code?{" "}
+                    <button
+                      type="button"
+                      onClick={() => void handleResend()}
+                      disabled={resending || resendLeft > 0}
+                      className="text-[13px] font-semibold text-navy-800 transition-colors hover:text-[#d1a153] disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:text-slate-400"
+                    >
+                      {resending ? "Sending…" : resendLeft > 0 ? `Resend in ${formatWait(resendLeft)}` : "Resend"}
+                    </button>
+                  </p>
+                  {resendNotice && <p className="mt-1.5 text-[12.5px] font-medium text-emerald-700">{resendNotice}</p>}
+                  {resendError && <p role="alert" className="mt-1.5 text-[12.5px] font-medium text-rose-700">{resendError}</p>}
+                </div>
+              )}
               {onBack && (
                 <button
                   type="button"

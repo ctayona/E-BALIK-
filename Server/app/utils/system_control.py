@@ -49,6 +49,8 @@ VERIFICATION_GATED = [
     ('POST', re.compile(r'^/api/(found-items|missing-items)/?$'), 'file a report'),
     ('POST', re.compile(r'^/api/claims/?$'), 'file a claim'),
     ('POST', re.compile(r'^/api/auctions/[^/]+/bids/?$'), 'place a bid'),
+    ('POST', re.compile(r'^/api/feed/[^/]+/[^/]+/comments/?$'), 'comment on a report'),
+    ('PUT', re.compile(r'^/api/feed/[^/]+/[^/]+/reaction/?$'), 'react to a report'),
 ]
 
 _settings_cache: Dict[str, Any] = {'at': 0.0, 'data': None, 'missing': False}

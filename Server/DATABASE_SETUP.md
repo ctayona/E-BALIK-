@@ -142,13 +142,29 @@ Run `manual_migrations/20261017_custody_log_receipts_and_migration_log.sql` afte
 but not stored, and the health check on System control says the migration log does not exist yet. Verify with:
 
 ```sql
-SELECT count(*) FROM public.migration_log;                                                                  -- 23 on a fully migrated database (21 plus 20261018 and 20261019)
+SELECT count(*) FROM public.migration_log;                                                                  -- 25 on a fully migrated database (21 plus 20261018 to 20261021)
 SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'found_items'
   AND column_name IN ('received_at', 'received_by', 'smart_tag_id');                                         -- 3 rows
 SELECT to_regclass('public.custody_log');                                                                   -- custody_log
 ```
 
 **Every new migration file must end with** `INSERT INTO public.migration_log (name, note) VALUES ('<file name without .sql>', 'applied') ON CONFLICT (name) DO NOTHING;`
+
+### One-time code attempts
+
+Run `manual_migrations/20261020_otp_attempts.sql` after `20261019`. It adds `otp_tokens.attempts` (wrong guesses per code) and an index on `(email, created_at)`. **The app works without it**: the 60 second cooldown, the 5-per-day limit and the disposable-email block already work from existing columns, and wrong guesses are counted in the server's memory instead (a restart or a second server resets that count). Verify with:
+
+```sql
+SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'otp_tokens' AND column_name = 'attempts';   -- 1 row
+```
+
+### Report comments and reactions
+
+Run `manual_migrations/20261021_report_comments_and_reactions.sql` after `20261020`. It creates `report_comments` and `report_reactions` (each row belongs to exactly one found or missing report and is deleted with it; RLS on, backend only). **The app works without it**: the home feed loads with zero comments and reactions, and posting a comment or reacting says they are not available yet. Verify with:
+
+```sql
+SELECT to_regclass('public.report_comments'), to_regclass('public.report_reactions');
+```
 
 ### Auction pickup PIN
 

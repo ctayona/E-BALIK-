@@ -21,7 +21,7 @@ export default function ForgotPasswordModal({
   const [step,            setStep]            = useState<"request" | "otp" | "reset">("request");
   const [statusMessage,   setStatusMessage]   = useState("");
   const [errorMessage,    setErrorMessage]    = useState("");
-  const { forgotPassword, resetPassword, isLoading, error, clearError } = useAuth();
+  const { forgotPassword, resendOtp, resetPassword, isLoading, error, clearError } = useAuth();
   const stepRef = useRef(step);
 
   useEffect(() => { stepRef.current = step; }, [step]);
@@ -41,6 +41,11 @@ export default function ForgotPasswordModal({
     showInfoModal({ variant: "info", title: "Check your email", message: `A verification code has been sent to ${email}. Enter it to set a new password.` });
     setStep("otp");
     setOtpModalOpen(true);
+  }
+
+  async function handleOtpResend() {
+    const result = await resendOtp(email, "password_reset");
+    return result.success ? { success: true, cooldown: result.cooldown } : { success: false, error: result.error, retryAfter: result.retryAfter };
   }
 
   async function handleOtpSubmit(otp: string) {
@@ -191,6 +196,7 @@ export default function ForgotPasswordModal({
           onClose={handleOtpModalClose}
           onBack={() => { setOtpModalOpen(false); setStep("request"); setStatusMessage("You can request a new verification code anytime."); }}
           onSubmit={handleOtpSubmit}
+          onResend={handleOtpResend}
           email={email}
           title="Reset your password"
           description="Enter the 6-digit code sent to your email to continue resetting your password."
