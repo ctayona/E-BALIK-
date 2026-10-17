@@ -2,6 +2,7 @@ import { Bell, Gavel, GitCompareArrows, LibraryBig, PackageSearch, QrCode, UserR
 import type { Page } from "@/app/types";
 import type { User } from "@/app/utils/useAuth";
 import { initialsOf } from "./ComposerCard";
+import { FEED_CARD, FEED_CARD_LIFT, GOLD_GRADIENT } from "./feedStyle";
 
 const SHORTCUTS: Array<{ page: Page; label: string; icon: LucideIcon; tone: string }> = [
   { page: "browse-items", label: "Browse items", icon: LibraryBig, tone: "bg-iris-50 text-iris-700" },
@@ -19,8 +20,8 @@ export default function LeftRail({ user, activeReports, onNavigate }: { user: Us
   const name = `${user?.fname ?? ""} ${user?.lname ?? ""}`.trim() || "Your account";
   return (
     <nav aria-label="Campus shortcuts" className="space-y-4">
-      <button type="button" onClick={() => onNavigate("profile")} className="group flex w-full items-center gap-3 rounded-[20px] border border-white/80 bg-white/90 p-3.5 text-left shadow-card transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-raised">
-        <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-[#e6be76] to-[#d1a153] text-[16px] font-bold text-navy-950" aria-hidden="true">{initialsOf(user)}</span>
+      <button type="button" onClick={() => onNavigate("profile")} className={`group flex w-full items-center gap-3 ${FEED_CARD} ${FEED_CARD_LIFT} p-3.5 text-left`}>
+        <span className={`flex size-12 shrink-0 items-center justify-center rounded-full ${GOLD_GRADIENT} text-[16px] font-bold text-navy-950 shadow-[0_6px_16px_-8px_rgba(209,161,83,0.9)] ring-2 ring-white`} aria-hidden="true">{initialsOf(user)}</span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15.5px] font-semibold text-ink">{name}</span>
           <span className={`mt-0.5 inline-flex items-center gap-1 text-[12.5px] font-medium ${verified ? "text-tide-700" : "text-gold-700"}`}>
@@ -30,7 +31,7 @@ export default function LeftRail({ user, activeReports, onNavigate }: { user: Us
         </span>
       </button>
 
-      <div className="rounded-[20px] border border-white/80 bg-white/90 p-2 shadow-card">
+      <div className={`${FEED_CARD} p-2`}>
         <p className="px-3 pb-1 pt-2 text-[12.5px] font-semibold text-ink-muted">Campus shortcuts</p>
         <ul>
           {SHORTCUTS.map(({ page, label, icon: Icon, tone }) => (

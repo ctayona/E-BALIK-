@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Bell, ChevronDown, ClipboardCheck, KeyRound, Files, Gavel, GitCompareArrows, LayoutDashboard, LibraryBig, LogOut, Menu, Moon, PackagePlus, QrCode, Sun, UserRound, X } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import headerUmSeal from "@/imports/Header/9aefa1789ba406d6291f8aa816f84df70a02953b.webp";
-import type { Page } from "@/app/types";
+import type { NavigationOptions, Page } from "@/app/types";
 import type { User } from "@/app/utils/useAuth";
 import { notificationsAPI } from "@/app/utils/api";
 import { useTheme } from "@/app/utils/theme";
+import NotificationMenu from "@/app/shared/NotificationMenu";
 
 const NAV_LINKS: { label: string; page: Page; icon: ReactNode }[] = [
   { label: "Dashboard",    page: "dashboard",    icon: <LayoutDashboard size={16} aria-hidden="true" /> },
@@ -44,7 +45,7 @@ export default function UserHeader({
   onLogout,
 }: {
   currentPage: Page;
-  onNavigate: (p: Page) => void;
+  onNavigate: (p: Page, options?: NavigationOptions) => void;
   user: User | null;
   onLogout: () => void;
 }) {
@@ -110,8 +111,8 @@ export default function UserHeader({
     };
   }, [accountOpen, sidebarOpen]);
 
-  function navigate(p: Page) {
-    onNavigate(p);
+  function navigate(p: Page, options?: NavigationOptions) {
+    onNavigate(p, options);
     setSidebarOpen(false);
     setAccountOpen(false);
   }
@@ -141,7 +142,7 @@ export default function UserHeader({
       >
         <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.22),transparent)]" aria-hidden="true" />
         <span className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,transparent,rgba(209,161,83,0.6),transparent)]" aria-hidden="true" />
-        <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center gap-3 px-4 sm:gap-4 sm:px-6">
+        <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center gap-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:gap-4 sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))]">
           {/* Brand */}
           <button type="button" onClick={() => navigate("dashboard")} className="group flex shrink-0 items-center gap-2.5 rounded-xl py-1 pr-2" aria-label="E-Balik home">
             <span className="flex size-10 items-center justify-center rounded-[11px] bg-white/10 ring-1 ring-white/15 transition-[box-shadow,transform] duration-300 group-hover:scale-105 group-hover:ring-gold-400/60 group-hover:shadow-[0_0_18px_-2px_rgba(209,161,83,0.55)]">
@@ -211,22 +212,7 @@ export default function UserHeader({
               {theme === "dark" ? <Sun size={19} aria-hidden="true" /> : <Moon size={19} aria-hidden="true" />}
             </button>
 
-            <button
-              type="button"
-              onClick={() => navigate("notifications")}
-              aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
-              aria-current={currentPage === "notifications" ? "page" : undefined}
-              className={`group relative flex size-11 items-center justify-center rounded-xl transition-[background-color,transform] duration-200 active:scale-90 ${
-                currentPage === "notifications" ? "bg-white/15 ring-1 ring-white/15" : "hover:bg-white/10"
-              }`}
-            >
-              <Bell size={19} className="text-navy-100 transition-colors group-hover:text-gold-300" aria-hidden="true" />
-              {unreadCount > 0 && (
-                <span className="absolute right-1.5 top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[11px] font-bold leading-none text-white ring-2 ring-navy-800" aria-hidden="true">
-                  {badge}
-                </span>
-              )}
-            </button>
+            <NotificationMenu currentPage={currentPage} unreadCount={unreadCount} onNavigate={navigate} />
 
             {/* Account menu */}
             <div className="relative hidden lg:block" ref={accountRef}>

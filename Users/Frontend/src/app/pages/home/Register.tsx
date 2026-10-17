@@ -4,6 +4,9 @@ import umakLogo from "@/imports/umaklogo.webp";
 import OTPModal from "@/app/pages/home/OTPModal";
 import { useAuth } from "@/app/utils/useAuth";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
+import NameField from "@/app/shared/forms/NameField";
+import { focusFirstInvalid } from "@/app/shared/forms/FieldHint";
+import { firstTextProblem } from "@/app/utils/textGuard";
 
 function inferAccountProfile(email: string, campusId?: string) {
   const normalized = (email || "").trim().toLowerCase();
@@ -212,6 +215,17 @@ export default function Register({
 
     if (!pwValid || !pwMatch) return;
 
+    const nameIssue = firstTextProblem([
+      { field: "fname", value: firstName, kind: "name", label: "first name" },
+      { field: "mname", value: middleName, kind: "name", label: "middle name", required: false },
+      { field: "lname", value: lastName, kind: "name", label: "last name" },
+    ]);
+    if (nameIssue) {
+      setSubmitError(nameIssue.message);
+      focusFirstInvalid();
+      return;
+    }
+
     const result = await register({
       fname: firstName,
       mname: middleName,
@@ -313,11 +327,7 @@ export default function Register({
           {[{ label: 'First Name', value: firstName, setter: setFirstName, placeholder: 'Juan', required: true },
             { label: 'Middle Name', value: middleName, setter: setMiddleName, placeholder: '(Optional)', required: false },
             { label: 'Last Name', value: lastName, setter: setLastName, placeholder: 'Dela Cruz', required: true }].map(({ label, value, setter, placeholder, required }) => (
-            <div key={label} className="flex flex-col gap-2">
-              <label className="font-bold text-navy-800 text-[12px]">{label}</label>
-              <input type="text" value={value} onChange={(e) => setter(e.target.value)}
-                placeholder={placeholder} required={required} className={clayInput} />
-            </div>
+            <NameField key={label} label={label} value={value} onChange={setter} placeholder={placeholder} required={required} forceShow={tried} inputClass={clayInput} />
           ))}
         </div>
 

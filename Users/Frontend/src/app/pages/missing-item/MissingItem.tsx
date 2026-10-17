@@ -8,6 +8,8 @@ import { CX } from "@/app/utils/clay";
 import type { NavigationOptions, Page } from "@/app/types";
 import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
 import { showSubmitError } from "@/app/utils/submitErrors";
+import { FieldHint, INVALID_FIELD, focusFirstInvalid, useFieldHint, type TextRule } from "@/app/shared/forms/FieldHint";
+import { firstTextProblem } from "@/app/utils/textGuard";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 import ItemCollection from "@/app/shared/media/ItemCollection";
 import ItemImage, { type GalleryItem } from "@/app/shared/media/ItemImage";
@@ -87,6 +89,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
   const [reportCategory, setReportCategory] = useState("");
   const [reportLocation, setReportLocation] = useState("");
   const [error, setError] = useState("");
+  const [attempted, setAttempted] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode] = useViewMode();
   const [openReport, setOpenReport] = useState<Report | null>(null);
@@ -160,6 +163,17 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
     event.preventDefault();
     setError("");
     if (!ensure()) return;
+    const textIssue = firstTextProblem([
+      { field: "itemName", value: itemName, kind: "title", label: "item name" },
+      { field: "description", value: description, kind: "description" },
+      { field: "distinctiveMarks", value: distinctiveMarks, kind: "marks", label: "distinctive marks", required: false },
+    ]);
+    if (textIssue) {
+      setAttempted(true);
+      setError(textIssue.message);
+      focusFirstInvalid();
+      return;
+    }
     if (!authorized) {
       setError("Please authorize matching and notifications before continuing.");
       return;
@@ -211,6 +225,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
     setItemName("");
     setDescription("");
     setDistinctiveMarks("");
+    setAttempted(false);
     setAuthorized(false);
     setImage(undefined);
     setImagePreview("");
@@ -349,12 +364,12 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
               <section className={`${CX.card} p-5 sm:p-6`} aria-labelledby="missing-details-heading">
                 <h2 id="missing-details-heading" className="mb-4 text-[16px] font-semibold text-ink">What did you lose?</h2>
                 <div className="grid gap-5 md:grid-cols-2">
-                  <Field label="Item name" value={itemName} onChange={setItemName} placeholder="Black leather wallet" required />
+                  <Field label="Item name" value={itemName} onChange={setItemName} placeholder="Black leather wallet" required rule={{ kind: "title", label: "item name" }} forceShow={attempted} maxLength={120} />
                   <SelectField label="Category" value={category} onChange={setCategory} options={CATEGORIES} />
                   <SelectField label="Last seen location" value={lastLocation} onChange={setLastLocation} options={CAMPUS_LOCATIONS} icon={<MapPin size={15} />} />
                   <Field label="Last seen date" value={lastSeenDate} onChange={setLastSeenDate} type="date" icon={<CalendarRange size={15} />} required />
-                  <div className="md:col-span-2"><TextAreaField label="Description" value={description} onChange={setDescription} placeholder="Include brand, color, size, condition, and visible features." required /></div>
-                  <div className="md:col-span-2"><TextAreaField label="Private distinctive marks" value={distinctiveMarks} onChange={setDistinctiveMarks} placeholder="Optional: unique marks or contents to verify a future claim." icon={<Tag size={15} />} /></div>
+                  <div className="md:col-span-2"><TextAreaField label="Description" value={description} onChange={setDescription} placeholder="Include brand, color, size, condition, and visible features." required rule={{ kind: "description" }} forceShow={attempted} /></div>
+                  <div className="md:col-span-2"><TextAreaField label="Private distinctive marks" value={distinctiveMarks} onChange={setDistinctiveMarks} placeholder="Optional: unique marks or contents to verify a future claim." icon={<Tag size={15} />} rule={{ kind: "marks", label: "distinctive marks", required: false }} forceShow={attempted} /></div>
                   <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 text-[14px] leading-6 transition-colors md:col-span-2 ${authorized ? "border-tide-200 bg-tide-50 text-ink" : "border-line bg-frost-50 text-ink-soft"}`}>
                     <input type="checkbox" required checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} className="mt-1 size-[18px] shrink-0 accent-navy-800" />
                     I authorize E-Balik to compare this report with found-item records and notify me about possible matches.
@@ -595,12 +610,15 @@ function FieldLabel({ htmlFor, label, required, icon }: { htmlFor: string; label
   );
 }
 
-function Field({ label, value, onChange, placeholder, type = "text", icon, required = false }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string; icon?: React.ReactNode; required?: boolean }) {
+function Field({ label, value, onChange, placeholder, type = "text", icon, required = false, rule, forceShow = false, maxLength }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string; icon?: React.ReactNode; required?: boolean; rule?: TextRule; forceShow?: boolean; maxLength?: number }) {
   const id = useId();
+  const hint = useFieldHint(value, rule, forceShow);
   return (
     <div>
       <FieldLabel htmlFor={id} label={label} required={required} icon={icon} />
-      <input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} required={required} className={`${CX.input} w-full`} />
+      <input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} onBlur={hint.onBlur} placeholder={placeholder} required={required} maxLength={maxLength}
+        aria-invalid={hint.invalid} aria-describedby={hint.invalid ? `${id}-hint` : undefined} className={`${CX.input} w-full ${hint.invalid ? INVALID_FIELD : ""}`} />
+      {rule && <FieldHint id={`${id}-hint`} message={hint.message} />}
     </div>
   );
 }
@@ -620,12 +638,15 @@ function SelectField({ label, value, onChange, options, icon }: { label: string;
   );
 }
 
-function TextAreaField({ label, value, onChange, placeholder, icon, required = false }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; icon?: React.ReactNode; required?: boolean }) {
+function TextAreaField({ label, value, onChange, placeholder, icon, required = false, rule, forceShow = false }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; icon?: React.ReactNode; required?: boolean; rule?: TextRule; forceShow?: boolean }) {
   const id = useId();
+  const hint = useFieldHint(value, rule, forceShow);
   return (
     <div>
       <FieldLabel htmlFor={id} label={label} required={required} icon={icon} />
-      <textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} required={required} rows={3} className={`${CX.input} w-full resize-y py-3 leading-6`} />
+      <textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} onBlur={hint.onBlur} placeholder={placeholder} required={required} rows={3}
+        aria-invalid={hint.invalid} aria-describedby={hint.invalid ? `${id}-hint` : undefined} className={`${CX.input} w-full resize-y py-3 leading-6 ${hint.invalid ? INVALID_FIELD : ""}`} />
+      {rule && <FieldHint id={`${id}-hint`} message={hint.message} />}
     </div>
   );
 }

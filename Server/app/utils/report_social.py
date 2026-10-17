@@ -10,7 +10,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
-from app.utils.profanity import find_profanity
+from app.utils.profanity import PROFANITY_MESSAGE, find_profanity
+from app.utils.text_guard import strip_markup, text_problem
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,6 @@ URGENT_CATEGORIES = ('documents & cards', 'electronics', 'keys', 'valuables')
 _URGENT_WORDS = re.compile(r"wallet|purse|\bid\b|passport|atm|license|licence|phone|laptop|tablet|\bkeys?\b|medicine|inhaler|eyeglass|glasses|calculator", re.I)
 _EMAIL = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
 _PHONE = re.compile(r'(?:\+?\d[\s().-]?){9,}')
-_CONTROL = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
-
 
 class SocialError(Exception):
     """A rule failure with an HTTP status the route can return as is."""
@@ -59,17 +58,18 @@ def _parse(value: Any) -> Optional[datetime]:
 
 def clean_comment(raw: Any) -> str:
     """The comment as it will be stored, or a SocialError saying what to change."""
-    text = _CONTROL.sub('', str(raw or '')).replace('<', '').replace('>', '')
-    text = re.sub(r'[ \t]+', ' ', text.replace('\r', ''))
-    text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    text = strip_markup(raw)
     if not text:
         raise SocialError('Write a comment first.')
     if len(text) > MAX_BODY:
         raise SocialError(f'Comments can be up to {MAX_BODY} characters.')
     if find_profanity(text):
-        raise SocialError('Your comment contains language that is not allowed on E-Balik, so it was not posted. Please rewrite it respectfully.', 422, 'profanity')
+        raise SocialError(PROFANITY_MESSAGE, 422, 'profanity')
     if _EMAIL.search(text) or _PHONE.search(text):
         raise SocialError('Please keep phone numbers and email addresses out of comments. To reach the owner, file a claim or scan their Smart Tag.', 422, 'contact_details')
+    problem = text_problem(text, 'comment')
+    if problem:
+        raise SocialError(problem, 422, 'invalid_text')
     return text
 
 
@@ -116,6 +116,19 @@ class ReportSocial:
             raise SocialError('This report is closed, so it no longer takes comments or reactions.', 409, 'report_closed')
         return {'item_id': row['item_id'], 'reference': row[ref_col], 'name': row.get('item_name') or 'item', 'fk': fk,
                 'owner': row.get('reporter_account_id') or row.get('account_id')}
+
+    def post(self, kind: str, reference: str, viewer_id: Optional[str]) -> Dict[str, Any]:
+        """One open report as a feed post (the target of a shared link). Closed or unknown reports are refused like the comment routes refuse them."""
+        table, ref_col, fk, open_status, columns = self._kind(kind)
+        rows = self.client.table(table).select(columns).eq(ref_col, str(reference or '').strip().upper()).limit(1).execute().data or []
+        if not rows:
+            raise SocialError('That report was not found.', 404, 'not_found')
+        if str(rows[0].get('status') or '').lower() != open_status:
+            raise SocialError('This report is closed, so it is no longer on the feed.', 409, 'report_closed')
+        post = self._post(str(kind).lower(), rows[0])
+        self._attach_social([post], viewer_id)
+        post.pop('_item_id', None)
+        return {'post': post}
 
     def _names(self, account_ids: Iterable[Any]) -> Dict[str, str]:
         wanted = sorted({str(i) for i in account_ids if i})

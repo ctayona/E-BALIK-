@@ -13,7 +13,8 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Dict, Iterable, List, Optional
 
 from app.utils.auction_email import format_peso, send_auction_final_warning_email, send_auction_forfeited_email, send_auction_won_email
-from app.utils.profanity import find_profanity
+from app.utils.profanity import PROFANITY_MESSAGE, find_profanity
+from app.utils.text_guard import strip_markup, text_problem
 from app.utils import custody_log
 from app.utils.report_lifecycle import ReportLifecycle
 
@@ -836,13 +837,16 @@ class AuctionService:
         return {'auction': self.card(auction, profiles), 'extended': bool(result.get('extended')), 'bought_out': bought_out, 'bid_id': result.get('bid_id')}
 
     def add_comment(self, auction_id: str, account_id: str, body: Any) -> Dict[str, Any]:
-        text = str(body or '').strip()
+        text = strip_markup(body)
         if not text:
             raise AuctionError('Write a comment first.')
         if len(text) > MAX_COMMENT_LENGTH:
             raise AuctionError(f'Comments can be up to {MAX_COMMENT_LENGTH} characters.')
         if find_profanity(text):
-            raise AuctionError('Your comment contains language that is not allowed on E-Balik, so it was not posted. Please rewrite it respectfully.', 422, code='profanity')
+            raise AuctionError(PROFANITY_MESSAGE, 422, code='profanity')
+        problem = text_problem(text, 'comment')
+        if problem:
+            raise AuctionError(problem, 422, code='invalid_text')
         try:
             rows = self.client.table('auctions').select('auction_id,status').eq('auction_id', auction_id).limit(1).execute().data or []
             if not rows:

@@ -19,6 +19,7 @@ const PrivacyPage = lazy(() => import("@/app/pages/privacy/PrivacyPage"));
 import UserHeader from "@/app/shared/UserHeader";
 import MobileTabBar from "@/app/shared/MobileTabBar";
 import InfoModalHost from "@/app/shared/info-modal/InfoModalHost";
+import ToastHost from "@/app/shared/toast/ToastHost";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { useAuth } from "@/app/utils/useAuth";
 import { authUtils } from "@/app/utils/api";
@@ -250,6 +251,7 @@ function MainApp() {
       </div>
       <MobileTabBar currentPage={page} onNavigate={handleNavigate} />
       <InfoModalHost />
+      <ToastHost />
     </div>
   );
 }

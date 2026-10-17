@@ -46,6 +46,16 @@ def feed():
     return jsonify(_social().feed(account_id, request.args.get('kind', 'all'), limit, request.args.get('before') or None)), 200
 
 
+@feed_bp.route('/<kind>/<reference>', methods=['GET'])
+@_handled('load the report')
+def one_post(kind, reference):
+    """A single open report, so a shared link can open it even when it is not on the first page of the feed."""
+    account_id = _authenticated_account_id()
+    if not rate_limit.allow(f'feed-read:{account_id}', 120, 60):
+        return _too_many()
+    return jsonify(_social().post(kind, reference, account_id)), 200
+
+
 @feed_bp.route('/<kind>/<reference>/comments', methods=['GET'])
 @_handled('load the comments')
 def comments(kind, reference):

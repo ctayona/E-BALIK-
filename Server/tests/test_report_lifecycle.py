@@ -522,7 +522,7 @@ class MyReportsGuardTests(unittest.TestCase):
         db.update_missing_item_by_account.return_value = {'mpost_id': 'MP1001'}
         client = client_for(my_routes.my_reports_bp, '/api')
         with patch.object(my_routes, 'get_db', return_value=db), patch.object(my_routes, '_authenticated_account_id', return_value=OWNER):
-            response = getattr(client, method)(path, json={'item_name': 'x'})
+            response = getattr(client, method)(path, json={'item_name': 'Black wallet'})
         return response, db
 
     FOUND = {'item_id': 'F1', 'fpost_id': 'FP1001', 'status': 'unclaimed'}

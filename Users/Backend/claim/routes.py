@@ -7,6 +7,7 @@ from app.utils import JWTService, get_db
 from app.utils.email_service import send_reference_email_best_effort
 from app.utils.handover import HandoverService, qr_png
 from app.utils.report_guard import ReportRuleError, begin_submission, end_submission
+from app.utils.text_guard import TextRejected, clean_field
 from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, consent_metadata, dpa_consent_given
 from Users.Backend.shared.uploads import has_valid_signature
 
@@ -52,6 +53,7 @@ def claims():
             return jsonify({'error': 'Found item reference and claim reason are required'}), 400
         if not dpa_consent_given(request.form):
             return jsonify({'error': DPA_REQUIRED_MESSAGE, 'code': 'dpa_required'}), 400
+        claim_reason = clean_field(claim_reason, 'reason', 'claim_reason', 'claim explanation')
         # One submission per account and item at a time: a double-click must never create two claims.
         slot = begin_submission(f'claim:{account_id}:{fpost_id.lower()}')
         if not proof or not proof.filename:
@@ -163,6 +165,8 @@ def claims():
         claim_response['proof_image_url'] = _signed_url(db, proof_bucket, proof_path)
         claim_response['identity_document_url'] = _signed_url(db, identity_bucket, identity_path)
         return jsonify({'message': 'Claim submitted and awaiting administrator review', 'claim': claim_response, 'auction_notice': auction_notice}), 201
+    except TextRejected as error:
+        return jsonify(error.body()), error.status
     except ReportRuleError as error:
         return jsonify({'error': 'You already submitted a claim for this item a moment ago.' if error.code == 'duplicate_submission' else error.message, 'code': error.code}), error.status
     except ValueError as error:

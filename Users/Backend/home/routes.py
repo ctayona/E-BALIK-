@@ -10,6 +10,7 @@ from google.oauth2 import id_token
 from email_validator import EmailNotValidError, validate_email
 from app.utils import EmailService, get_db, JWTService, OTPGenerator, PasswordService, otp_guard
 from app.utils.otp_guard import OtpBlocked
+from app.utils.text_guard import TextRejected, clean_field
 from app.utils.admin_mfa import hash_recovery_code, matched_totp_step
 from app.utils.crypto_service import CryptoService
 from app.utils.system_control import login_block, public_status
@@ -177,6 +178,9 @@ def register():
         required_fields = ['fname', 'lname', 'email', 'campus_id', 'password']
         if not all(field in data for field in required_fields):
             return jsonify({'error': 'Missing required fields'}), 400
+        data['fname'] = clean_field(data.get('fname'), 'name', 'fname', 'first name')
+        data['lname'] = clean_field(data.get('lname'), 'name', 'lname', 'last name')
+        data['mname'] = clean_field(data.get('mname'), 'name', 'mname', 'middle name', required=False)
         
         # Validate email format
         try:
@@ -233,6 +237,8 @@ def register():
             'cooldown': otp_guard.COOLDOWN_SECONDS,
         }), 200
 
+    except TextRejected as error:
+        return jsonify(error.body()), error.status
     except OtpBlocked as error:
         return _blocked_response(error)
     except Exception as e:
@@ -264,6 +270,9 @@ def verify_otp():
         required_fields = ['email', 'otp_code', 'fname', 'lname', 'campus_id', 'password']
         if not all(field in data for field in required_fields):
             return jsonify({'error': 'Missing required fields'}), 400
+        data['fname'] = clean_field(data.get('fname'), 'name', 'fname', 'first name')
+        data['lname'] = clean_field(data.get('lname'), 'name', 'lname', 'last name')
+        data['mname'] = clean_field(data.get('mname'), 'name', 'mname', 'middle name', required=False)
         otp_guard.check_verify_ip(otp_guard.client_ip())
 
         # Get database instance
@@ -306,7 +315,7 @@ def verify_otp():
             'account_id': account_id,
             'campus_id': campus_id,
             'fname': data['fname'].strip(),
-            'mname': (data.get('mname') or '').strip(),
+            'mname': data.get('mname') or '',
             'lname': data['lname'].strip(),
             'email': normalized_email,
             'password_hash': password_hash,
@@ -351,6 +360,8 @@ def verify_otp():
             'token': token
         }), 201
     
+    except TextRejected as error:
+        return jsonify(error.body()), error.status
     except OtpBlocked as error:
         return _blocked_response(error)
     except Exception as e:

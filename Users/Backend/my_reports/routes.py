@@ -2,11 +2,27 @@
 from flask import Blueprint, current_app, jsonify, request
 from app.utils import get_db
 from app.utils.report_lifecycle import is_completed
+from app.utils.text_guard import TextRejected, clean_field
 from Users.Backend.shared.request_auth import _authenticated_account_id
 
 my_reports_bp = Blueprint('user_my_reports', __name__)
 
 COMPLETED_MESSAGE = 'This report is completed (the item was released), so it can no longer be changed or deleted.'
+
+
+# field -> (kind, label, required). Only the fields the person actually sent are checked, so a partial edit still works.
+FOUND_TEXT_FIELDS = {'item_name': ('title', 'item title', True), 'description': ('description', 'description', False), 'location': ('place', 'found location', True)}
+MISSING_TEXT_FIELDS = {'item_name': ('title', 'item name', True), 'description': ('description', 'description', True),
+                       'distinctive_marks': ('marks', 'distinguishing details', False), 'last_location': ('place', 'last seen location', True)}
+
+
+def _clean_edit(body, rules):
+    """The edit with every text field stripped of markup and checked; raises TextRejected naming the field that failed."""
+    cleaned = dict(body)
+    for field, (kind, label, required) in rules.items():
+        if cleaned.get(field) is not None:
+            cleaned[field] = clean_field(cleaned[field], kind, field, label, required=required)
+    return cleaned
 
 
 def _refuse_completed(kind, report):
@@ -31,10 +47,12 @@ def manage_found_item(fpost_id):
                 # Deleting the report would delete the claims on it, and with them the record of who asked for the item.
                 return jsonify({'error': 'Someone has claimed this item, so the report cannot be deleted. Contact the Lost and Found Office if it is a mistake.', 'code': 'report_in_use'}), 409
             return jsonify({'deleted': db.delete_found_item_by_account(fpost_id, account_id)}), 200
-        item = db.update_found_item_by_account(fpost_id, account_id, request.get_json(silent=True) or {})
+        item = db.update_found_item_by_account(fpost_id, account_id, _clean_edit(request.get_json(silent=True) or {}, FOUND_TEXT_FIELDS))
         if not item:
             return jsonify({'error': 'Report not found or not owned by this account'}), 404
         return jsonify({'item': item}), 200
+    except TextRejected as error:
+        return jsonify(error.body()), error.status
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except Exception as error:
@@ -53,10 +71,12 @@ def manage_missing_item(mpost_id):
             return refused
         if request.method == 'DELETE':
             return jsonify({'deleted': db.delete_missing_item_by_account(mpost_id, account_id)}), 200
-        item = db.update_missing_item_by_account(mpost_id, account_id, request.get_json(silent=True) or {})
+        item = db.update_missing_item_by_account(mpost_id, account_id, _clean_edit(request.get_json(silent=True) or {}, MISSING_TEXT_FIELDS))
         if not item:
             return jsonify({'error': 'Report not found or not owned by this account'}), 404
         return jsonify({'item': item}), 200
+    except TextRejected as error:
+        return jsonify(error.body()), error.status
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except Exception as error:

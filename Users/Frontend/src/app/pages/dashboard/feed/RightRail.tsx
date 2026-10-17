@@ -2,6 +2,7 @@ import { AlertTriangle, Clock3, Info, Mail, MapPin, Megaphone, PhoneCall, Shield
 import type { FeedCounts } from "@/app/utils/api";
 import { useAnnouncement, type AnnouncementTone } from "@/app/utils/system";
 import { OFFICE, hotlineHref } from "./officeInfo";
+import { FEED_CARD } from "./feedStyle";
 
 const TONE: Record<AnnouncementTone, { box: string; icon: typeof Info }> = {
   info: { box: "border-iris-200 bg-iris-50 text-navy-800", icon: Info },
@@ -12,7 +13,7 @@ const TONE: Record<AnnouncementTone, { box: string; icon: typeof Info }> = {
 
 function Card({ title, children, className = "" }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <section className={`rounded-[20px] border border-white/80 bg-white/90 p-4 shadow-card ${className}`}>
+    <section className={`${FEED_CARD} p-4 ${className}`}>
       <h2 className="mb-2.5 font-[family-name:var(--font-heading)] text-[16px] font-semibold text-ink">{title}</h2>
       {children}
     </section>

@@ -7,6 +7,8 @@ from app.utils import custody_log, get_db
 from app.utils.email_service import send_reference_email_best_effort
 from app.utils.matching import build_found_match_summaries
 from app.utils.report_guard import ReportRuleError, begin_submission, check_new_report, end_submission
+from app.utils.profanity import PROFANITY_MESSAGE, find_profanity
+from app.utils.text_guard import TextRejected, clean_field, strip_markup
 from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, consent_metadata, dpa_consent_given
 from Users.Backend.shared.request_auth import _authenticated_account_id, _public_url
 
@@ -83,6 +85,15 @@ def create_found_item():
             return jsonify({'error': 'Complete the item and security turnover details'}), 400
         if not dpa_consent_given(data):
             return jsonify({'error': DPA_REQUIRED_MESSAGE, 'code': 'dpa_required'}), 400
+
+        # Real words only: markup is stripped and keyboard mash, spam and foul language are refused before anything is saved.
+        item_name = clean_field(item_name, 'title', 'item_name', 'item title')
+        location = clean_field(location, 'place', 'location', 'found location')
+        turnover_location = clean_field(turnover_location, 'place', 'turnover_location', 'turnover location')
+        description = clean_field(description, 'description', 'description', required=False)
+        guard_name_or_id = strip_markup(guard_name_or_id)[:80]
+        if find_profanity(guard_name_or_id):
+            raise TextRejected(PROFANITY_MESSAGE, 'guard_name_or_id', 'profanity')
 
         try:
             datetime.strptime(found_date, '%Y-%m-%d')
@@ -178,6 +189,8 @@ def create_found_item():
         if not email_sent:
             current_app.logger.warning('Found item %s was saved, but confirmation email was not sent', fpost_id)
         return jsonify({'message': 'Found item report created', 'item': item, 'fpost_id': fpost_id}), 201
+    except TextRejected as error:
+        return jsonify(error.body()), error.status
     except ReportRuleError as error:
         return jsonify({'error': error.message, 'code': error.code, **error.extra}), error.status
     except ValueError as error:

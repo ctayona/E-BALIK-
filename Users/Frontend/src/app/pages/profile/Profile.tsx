@@ -10,6 +10,9 @@ import Modal from "@/app/shared/modal/Modal";
 import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
 import { useCurrentUser } from "@/app/utils/system";
 import { showSubmitError } from "@/app/utils/submitErrors";
+import { focusFirstInvalid } from "@/app/shared/forms/FieldHint";
+import NameField from "@/app/shared/forms/NameField";
+import { firstTextProblem } from "@/app/utils/textGuard";
 import VerificationStatusCard, { assignedRole } from "@/app/shared/verification/VerificationStatusCard";
 import EmailPreferencesCard from "@/app/shared/profile/EmailPreferencesCard";
 import SmartTagSettings from "@/app/shared/profile/SmartTagSettings";
@@ -26,6 +29,7 @@ export default function Profile({
   const stored = useCurrentUser() as User | null;
   const user = stored ?? userProp;
   const [dpaChecked, setDpaChecked] = useState(false);
+  const [namesChecked, setNamesChecked] = useState(false);
   const [formData, setFormData] = useState({
     fname:     user?.fname     ?? "",
     mname:     user?.mname     ?? "",
@@ -101,6 +105,17 @@ export default function Profile({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrorMessage("");
+    const nameIssue = firstTextProblem([
+      { field: "fname", value: formData.fname, kind: "name", label: "first name" },
+      { field: "mname", value: formData.mname, kind: "name", label: "middle name", required: false },
+      { field: "lname", value: formData.lname, kind: "name", label: "last name" },
+    ]);
+    if (nameIssue) {
+      setNamesChecked(true);
+      setErrorMessage(nameIssue.message);
+      focusFirstInvalid();
+      return;
+    }
     setShowConfirmModal(true);
   }
 
@@ -188,15 +203,16 @@ export default function Profile({
                 { label: "Middle name", field: "mname" as const, placeholder: "(Optional)" },
                 { label: "Last name",   field: "lname" as const, placeholder: "Dela Cruz" },
               ].map(({ label, field, placeholder }) => (
-                <div key={field} className="flex flex-col gap-2">
-                  <label className="text-[12px] font-bold text-navy-800">{label}</label>
-                  <input
-                    value={formData[field]}
-                    onChange={(e) => handleChange(field, e.target.value)}
-                    placeholder={placeholder}
-                    className={clayFieldInput}
-                  />
-                </div>
+                <NameField
+                  key={field}
+                  label={label}
+                  value={formData[field]}
+                  onChange={(value) => handleChange(field, value)}
+                  placeholder={placeholder}
+                  required={field !== "mname"}
+                  forceShow={namesChecked}
+                  inputClass={`${CX.input} h-[48px] w-full`}
+                />
               ))}
             </div>
 

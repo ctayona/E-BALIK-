@@ -6,6 +6,7 @@ import { showInfoModal } from '@/app/shared/info-modal/infoModalStore';
 import { CX, SPRING } from '@/app/utils/clay';
 import type { NavigationOptions, Page } from '@/app/types';
 import { ReportListSkeleton } from '@/app/shared/LoadingSkeleton';
+import { notificationTarget, opensSmartTags } from '@/app/utils/notifications';
 
 interface UserNotification {
   notification_id: string;
@@ -82,23 +83,10 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
     }
   };
 
-  // Smart Tag notices created before the My Smart Tags page existed point at the dashboard, so match them by type too.
-  const opensSmartTags = (notification: UserNotification) => notification.link_page === 'my-tags' || String(notification.notification_type || '').startsWith('smart_tag');
-
   const handleNotificationClick = (notification: UserNotification) => {
     if (!notification.is_read) handleMarkAsRead(notification.notification_id);
-    if (notification.link_page === 'claim' && notification.found_item_id && onNavigate) {
-      // The claim form takes the readable reference. Without it (an older server) the form stays empty rather than showing an internal id.
-      onNavigate('claim', { foundItemId: notification.found_item_reference || '' });
-    } else if (notification.link_page === 'profile' && onNavigate) {
-      onNavigate('profile');
-    } else if (notification.link_page === 'auction-hall' && onNavigate) {
-      onNavigate('auction-hall');
-    } else if (notification.link_page === 'my-reports' && onNavigate) {
-      onNavigate('my-reports', { reportsTab: 'completed' });
-    } else if (opensSmartTags(notification) && onNavigate) {
-      onNavigate('my-tags');
-    }
+    const target = notificationTarget(notification);
+    if (target && onNavigate) onNavigate(target.page, target.options);
   };
 
   const unreadCount = notifications.filter(n => !n.is_read).length;

@@ -10,6 +10,8 @@ import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import Modal, { CountdownConsent } from "@/app/shared/modal/Modal";
 import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
 import { showSubmitError } from "@/app/utils/submitErrors";
+import { FieldHint, INVALID_FIELD, focusFirstInvalid, useFieldHint } from "@/app/shared/forms/FieldHint";
+import { textProblem } from "@/app/utils/textGuard";
 import VerificationGate from "@/app/shared/verification/VerificationGate";
 import HandoverQr from "@/app/shared/claims/HandoverQr";
 import { isVerified, useCurrentUser } from "@/app/utils/system";
@@ -32,6 +34,8 @@ export default function Claim({ foundItemId = "", missingReportId = "", onNaviga
   const [myLostReports, setMyLostReports] = useState<Array<{ mpost_id: string; item_name: string; last_location?: string }>>([]);
   const [lostReportId,  setLostReportId]  = useState(missingReportId);
   const [reason,       setReason]       = useState("");
+  const [attempted,    setAttempted]    = useState(false);
+  const reasonHint = useFieldHint(reason, { kind: "reason", label: "claim explanation" }, attempted);
   const [proof,        setProof]        = useState<File | null>(null);
   const [proofPreview, setProofPreview] = useState("");
   const [identityDocument, setIdentityDocument] = useState<File | null>(null);
@@ -110,6 +114,13 @@ export default function Claim({ foundItemId = "", missingReportId = "", onNaviga
     if (!ensure()) return;
     if (!reference.trim() || !reason.trim() || !proof || !identityDocument) {
       setError("Found item reference, claim reason, ownership proof, and a valid ID are required."); return;
+    }
+    const reasonIssue = textProblem(reason, "reason", "claim explanation");
+    if (reasonIssue) {
+      setAttempted(true);
+      setError(reasonIssue);
+      focusFirstInvalid();
+      return;
     }
     setCountdown(5);
     setTruthConfirmed(false);
@@ -276,15 +287,20 @@ export default function Claim({ foundItemId = "", missingReportId = "", onNaviga
 
                 {/* Reason */}
                 <div className="flex flex-col gap-2">
-                  <label className="text-[12px] font-bold text-navy-800">Why do you believe this is your item?</label>
+                  <label htmlFor="claim-reason" className="text-[12px] font-bold text-navy-800">Why do you believe this is your item?</label>
                   <textarea
+                    id="claim-reason"
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
+                    onBlur={reasonHint.onBlur}
+                    aria-invalid={reasonHint.invalid}
+                    aria-describedby={reasonHint.invalid ? "claim-reason-hint" : undefined}
                     rows={5}
                     placeholder="Describe unique features, contents, serial numbers, or other proof of ownership."
                     required
-                    className="rounded-xl border border-line-strong bg-slate-50 p-4 text-[14px] outline-none resize-none w-full focus:border-navy-600 transition-colors placeholder:text-slate-500"
+                    className={`rounded-xl border border-line-strong bg-slate-50 p-4 text-[14px] outline-none resize-none w-full focus:border-navy-600 transition-colors placeholder:text-slate-500 ${reasonHint.invalid ? INVALID_FIELD : ""}`}
                   />
+                  <FieldHint id="claim-reason-hint" message={reasonHint.message} />
                 </div>
 
                 {/* Proof upload */}

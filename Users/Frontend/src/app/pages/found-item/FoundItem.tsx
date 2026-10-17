@@ -8,6 +8,8 @@ import { CX } from "@/app/utils/clay";
 import type { NavigationOptions, Page } from "@/app/types";
 import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
 import { showSubmitError } from "@/app/utils/submitErrors";
+import { FieldHint, INVALID_FIELD, focusFirstInvalid, useFieldHint, type TextRule } from "@/app/shared/forms/FieldHint";
+import { firstTextProblem } from "@/app/utils/textGuard";
 import { isCompletedReport } from "@/app/utils/reportLifecycle";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 import ItemCollection from "@/app/shared/media/ItemCollection";
@@ -76,6 +78,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
   const [reportStatus, setReportStatus] = useState("");
   const [reportLocation, setReportLocation] = useState("");
   const [error, setError] = useState("");
+  const [attempted, setAttempted] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode] = useViewMode();
   const [openReport, setOpenReport] = useState<Report | null>(null);
@@ -141,11 +144,27 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
   const typingGuardName = guardId === OTHER_GUARD || (!guardsLoading && guards.length === 0);
   const chosenGuard = guards.find((guard) => guard.id === guardId);
   const guardLabel = typingGuardName ? guardNameOrId.trim() : chosenGuard?.name || "";
+  const reportText = [description.trim(), distinctiveMarks.trim() && `Distinctive marks: ${distinctiveMarks.trim()}`].filter(Boolean).join("\n\n");
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
     if (!ensure()) return;
+    const textIssue = firstTextProblem([
+      { field: "title", value: title, kind: "title", label: "item title" },
+      { field: "description", value: description, kind: "description", required: false },
+      { field: "marks", value: distinctiveMarks, kind: "marks", label: "distinctive marks", required: false },
+    ]);
+    if (textIssue) {
+      setAttempted(true);
+      setError(textIssue.message);
+      focusFirstInvalid();
+      return;
+    }
+    if (reportText.length > 1000) {
+      setError("The description and the distinctive marks are too long together. Shorten them to 1000 characters in total.");
+      return;
+    }
     if (!guardLabel) {
       setError(typingGuardName ? "Enter the name or ID number of the guard who received the item." : "Choose the guard who received the item.");
       return;
@@ -173,7 +192,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
     const result = await createFoundItem({
       item_name: title,
       category,
-      description: [description, distinctiveMarks && `Distinctive marks: ${distinctiveMarks}`].filter(Boolean).join("\n\n"),
+      description: reportText,
       location,
       found_date: dateFound,
       turnover_location: turnoverLocation,
@@ -198,6 +217,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
     setTitle("");
     setDescription("");
     setDistinctiveMarks("");
+    setAttempted(false);
     setGuardNameOrId("");
     setGuardId("");
     setImage(undefined);
@@ -297,12 +317,12 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
             <section className={`${CX.card} p-5 sm:p-6`} aria-labelledby="found-details-heading">
               <h2 id="found-details-heading" className="mb-4 text-[16px] font-semibold text-ink">Item details</h2>
               <div className="grid gap-5 md:grid-cols-2">
-                <Field label="Item title / short description" value={title} onChange={setTitle} placeholder="Blue backpack with red zipper" required />
+                <Field label="Item title / short description" value={title} onChange={setTitle} placeholder="Blue backpack with red zipper" required rule={{ kind: "title", label: "item title" }} forceShow={attempted} maxLength={120} />
                 <SelectField label="Category" value={category} onChange={setCategory} options={CATEGORIES} />
                 <SelectField label="Where was it found?" value={location} onChange={setLocation} options={FOUND_LOCATIONS} icon={<MapPin size={15} />} />
                 <Field label="Date found" value={dateFound} onChange={setDateFound} type="date" icon={<CalendarRange size={15} />} required />
-                <div className="md:col-span-2"><TextAreaField label="Description / identifying details" value={description} onChange={setDescription} placeholder="Brand, color, size, and visible details." /></div>
-                <div className="md:col-span-2"><TextAreaField label="Distinctive marks / proof-of-ownership notes" value={distinctiveMarks} onChange={setDistinctiveMarks} placeholder="Keep private marks useful for later claim verification." icon={<Tag size={15} />} /></div>
+                <div className="md:col-span-2"><TextAreaField label="Description / identifying details" value={description} onChange={setDescription} placeholder="Brand, color, size, and visible details." rule={{ kind: "description", required: false }} forceShow={attempted} /></div>
+                <div className="md:col-span-2"><TextAreaField label="Distinctive marks / proof-of-ownership notes" value={distinctiveMarks} onChange={setDistinctiveMarks} placeholder="Keep private marks useful for later claim verification." icon={<Tag size={15} />} rule={{ kind: "marks", label: "distinctive marks", required: false }} forceShow={attempted} /></div>
               </div>
             </section>
 
@@ -321,7 +341,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
                     <GuardSelect guards={guards} value={guardId} onChange={setGuardId} />
                   )}
                   {typingGuardName && (
-                    <Field label={guards.length > 0 ? "Guard name or ID number" : "Guard name or ID number"} value={guardNameOrId} onChange={setGuardNameOrId} placeholder="Guard Santos / SG-014" required />
+                    <Field label={guards.length > 0 ? "Guard name or ID number" : "Guard name or ID number"} value={guardNameOrId} onChange={setGuardNameOrId} placeholder="Guard Santos / SG-014" required maxLength={80} />
                   )}
                 </div>
               </div>
@@ -474,12 +494,15 @@ function FieldLabel({ htmlFor, label, required, icon }: { htmlFor: string; label
   );
 }
 
-function Field({ label, value, onChange, placeholder, type = "text", icon, required = false }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string; icon?: React.ReactNode; required?: boolean }) {
+function Field({ label, value, onChange, placeholder, type = "text", icon, required = false, rule, forceShow = false, maxLength }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string; icon?: React.ReactNode; required?: boolean; rule?: TextRule; forceShow?: boolean; maxLength?: number }) {
   const id = useId();
+  const hint = useFieldHint(value, rule, forceShow);
   return (
     <div>
       <FieldLabel htmlFor={id} label={label} required={required} icon={icon} />
-      <input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} required={required} className={`${CX.input} w-full`} />
+      <input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} onBlur={hint.onBlur} placeholder={placeholder} required={required} maxLength={maxLength}
+        aria-invalid={hint.invalid} aria-describedby={hint.invalid ? `${id}-hint` : undefined} className={`${CX.input} w-full ${hint.invalid ? INVALID_FIELD : ""}`} />
+      {rule && <FieldHint id={`${id}-hint`} message={hint.message} />}
     </div>
   );
 }
@@ -517,12 +540,15 @@ function SelectField({ label, value, onChange, options, icon }: { label: string;
   );
 }
 
-function TextAreaField({ label, value, onChange, placeholder, icon, required = false }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; icon?: React.ReactNode; required?: boolean }) {
+function TextAreaField({ label, value, onChange, placeholder, icon, required = false, rule, forceShow = false }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; icon?: React.ReactNode; required?: boolean; rule?: TextRule; forceShow?: boolean }) {
   const id = useId();
+  const hint = useFieldHint(value, rule, forceShow);
   return (
     <div>
       <FieldLabel htmlFor={id} label={label} required={required} icon={icon} />
-      <textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} required={required} rows={3} className={`${CX.input} w-full resize-y py-3 leading-6`} />
+      <textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} onBlur={hint.onBlur} placeholder={placeholder} required={required} rows={3}
+        aria-invalid={hint.invalid} aria-describedby={hint.invalid ? `${id}-hint` : undefined} className={`${CX.input} w-full resize-y py-3 leading-6 ${hint.invalid ? INVALID_FIELD : ""}`} />
+      {rule && <FieldHint id={`${id}-hint`} message={hint.message} />}
     </div>
   );
 }

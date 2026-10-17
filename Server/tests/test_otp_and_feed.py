@@ -211,7 +211,7 @@ class OtpRouteTests(unittest.TestCase):
         self.assertEqual(self.post('/auth/register', {'fname': 'Ana', 'lname': 'Cruz', 'email': 'new.k12345678@umak.edu.ph', 'campus_id': 'K12345678', 'password': PASSWORD}, db=db).status_code, 200)
         real = self.sent[0][1]
         wrong = '000000' if real != '000000' else '111111'
-        codes = [self.post('/auth/verify-otp', {'email': 'new.k12345678@umak.edu.ph', 'otp_code': wrong, 'fname': 'A', 'lname': 'C', 'campus_id': 'K12345678', 'password': PASSWORD}, db=db).status_code for _ in range(5)]
+        codes = [self.post('/auth/verify-otp', {'email': 'new.k12345678@umak.edu.ph', 'otp_code': wrong, 'fname': 'Ana', 'lname': 'Cruz', 'campus_id': 'K12345678', 'password': PASSWORD}, db=db).status_code for _ in range(5)]
         self.assertEqual(codes, [400, 400, 400, 400, 429])
 
     def test_the_right_code_still_registers(self):
@@ -324,7 +324,7 @@ class FeedTests(unittest.TestCase):
             if code:
                 self.assertEqual((raised.exception.code, raised.exception.status), (code, 422))
         self.assertEqual(self.store['report_comments'], [])
-        self.assertEqual(clean_comment('Seen <b>near</b> Gate 2'), 'Seen bnear/b Gate 2')   # angle brackets are removed, so no markup survives
+        self.assertEqual(clean_comment('Seen <b>near</b> Gate 2'), 'Seen near Gate 2')   # tags are removed, so no markup survives
         self.assertNotIn('<', clean_comment('a <script> b'))
 
     def test_the_same_comment_twice_in_a_minute_is_refused(self):

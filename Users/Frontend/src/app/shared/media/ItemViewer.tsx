@@ -79,7 +79,7 @@ export default function ItemViewer({
         className="relative grid w-full max-w-[1240px] grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto] overflow-hidden bg-navy-950 shadow-overlay sm:rounded-[28px] lg:grid-cols-[minmax(0,1fr)_400px] lg:grid-rows-1"
       >
         {/* Stage */}
-        <div className="relative flex min-h-[46vh] min-w-0 flex-col bg-[radial-gradient(80%_70%_at_50%_40%,#1f3160_0%,#0e1830_70%)]">
+        <div className="relative flex min-h-[46vh] min-h-[46dvh] min-w-0 flex-col bg-[radial-gradient(80%_70%_at_50%_40%,#1f3160_0%,#0e1830_70%)]">
           <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between p-3 sm:p-4">
             <span className="glass-dark rounded-full px-3 py-1.5 text-[13px] font-medium tabular-nums">{index + 1} / {count}</span>
             <div className="flex items-center gap-2">
@@ -142,7 +142,7 @@ export default function ItemViewer({
         </div>
 
         {/* Details */}
-        <aside className="max-h-[54vh] overflow-y-auto bg-white lg:max-h-none">
+        <aside className="max-h-[54vh] max-h-[54dvh] overflow-y-auto overscroll-contain scroll-smooth bg-white lg:max-h-none">
           <div className="p-6 sm:p-7">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold ${item.kind === "found" ? "bg-gold-50 text-gold-800 ring-1 ring-gold-200" : "bg-tide-50 text-tide-700 ring-1 ring-tide-200"}`}>
@@ -171,7 +171,7 @@ export default function ItemViewer({
             </dl>
             {note && <div className="mt-5">{note(item)}</div>}
           </div>
-          {actions && <div className="sticky bottom-0 flex flex-col gap-2 border-t border-line bg-white/95 p-5 backdrop-blur sm:p-6">{actions(item)}</div>}
+          {actions && <div className="sticky bottom-0 flex flex-col gap-2 border-t border-line bg-white/95 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] backdrop-blur sm:p-6 sm:pb-6">{actions(item)}</div>}
         </aside>
       </div>
     </div>,

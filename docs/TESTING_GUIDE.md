@@ -163,6 +163,45 @@ Sign in as **Student B** (the finder) and **Student A** (the owner).
 | 4.4.10 | The post action: on a found item press **This is mine**; on your own missing report press **See matches**; on someone else's missing report press **I found this**. | Each opens the claim form, your matches, or the found form. | ☐ |
 | 4.4.11 | Admin: hide a comment (`PATCH /api/admin/report-comments/<id>` with `{"hidden": true}`, there is no screen for it yet). | It disappears from the feed and the count. Restoring it brings it back. | ☐ |
 
+### 4.5 Typing checks (all forms)
+
+| # | Do this | You should see | Pass |
+|---|---|---|---|
+| 4.5.1 | In the Found form type `asdfghjkl` as the title, then `aaaaaaaaaaaaaaa` as the description. | A red hint under each field at once: "This looks like random typing. Please rewrite the ... in your own words." The field border turns red. | ☐ |
+| 4.5.2 | Type `too short` in the description and click out of the box. Before clicking out, nothing is shown while you type. | After leaving the box: "The description is too short. Write at least 15 characters." | ☐ |
+| 4.5.3 | Press **Publish found report** with that description. | Nothing is sent. The page scrolls to the description, the cursor is in it, the banner at the top and the hint repeat the message. | ☐ |
+| 4.5.4 | Fix the text and publish again. | The hints disappear and the confirmation step opens. | ☐ |
+| 4.5.5 | Repeat 4.5.1 to 4.5.3 in the Lost form (name, description, distinctive marks) and the Claim form (the explanation, 15 characters minimum). | Same hints and the same blocking. | ☐ |
+| 4.5.6 | Type `<b>Blue</b> umbrella<script>alert(1)</script>` as a title and save a report. | It saves as "Blue umbrella". No markup is stored or shown anywhere. | ☐ |
+| 4.5.7 | Type a swear word (English or Filipino, also disguised like `sh!t` or `f u c k`) in a title, a description, a comment or a name. | At once a hint appears: "Please rewrite respectfully. Inappropriate language is not permitted." Submitting is blocked. If you send it to the server anyway (for example by editing the page), the server refuses with the same sentence and nothing is saved. | ☐ |
+| 4.5.8 | Profile: set the first name to `Asdfgh`, then the last name to `Cruz123`, then save. | Hints under the names ("This does not look like a real first name", "Use letters only..."), and Save is blocked. `Ma. Cristina` and `Dela Cruz` are accepted. Registration checks the names the same way before the code email is sent. | ☐ |
+| 4.5.9 | On the Home feed and in an auction type `asdfghjkl` as a comment and press send. | The hint shows and nothing is posted. A normal comment posts. | ☐ |
+| 4.5.10 | Edit one of your reports in My Reports and set the description to `xxxxxxxxxxxxxxxxxxxx`. | The edit is refused with a message naming the description. | ☐ |
+
+### 4.7 Post cards, Share and shared links
+
+| # | Do this | You should see | Pass |
+|---|---|---|---|
+| 4.7.1 | Look at a found item on the Home feed. | Header: a shield avatar, "Custody Desk" with a tick, the time with a clock, an "In custody" badge. A missing report shows "Verified member" and "Still missing"; your own shows "You" and "Your report". No person's name, email or campus ID appears anywhere. | ☐ |
+| 4.7.2 | Press **Helpful**, then again. | The button glows gold with a pop and its icon shows the count; pressing again turns it off. Reloading keeps it. | ☐ |
+| 4.7.3 | Press **Comment**, write one and send. | A bubble with your initials, "You", the time and Delete appears at once; the Comment icon shows the count. Delete asks "Delete / Keep" first. | ☐ |
+| 4.7.4 | Type a swear word in the comment box. | The red hint shows while you type and **Send** posts nothing. | ☐ |
+| 4.7.5 | Press **Share**. | A toast says "Report link copied". Paste it in a new tab: after signing in, that report is at the top of the Home feed under "Shared with you" and the address bar is clean. **Dismiss** removes it. | ☐ |
+| 4.7.6 | Open a shared link to a report that has since been claimed or closed. | A red toast says the report is closed. The feed loads normally. | ☐ |
+| 4.7.7 | On a phone, open the Home feed. | No sideways scroll. The three action buttons are about a third of the width each with the count on the icon; the gold or navy action button spans the card. The stories row scrolls sideways by itself. | ☐ |
+
+### 4.6 Notification menu
+
+| # | Do this | You should see | Pass |
+|---|---|---|---|
+| 4.6.1 | Click the bell in the header. | A glass menu opens under the bell (full width under the header on a phone) with "Notifications", a count of new ones, **Mark all as read**, All / Unread, the latest notices with an icon, a dot on unread ones and a time like "5m ago". The page behind stays where it was. | ☐ |
+| 4.6.2 | Scroll the list. | The list scrolls inside the menu. The page behind does not move. On a phone the menu stops above the bottom bar. | ☐ |
+| 4.6.3 | Click an unread notice about a claim, an auction or your profile. | It is marked read (the badge on the bell drops by one), the menu closes and the right page opens. | ☐ |
+| 4.6.4 | Open the menu and press **Mark all as read**. | Every dot disappears, the badge on the bell goes away, the button greys out. The Unread tab says "No unread notifications". | ☐ |
+| 4.6.5 | Click outside the menu; open it again and press Escape; open it and click the bell. | Each of the three closes it. After Escape the bell has the keyboard focus. | ☐ |
+| 4.6.6 | Press **View full notifications**. | The Notifications page opens, as before, with the same list. | ☐ |
+| 4.6.7 | Switch the browser to dark mode (the sun/moon button). | The menu stays readable in both modes. | ☐ |
+
 ---
 
 ## 5. AI matching

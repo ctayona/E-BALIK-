@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, request
 from werkzeug.utils import secure_filename
 from app.utils import get_db, JWTService
+from app.utils.text_guard import TextRejected, clean_field
 from Users.Backend.shared.account import _infer_user_role_and_campus, _verification_profile_metadata
 from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, dpa_consent_given
 from Users.Backend.shared.uploads import has_valid_signature
@@ -56,6 +57,10 @@ def update_profile():
         if not data.get('fname') or not data.get('lname') or not data.get('email'):
             return jsonify({'error': 'First name, last name, and email are required'}), 400
 
+        first_name = clean_field(data.get('fname'), 'name', 'fname', 'first name')
+        middle_name = clean_field(data.get('mname'), 'name', 'mname', 'middle name', required=False)
+        last_name = clean_field(data.get('lname'), 'name', 'lname', 'last name')
+
         requested_email = data['email'].strip().lower()
         if requested_email != current_user['email']:
             existing_user = db.get_user_by_email(requested_email)
@@ -69,9 +74,9 @@ def update_profile():
             # The admin verified this email and campus ID against an uploaded document; changing them would void that check.
             return jsonify({'error': 'Your email and campus ID are locked after verification. Contact the Lost and Found Office to change them.'}), 409
         updated_fields = {
-            'fname': data['fname'].strip(),
-            'mname': (data.get('mname') or '').strip(),
-            'lname': data['lname'].strip(),
+            'fname': first_name,
+            'mname': middle_name,
+            'lname': last_name,
             'email': requested_email,
             'campus_id': new_campus_id,
             'updated_at': 'now()',
@@ -98,6 +103,8 @@ def update_profile():
             }
         }), 200
 
+    except TextRejected as e:
+        return jsonify(e.body()), e.status
     except ValueError as e:
         return jsonify({'error': str(e)}), 401
     except Exception as e:

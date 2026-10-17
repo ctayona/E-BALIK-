@@ -7,6 +7,7 @@ from app.utils import get_db
 from app.utils.email_service import send_reference_email_best_effort
 from app.utils.matching import build_match_summaries
 from app.utils.report_guard import ReportRuleError, begin_submission, check_new_report, end_submission
+from app.utils.text_guard import TextRejected, clean_field
 from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, consent_metadata, dpa_consent_given
 from Users.Backend.shared.request_auth import _authenticated_account_id, _public_url
 
@@ -41,6 +42,12 @@ def create_missing_item():
             return jsonify({'error': 'You must authorize matching and notifications before submitting'}), 400
         if not dpa_consent_given(data):
             return jsonify({'error': DPA_REQUIRED_MESSAGE, 'code': 'dpa_required'}), 400
+
+        # Real words only: markup is stripped and keyboard mash, spam and foul language are refused before anything is saved.
+        item_name = clean_field(item_name, 'title', 'item_name', 'item name')
+        description = clean_field(description, 'description', 'description')
+        distinctive_marks = clean_field(distinctive_marks, 'marks', 'distinctive_marks', 'distinguishing details', required=False)
+        last_location = clean_field(last_location, 'place', 'last_location', 'last seen location')
         try:
             datetime.strptime(last_seen_date, '%Y-%m-%d')
         except ValueError:
@@ -125,6 +132,8 @@ def create_missing_item():
         return jsonify({'message': 'Missing item report created', 'item': item, 'mpost_id': mpost_id}), 201
     except ReportRuleError as error:
         return jsonify({'error': error.message, 'code': error.code, **error.extra}), error.status
+    except TextRejected as error:
+        return jsonify(error.body()), error.status
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except Exception as error:

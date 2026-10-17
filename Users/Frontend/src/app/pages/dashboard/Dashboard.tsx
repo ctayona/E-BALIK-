@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, GitCompareArrows, Loader2, PackageCheck, RefreshCw, Search } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
+import { ArrowRight, GitCompareArrows, Loader2, PackageCheck, RefreshCw, Search, Share2, X } from "lucide-react";
 import type { NavigationOptions, Page } from "@/app/types";
 import type { User } from "@/app/utils/useAuth";
 import { useAuth } from "@/app/utils/useAuth";
@@ -16,6 +17,9 @@ import LeftRail from "./feed/LeftRail";
 import PostCard from "./feed/PostCard";
 import RightRail from "./feed/RightRail";
 import StoriesBar from "./feed/StoriesBar";
+import { FEED_CARD, GOLD_GRADIENT } from "./feed/feedStyle";
+import { kindOfReference } from "@/app/utils/shareReport";
+import { showToast } from "@/app/shared/toast/toastStore";
 
 type Kind = "all" | "found" | "missing";
 type Viewing = { items: GalleryItem[]; index: number } | null;
@@ -25,6 +29,24 @@ const toGallery = (post: Pick<FeedPost, "kind" | "reference" | "item_name" | "im
   id: post.reference, title: post.item_name, kind: post.kind, image: post.image_url || undefined, category: post.category,
   location: post.location, date: post.date, description: post.description, status: post.status,
 });
+
+/**
+ * The report a shared link points to (`/?report=FP1001`). The link is read once and removed from the address bar; it is kept until the page has
+ * tried to open it, so signing in first and landing here afterwards still works.
+ */
+let pendingShare: string | null | undefined;
+function takeSharedReference(): string | null {
+  if (pendingShare === undefined) {
+    const params = new URLSearchParams(window.location.search);
+    pendingShare = (params.get("report") || "").trim() || null;
+    if (params.has("report")) {
+      params.delete("report");
+      const rest = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`);
+    }
+  }
+  return pendingShare;
+}
 
 /**
  * The home page, laid out like a social feed in three columns: you and your campus shortcuts on the left; a composer, urgent-item stories
@@ -47,6 +69,8 @@ export default function Dashboard({ user, onNavigate }: {
   const [myMissing, setMyMissing] = useState<string[]>([]);
   const [viewing, setViewing] = useState<Viewing>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [shared, setShared] = useState<FeedPost | null>(null);
+  const reduced = useReducedMotion();
 
   const load = useCallback(async (which: Kind) => {
     setLoading(true);
@@ -74,6 +98,26 @@ export default function Dashboard({ user, onNavigate }: {
     return () => { active = false; };
   }, [getMissingItems]);
 
+  // A report someone shared with this person: shown at the top of the feed, whether or not it is on the first page.
+  useEffect(() => {
+    const reference = takeSharedReference();
+    if (!reference) return;
+    const sharedKind = kindOfReference(reference);
+    if (!sharedKind) {
+      pendingShare = null;
+      showToast("That link does not point to a report.", "error");
+      return;
+    }
+    let active = true;
+    void feedApi.post(sharedKind, reference).then((response) => {
+      if (!active) return;
+      pendingShare = null;
+      if (response.data?.post) setShared(response.data.post);
+      else showToast(response.error || "That report could not be opened.", "error");
+    });
+    return () => { active = false; };
+  }, []);
+
   async function loadMore() {
     if (!more.has || loadingMore) return;
     setLoadingMore(true);
@@ -96,6 +140,7 @@ export default function Dashboard({ user, onNavigate }: {
   const storyItems = useMemo(() => stories.map(toGallery), [stories]);
   const openPost = view.guard((index: number) => setViewing({ items: postItems, index }));
   const openStory = view.guard((index: number) => setViewing({ items: storyItems, index }));
+  const openShared = view.guard(() => { if (shared) setViewing({ items: [toGallery(shared)], index: 0 }); });
 
   function primaryAction(post: FeedPost) {
     if (post.kind === "found") onNavigate("claim", { foundItemId: post.reference });
@@ -119,14 +164,14 @@ export default function Dashboard({ user, onNavigate }: {
       {view.prompt}
       {social.prompt}
       <div className="mx-auto w-full max-w-[1320px]">
-        <div className="grid items-start gap-5 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_320px]">
+        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_320px]">
           <div className="hidden lg:sticky lg:top-24 lg:block">
             <LeftRail user={user} activeReports={myMissing.length} onNavigate={onNavigate} />
           </div>
 
-          <div className="mx-auto w-full max-w-[680px] space-y-4 xl:max-w-none">
+          <div className="mx-auto w-full min-w-0 max-w-[680px] space-y-4 xl:max-w-none">
             <h1 className="sr-only">Home feed</h1>
-            <form onSubmit={submitSearch} role="search" className="flex items-center gap-2 rounded-2xl border border-white/80 bg-white/90 p-1.5 shadow-card">
+            <form onSubmit={submitSearch} role="search" className={`${FEED_CARD} flex items-center gap-2 !rounded-2xl p-1.5 transition-shadow duration-200 focus-within:shadow-[0_0_0_4px_rgba(110,142,240,0.16),var(--shadow-card)]`}>
               <label htmlFor="dashboard-search" className="sr-only">Search found items</label>
               <Search size={18} className="ml-3 shrink-0 text-slate-400" aria-hidden="true" />
               <input
@@ -140,6 +185,16 @@ export default function Dashboard({ user, onNavigate }: {
               <button type="submit" className={`${CX.btnGold} h-11 shrink-0 px-4`} aria-label="Search"><span className="hidden sm:inline">Search</span><ArrowRight size={16} aria-hidden="true" /></button>
             </form>
 
+            {shared && (
+              <section aria-label="Shared with you" className="space-y-2">
+                <div className="flex items-center justify-between px-1">
+                  <p className="inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-iris-700"><Share2 size={14} aria-hidden="true" />Shared with you</p>
+                  <button type="button" onClick={() => setShared(null)} className="inline-flex min-h-[44px] items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-ink-muted hover:bg-frost-100 hover:text-ink sm:min-h-[36px]"><X size={14} aria-hidden="true" />Dismiss</button>
+                </div>
+                <PostCard post={shared} user={user} mine={shared.kind === "missing" && myMissing.includes(shared.reference)} ensureVerified={social.ensure} onOpenImage={openShared} onPrimary={() => primaryAction(shared)} />
+              </section>
+            )}
+
             <ComposerCard user={user} onNavigate={onNavigate} />
             <StoriesBar stories={stories} loading={loading && stories.length === 0} onOpen={openStory} onCreate={() => onNavigate("report-item")} />
 
@@ -148,7 +203,7 @@ export default function Dashboard({ user, onNavigate }: {
             <AuctionShelf onViewAll={() => onNavigate("auction-hall")} onVerify={() => onNavigate("profile")} />
 
             {myMissing.length > 0 && (
-              <section className="relative overflow-hidden rounded-[20px] bg-[linear-gradient(120deg,#1f3160_0%,#283b6c_55%,#3f58b3_100%)] p-4 text-white shadow-raised sm:p-5">
+              <section className="relative overflow-hidden rounded-[22px] bg-[linear-gradient(120deg,#1f3160_0%,#283b6c_55%,#3f58b3_100%)] p-4 text-white shadow-raised ring-1 ring-white/10 sm:p-5">
                 <div className="pointer-events-none absolute -right-12 -top-12 size-48 rounded-full bg-tide-500/25 blur-3xl" aria-hidden="true" />
                 <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-start gap-3">
@@ -163,7 +218,7 @@ export default function Dashboard({ user, onNavigate }: {
               </section>
             )}
 
-            <div role="tablist" aria-label="Filter the feed" className="flex gap-1.5 overflow-x-auto rounded-2xl border border-white/80 bg-white/90 p-1.5 shadow-card">
+            <div role="tablist" aria-label="Filter the feed" className={`${FEED_CARD} flex gap-1 overflow-x-auto !rounded-2xl p-1.5`}>
               {tabs.map((tab) => (
                 <button
                   key={tab.value}
@@ -171,9 +226,16 @@ export default function Dashboard({ user, onNavigate }: {
                   role="tab"
                   aria-selected={kind === tab.value}
                   onClick={() => setKind(tab.value)}
-                  className={`min-h-[40px] flex-1 whitespace-nowrap rounded-xl px-3.5 text-[14px] font-semibold transition-colors ${kind === tab.value ? "bg-[#1f3160] text-white shadow-card" : "text-ink-soft hover:bg-frost-100"}`}
+                  className={`relative min-h-[44px] flex-1 whitespace-nowrap rounded-xl px-3.5 text-[14px] font-semibold transition-colors ${kind === tab.value ? "text-white" : "text-ink-soft hover:bg-frost-100"}`}
                 >
-                  {tab.label}{tab.count != null && <span className={`ml-1.5 tabular-nums ${kind === tab.value ? "text-gold-300" : "text-ink-muted"}`}>{tab.count}</span>}
+                  {kind === tab.value && (
+                    <motion.span
+                      layoutId="feed-tab"
+                      className="absolute inset-0 rounded-xl bg-[linear-gradient(180deg,#2b4282_0%,#1f3160_100%)] shadow-[0_8px_18px_-8px_rgba(31,49,96,0.9),inset_0_1px_0_rgba(255,255,255,0.14)]"
+                      transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 38 }}
+                    />
+                  )}
+                  <span className="relative">{tab.label}{tab.count != null && <span className={`ml-1.5 tabular-nums ${kind === tab.value ? "text-gold-300" : "text-ink-muted"}`}>{tab.count}</span>}</span>
                 </button>
               ))}
             </div>
@@ -181,15 +243,15 @@ export default function Dashboard({ user, onNavigate }: {
             {error && (
               <div role="alert" className={`${CX.alertError} flex flex-wrap items-center justify-between gap-3`}>
                 <span>{error}</span>
-                <button type="button" onClick={() => void load(kind)} className={`${CX.btnGhost} min-h-[38px] px-3 text-[13px]`}><RefreshCw size={14} aria-hidden="true" />Try again</button>
+                <button type="button" onClick={() => void load(kind)} className={`${CX.btnGhost} min-h-[44px] px-3 text-[13px] sm:min-h-[38px]`}><RefreshCw size={14} aria-hidden="true" />Try again</button>
               </div>
             )}
 
             {loading && posts.length === 0 ? (
-              <div className="space-y-4" aria-busy="true">{Array.from({ length: 2 }, (_, index) => <SkeletonBlock key={index} className="h-[420px] w-full rounded-[20px]" />)}</div>
+              <div className="space-y-4" aria-busy="true">{Array.from({ length: 2 }, (_, index) => <SkeletonBlock key={index} className="h-[420px] w-full rounded-[22px]" />)}</div>
             ) : posts.length === 0 && !error ? (
-              <div className="glass flex flex-col items-center gap-3 rounded-[20px] px-6 py-10 text-center">
-                <span className="flex size-12 items-center justify-center rounded-2xl bg-frost-100 text-iris-600"><PackageCheck size={24} aria-hidden="true" /></span>
+              <div className={`${FEED_CARD} flex flex-col items-center gap-3 px-6 py-12 text-center`}>
+                <span className={`flex size-14 items-center justify-center rounded-2xl text-navy-950 shadow-[0_10px_24px_-12px_rgba(209,161,83,0.9)] ${GOLD_GRADIENT}`}><PackageCheck size={26} aria-hidden="true" /></span>
                 <div>
                   <p className="text-[16px] font-semibold text-ink">{kind === "found" ? "Nothing is in custody right now" : kind === "missing" ? "No open missing reports" : "The feed is quiet"}</p>
                   <p className="mx-auto mt-1 max-w-[46ch] text-[14px] text-ink-muted">New found items and missing reports from the campus appear here as soon as they are posted.</p>

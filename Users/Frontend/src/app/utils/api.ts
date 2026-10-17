@@ -517,6 +517,10 @@ export const notificationsAPI = {
   async getUnreadCount() {
     return apiCall('/api/notifications/count/unread', { requiresAuth: true });
   },
+
+  async markAllAsRead() {
+    return apiCall('/api/notifications/read-all', { method: 'POST', requiresAuth: true });
+  },
 };
 
 export default apiCall;
@@ -553,6 +557,10 @@ export const feedApi = {
     const query = new URLSearchParams({ kind, limit: String(limit) });
     if (before) query.set('before', before);
     return apiCall<FeedPage>(`/api/feed?${query.toString()}`, { requiresAuth: true });
+  },
+  /** One open report, for the link someone shared. */
+  async post(kind: string, reference: string) {
+    return apiCall<{ post: FeedPost }>(`/api/feed/${kind}/${encodeURIComponent(reference)}`, { requiresAuth: true });
   },
   async comments(kind: string, reference: string) {
     return apiCall<{ comments: FeedComment[] }>(`/api/feed/${kind}/${encodeURIComponent(reference)}/comments`, { requiresAuth: true });

@@ -12,6 +12,8 @@ import {
   type Auction, type AuctionDetail as Detail,
 } from "@/app/utils/auctions";
 import { CX } from "@/app/utils/clay";
+import { FieldHint, INVALID_FIELD, useFieldHint } from "@/app/shared/forms/FieldHint";
+import { textProblem } from "@/app/utils/textGuard";
 
 const POLL_MS = 5000;
 const MAX_COMMENT = 500;
@@ -71,6 +73,7 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
   const [commentText, setCommentText] = useState("");
   const [commentBusy, setCommentBusy] = useState(false);
   const [commentError, setCommentError] = useState("");
+  const commentHint = useFieldHint(commentText, { kind: "comment", required: false });
   const now = useNow(30000);  // only relative times ("5m ago") need this, so a slow clock is enough
   useClosingTick(detail ? [detail.auction] : [summary], offset);  // re-renders once when the auction closes
 
@@ -203,6 +206,11 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
     event.preventDefault();
     const body = commentText.trim();
     if (!body || commentBusy) return;
+    const problem = textProblem(body, "comment");
+    if (problem) {
+      if (!commentHint.invalid) setCommentError(problem);
+      return;
+    }
     setCommentBusy(true);
     setCommentError("");
     try {
@@ -412,7 +420,8 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
               {a.status !== "cancelled" && (signedIn ? (
                 <form onSubmit={postComment} className="mb-3">
                   <label className="sr-only" htmlFor={`${titleId}-comment`}>Write a comment</label>
-                  <textarea id={`${titleId}-comment`} value={commentText} onChange={(e) => setCommentText(e.target.value.slice(0, MAX_COMMENT))} rows={2} placeholder="Ask about the item's condition or pickup…" className={`${CX.input} w-full resize-y py-3 leading-6`} />
+                  <textarea id={`${titleId}-comment`} value={commentText} onChange={(e) => { setCommentText(e.target.value.slice(0, MAX_COMMENT)); if (commentError) setCommentError(""); }} onBlur={commentHint.onBlur} aria-invalid={commentHint.invalid} aria-describedby={commentHint.invalid ? `${titleId}-comment-hint` : undefined} rows={2} placeholder="Ask about the item's condition or pickup…" className={`${CX.input} w-full resize-y py-3 leading-6 ${commentHint.invalid ? INVALID_FIELD : ""}`} />
+                  <FieldHint id={`${titleId}-comment-hint`} message={commentHint.message} />
                   <div className="mt-2 flex items-center justify-between gap-3">
                     <span className="text-[12.5px] tabular-nums text-ink-muted">{commentText.length}/{MAX_COMMENT}</span>
                     <button type="submit" disabled={!commentText.trim() || commentBusy} className={`${CX.btnNavy} min-h-[40px] px-4 text-[13.5px]`}>{commentBusy ? "Posting…" : "Post comment"}</button>

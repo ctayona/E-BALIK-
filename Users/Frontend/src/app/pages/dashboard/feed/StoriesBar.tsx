@@ -1,8 +1,11 @@
 import { useRef } from "react";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Flame, Plus } from "lucide-react";
 import ItemImage, { categoryIcon } from "@/app/shared/media/ItemImage";
 import type { FeedStory } from "@/app/utils/api";
 import { timeAgo } from "./time";
+import { FEED_CARD, FEED_CARD_LIFT, GOLD_GRADIENT } from "./feedStyle";
+
+const CARD = "h-[188px] w-[116px] shrink-0 snap-start";
 
 /**
  * Urgent items as a row of story cards: IDs, cards, wallets, phones and keys reported in the last week, newest first.
@@ -14,23 +17,24 @@ export default function StoriesBar({ stories, loading, onOpen, onCreate }: { sto
 
   return (
     <section aria-label="Urgent items" className="relative">
-      <div className="mb-2 flex items-end justify-between px-1">
-        <h2 className="font-[family-name:var(--font-heading)] text-[16px] font-semibold text-ink">Urgent this week</h2>
-        <p className="text-[12.5px] text-ink-muted">IDs, wallets, phones and keys people need back fast</p>
+      <div className="mb-2.5 flex items-center justify-between gap-3 px-1">
+        <h2 className="inline-flex shrink-0 items-center gap-2 font-[family-name:var(--font-heading)] text-[16.5px] font-semibold tracking-[-0.01em] text-ink">
+          <span className="flex size-6 items-center justify-center rounded-lg bg-gold-50 text-gold-700 ring-1 ring-gold-200" aria-hidden="true"><Flame size={14} /></span>
+          Urgent this week
+          {stories.length > 0 && <span className="rounded-full bg-navy-800 px-2 py-px text-[11.5px] font-bold tabular-nums text-white">{stories.length}</span>}
+        </h2>
+        <p className="hidden min-w-0 truncate text-[12.5px] text-ink-muted sm:block">IDs, wallets, phones and keys people need back fast</p>
       </div>
-      <div ref={track} className="no-scrollbar -mx-1 flex snap-x snap-mandatory gap-2.5 overflow-x-auto px-1 pb-1">
-        <button
-          type="button"
-          onClick={onCreate}
-          className="group relative flex h-[184px] w-[112px] shrink-0 snap-start flex-col overflow-hidden rounded-2xl border border-white/80 bg-white/90 text-left shadow-card transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-raised"
-        >
-          <span className="flex flex-1 items-center justify-center bg-[radial-gradient(120%_90%_at_20%_0%,#33497f_0%,#1f3160_55%,#0e1830_100%)]">
-            <span className="flex size-10 items-center justify-center rounded-full bg-gradient-to-b from-[#e6be76] to-[#d1a153] text-navy-950 ring-4 ring-white/15 transition-transform group-hover:scale-110"><Plus size={22} aria-hidden="true" /></span>
+      <div ref={track} className="no-scrollbar -mx-1 flex snap-x snap-mandatory gap-2.5 overflow-x-auto overscroll-x-contain scroll-smooth px-1 pb-2 pt-0.5 [-webkit-overflow-scrolling:touch]">
+        <button type="button" onClick={onCreate} className={`group relative flex ${CARD} flex-col overflow-hidden text-left ${FEED_CARD} ${FEED_CARD_LIFT}`}>
+          <span className="relative flex flex-1 items-center justify-center bg-[radial-gradient(120%_90%_at_20%_0%,#3d548c_0%,#1f3160_55%,#0e1830_100%)]">
+            <span className="pointer-events-none absolute -right-6 -top-6 size-20 rounded-full bg-gold-400/20 blur-2xl" aria-hidden="true" />
+            <span className={`relative flex size-11 items-center justify-center rounded-full text-navy-950 ring-4 ring-white/15 transition-transform duration-300 group-hover:rotate-90 group-hover:scale-110 ${GOLD_GRADIENT}`}><Plus size={22} aria-hidden="true" /></span>
           </span>
-          <span className="px-2.5 py-2 text-[13px] font-semibold leading-tight text-ink">Report an item</span>
+          <span className="px-2.5 py-2.5 text-[13px] font-semibold leading-tight text-ink">Report an item</span>
         </button>
 
-        {loading && Array.from({ length: 5 }, (_, index) => <div key={index} className="h-[184px] w-[112px] shrink-0 animate-pulse rounded-2xl bg-frost-100" aria-hidden="true" />)}
+        {loading && Array.from({ length: 5 }, (_, index) => <div key={index} className={`${CARD} animate-pulse rounded-[18px] bg-frost-100`} aria-hidden="true" />)}
 
         {!loading && stories.map((story, index) => {
           const Icon = categoryIcon(story.category);
@@ -41,13 +45,15 @@ export default function StoriesBar({ stories, loading, onOpen, onCreate }: { sto
               type="button"
               onClick={() => onOpen(index)}
               aria-label={`${found ? "Found" : "Missing"}: ${story.item_name}, ${timeAgo(story.created_at)}`}
-              className="group relative h-[184px] w-[112px] shrink-0 snap-start overflow-hidden rounded-2xl border border-white/80 bg-navy-900 text-left shadow-card transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-raised"
+              className={`group relative ${CARD} overflow-hidden rounded-[18px] border border-white/70 bg-navy-900 text-left shadow-card ring-1 ring-navy-900/10 ${FEED_CARD_LIFT}`}
             >
-              <ItemImage item={{ image: story.image_url || undefined, title: story.item_name, category: story.category }} size="sm" className="absolute inset-0 size-full" imgClassName="object-cover transition-transform duration-500 group-hover:scale-105" />
-              <span className="absolute inset-0 bg-gradient-to-t from-[#0b1330]/90 via-[#0b1330]/15 to-[#0b1330]/35" aria-hidden="true" />
-              <span className={`absolute left-2 top-2 flex size-9 items-center justify-center rounded-full bg-[#101a3a] text-white ring-[3px] ${found ? "ring-[#d1a153]" : "ring-[#6e8ef0]"}`}><Icon size={16} aria-hidden="true" /></span>
-              <span className="absolute inset-x-2 bottom-2 text-white">
-                <span className={`mb-1 inline-block rounded-full px-1.5 py-px text-[10.5px] font-bold ${found ? "bg-[#d1a153] text-navy-950" : "bg-[#6e8ef0] text-white"}`}>{found ? "Found" : "Missing"} · {timeAgo(story.created_at)}</span>
+              <ItemImage item={{ image: story.image_url || undefined, title: story.item_name, category: story.category }} size="sm" className="absolute inset-0 size-full" imgClassName="object-cover transition-transform duration-700 ease-out group-hover:scale-110" />
+              <span className="absolute inset-0 bg-gradient-to-t from-[#0b1330]/95 via-[#0b1330]/20 to-[#0b1330]/45" aria-hidden="true" />
+              <span className={`absolute left-2 top-2 rounded-full p-[2.5px] ${found ? "bg-[linear-gradient(135deg,#f3dcab,#d1a153)]" : "bg-[linear-gradient(135deg,#9db4f5,#6e8ef0)]"}`} aria-hidden="true">
+                <span className="flex size-8 items-center justify-center rounded-full bg-[#101a3a] text-white ring-2 ring-[#101a3a]"><Icon size={15} /></span>
+              </span>
+              <span className="absolute inset-x-2.5 bottom-2.5 text-white">
+                <span className={`mb-1.5 inline-block rounded-full px-2 py-px text-[10.5px] font-bold tracking-wide ${found ? "bg-[#d1a153] text-navy-950" : "bg-[#6e8ef0] text-white"}`}>{found ? "Found" : "Missing"} · {timeAgo(story.created_at)}</span>
                 <span className="line-clamp-2 block text-[13px] font-semibold leading-tight">{story.item_name}</span>
               </span>
             </button>
@@ -55,13 +61,13 @@ export default function StoriesBar({ stories, loading, onOpen, onCreate }: { sto
         })}
 
         {!loading && stories.length === 0 && (
-          <p className="flex h-[184px] min-w-[220px] flex-1 items-center rounded-2xl border border-dashed border-line-strong px-4 text-[13.5px] leading-5 text-ink-muted">No urgent reports this week. IDs, wallets, phones and keys will show up here as soon as they are reported.</p>
+          <p className="flex h-[188px] min-w-[220px] flex-1 items-center rounded-[18px] border border-dashed border-line-strong bg-white/50 px-4 text-[13.5px] leading-5 text-ink-muted">No urgent reports this week. IDs, wallets, phones and keys will show up here as soon as they are reported.</p>
         )}
       </div>
       {stories.length > 4 && (
         <>
-          <button type="button" onClick={() => scroll(-1)} aria-label="Scroll urgent items left" className="absolute left-0 top-[88px] hidden size-9 -translate-x-1/2 items-center justify-center rounded-full border border-line bg-white text-ink shadow-raised md:flex"><ChevronLeft size={18} aria-hidden="true" /></button>
-          <button type="button" onClick={() => scroll(1)} aria-label="Scroll urgent items right" className="absolute right-0 top-[88px] hidden size-9 translate-x-1/2 items-center justify-center rounded-full border border-line bg-white text-ink shadow-raised md:flex"><ChevronRight size={18} aria-hidden="true" /></button>
+          <button type="button" onClick={() => scroll(-1)} aria-label="Scroll urgent items left" className="absolute left-0 top-[100px] hidden size-10 -translate-x-1/2 items-center justify-center rounded-full border border-line bg-white/95 text-ink shadow-raised backdrop-blur transition-transform hover:scale-105 active:scale-95 md:flex"><ChevronLeft size={18} aria-hidden="true" /></button>
+          <button type="button" onClick={() => scroll(1)} aria-label="Scroll urgent items right" className="absolute right-0 top-[100px] hidden size-10 translate-x-1/2 items-center justify-center rounded-full border border-line bg-white/95 text-ink shadow-raised backdrop-blur transition-transform hover:scale-105 active:scale-95 md:flex"><ChevronRight size={18} aria-hidden="true" /></button>
         </>
       )}
     </section>

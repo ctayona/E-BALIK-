@@ -4,23 +4,21 @@ Matching works on whole words after normalising common tricks (letter swaps like
 spacing out letters, joining two words). Short words are matched as whole words only, so ordinary words that
 merely contain them ("class", "assistant", "Scunthorpe") are not flagged.
 """
+import json
 import re
 import unicodedata
+from pathlib import Path
 from typing import Iterable, List, Optional
 
-# Kept deliberately to clearly abusive terms. Add words here; they are matched after normalisation.
-_ENGLISH = [
-    'fuck', 'fucker', 'fucking', 'motherfucker', 'shit', 'bullshit', 'bitch', 'asshole', 'bastard', 'dick', 'dickhead',
-    'cunt', 'pussy', 'slut', 'whore', 'cock', 'nigger', 'nigga', 'faggot', 'retard', 'wanker', 'twat', 'prick',
-    'fuckin', 'fucked', 'fucks', 'fuckers', 'shits', 'shitty', 'shitting', 'bitches', 'bitchy', 'assholes', 'dumbass', 'jackass',
-    'bastards', 'dicks', 'cunts', 'sluts', 'whores', 'niggers', 'faggots', 'retarded',
-]
-_FILIPINO = [
-    'putangina', 'putang ina', 'putang ina mo', 'tangina', 'tang ina', 'tanginamo', 'gago', 'gaga', 'ulol', 'tarantado',
-    'tarantada', 'bobo', 'tanga', 'pakyu', 'pakshet', 'punyeta', 'puñeta', 'leche', 'kupal', 'siraulo', 'burat', 'puki',
-    'pekpek', 'titi', 'hindot', 'kantot', 'kantutan', 'lintik', 'hayop ka', 'bwisit', 'buwisit', 'inutil', 'pokpok',
-    'bayag', 'tite', 'shunga', 'unggoy', 'demonyo ka', 'walanghiya', 'hudas', 'animal ka', 'ogag', 'engot',
-]
+# The word lists live in profanity_terms.json, which the browser reads too (Users/Frontend/src/app/utils/profanity.ts), so the live warning
+# while typing and the server never disagree. Kept deliberately to clearly abusive terms. Add words there; they are matched after normalisation.
+_TERMS_FILE = Path(__file__).with_name('profanity_terms.json')
+_LISTS = json.loads(_TERMS_FILE.read_text(encoding='utf-8'))
+_ENGLISH: List[str] = list(_LISTS['english'])
+_FILIPINO: List[str] = list(_LISTS['filipino'])
+
+# What the person is told when text is refused. The browser shows the same sentence.
+PROFANITY_MESSAGE = 'Please rewrite respectfully. Inappropriate language is not permitted.'
 
 _LEET = str.maketrans({'0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b', '@': 'a', '$': 's'})
 _LONG_TERM_MIN = 7  # long terms are also found inside a run of letters ("putanginamo")

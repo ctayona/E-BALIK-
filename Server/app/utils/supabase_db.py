@@ -2094,6 +2094,15 @@ class SupabaseDB:
             logger.exception(f"✗ Error marking notification as read: {e}")
             raise
 
+    def mark_all_notifications_as_read(self, user_account_id: str) -> int:
+        """Mark every unread notification of one person as read. Returns how many were changed."""
+        try:
+            response = self.client.table('user_notifications').update({'is_read': True, 'read_at': self._utc_now_iso()})                 .eq('user_account_id', user_account_id).eq('is_read', False).execute()
+            return len(response.data or [])
+        except Exception as e:
+            logger.exception(f"✗ Error marking all notifications as read: {e}")
+            raise
+
     def get_unread_notification_count(self, user_account_id: str) -> int:
         """Get count of unread notifications for a user"""
         try:
