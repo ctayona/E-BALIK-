@@ -1,12 +1,13 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { ArrowRight, BadgeCheck, CalendarDays, Clock3, Loader2, MapPin, MessageCircle, PackageCheck, SearchCheck, Send, Share2, ShieldCheck, Tag, ThumbsUp, Trash2, UserRound } from "lucide-react";
+import { BadgeCheck, CalendarDays, Clock3, Loader2, MapPin, MessageCircle, PackageCheck, SearchCheck, Send, Share2, ShieldCheck, Tag, ThumbsUp, Trash2, UserRound } from "lucide-react";
 import ItemImage from "@/app/shared/media/ItemImage";
 import { feedApi, type FeedComment, type FeedPost } from "@/app/utils/api";
 import { shareReport } from "@/app/utils/shareReport";
 import { fullTime, timeAgo } from "./time";
 import { initialsOf } from "./ComposerCard";
 import { FEED_CARD, GOLD_GRADIENT, NAVY_GRADIENT } from "./feedStyle";
+import { ACTION, ACTION_IDLE, Chip, CountBadge, PrimaryAction } from "./postParts";
 import type { User } from "@/app/utils/useAuth";
 import { FieldHint, INVALID_FIELD, useFieldHint } from "@/app/shared/forms/FieldHint";
 import { textProblem } from "@/app/utils/textGuard";
@@ -33,18 +34,6 @@ const COMMENTER_TONES = [
 ];
 /** The same person always gets the same colour. */
 const toneFor = (name: string) => COMMENTER_TONES[[...name].reduce((sum, char) => sum + char.charCodeAt(0), 0) % COMMENTER_TONES.length];
-
-/** The number on an action button: a small badge on the corner of its icon, so the button never gets wider and its icon is never squeezed. */
-function CountBadge({ value, gold = false, label }: { value: number; gold?: boolean; label: string }) {
-  return (
-    <span
-      className={`absolute -right-3.5 -top-2.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none tabular-nums ring-2 ring-white ${gold ? "bg-gold-500 text-navy-950" : "bg-navy-800 text-white"}`}
-      aria-label={`${value} ${label}`}
-    >
-      {value > 99 ? "99+" : value}
-    </span>
-  );
-}
 
 /**
  * One report as a post, laid out like a social post: who posted and when, a status badge, the item and its photo, then a bar with Helpful,
@@ -159,7 +148,6 @@ export default function PostCard({ post, user, mine, ensureVerified, onOpenImage
     ? { label: "In custody", icon: PackageCheck, tone: "bg-tide-50 text-tide-700 ring-tide-200" }
     : { label: "Still missing", icon: SearchCheck, tone: "bg-iris-50 text-iris-700 ring-iris-200" };
   const StatusIcon = status.icon;
-  const action = "group relative flex min-h-[46px] items-center justify-center gap-2 rounded-xl text-[14px] font-semibold transition-[background-color,color,box-shadow,transform] duration-200 active:scale-[0.97]";
 
   return (
     <article aria-labelledby={headingId} className={`${FEED_CARD} overflow-hidden`}>
@@ -199,10 +187,10 @@ export default function PostCard({ post, user, mine, ensureVerified, onOpenImage
         )}
         {longText && <button type="button" onClick={() => setExpanded((value) => !value)} className="mt-0.5 min-h-[32px] text-[13.5px] font-semibold text-iris-700 hover:underline">{expanded ? "See less" : "See more"}</button>}
         <ul className="mt-3 flex flex-wrap gap-1.5 text-[12.5px] text-ink-soft">
-          {post.location && <li className="inline-flex items-center gap-1.5 rounded-full bg-frost-100/80 px-2.5 py-1"><MapPin size={13} className="text-gold-700" aria-hidden="true" />{found ? "Found at" : "Last seen at"} {post.location}</li>}
-          {post.date && <li className="inline-flex items-center gap-1.5 rounded-full bg-frost-100/80 px-2.5 py-1"><CalendarDays size={13} className="text-gold-700" aria-hidden="true" />{formatDay(post.date)}</li>}
-          {post.category && <li className="inline-flex items-center gap-1.5 rounded-full bg-frost-100/80 px-2.5 py-1"><Tag size={13} className="text-gold-700" aria-hidden="true" />{post.category}</li>}
-          <li className="inline-flex items-center rounded-full bg-frost-100/80 px-2.5 py-1 font-mono text-[12px] text-ink-muted">{post.reference}</li>
+          {post.location && <Chip icon={<MapPin size={13} className="text-gold-700" aria-hidden="true" />}>{found ? "Found at" : "Last seen at"} {post.location}</Chip>}
+          {post.date && <Chip icon={<CalendarDays size={13} className="text-gold-700" aria-hidden="true" />}>{formatDay(post.date)}</Chip>}
+          {post.category && <Chip icon={<Tag size={13} className="text-gold-700" aria-hidden="true" />}>{post.category}</Chip>}
+          <Chip mono>{post.reference}</Chip>
         </ul>
       </div>
 
@@ -217,7 +205,7 @@ export default function PostCard({ post, user, mine, ensureVerified, onOpenImage
             onClick={() => void toggleHelpful()}
             aria-pressed={social.reacted}
             disabled={reacting}
-            className={`${action} disabled:opacity-70 ${
+            className={`${ACTION} disabled:opacity-70 ${
               social.reacted
                 ? "bg-gold-50 text-gold-800 shadow-[0_0_0_1px_rgba(209,161,83,0.5),0_8px_24px_-8px_rgba(209,161,83,0.7)]"
                 : "text-ink-soft hover:bg-frost-100"
@@ -235,30 +223,18 @@ export default function PostCard({ post, user, mine, ensureVerified, onOpenImage
             </motion.span>
             Helpful
           </button>
-          <button type="button" onClick={openComments} className={`${action} text-ink-soft hover:bg-frost-100`}>
+          <button type="button" onClick={openComments} className={`${ACTION} ${ACTION_IDLE}`}>
             <span className="relative flex">
               <MessageCircle size={18} aria-hidden="true" />
               {social.comment_count > 0 && <CountBadge value={social.comment_count} label={social.comment_count === 1 ? "comment" : "comments"} />}
             </span>
             Comment
           </button>
-          <button type="button" onClick={() => void shareReport(post.reference)} className={`${action} text-ink-soft hover:bg-frost-100`} title="Copy a link to this report">
+          <button type="button" onClick={() => void shareReport(post.reference)} className={`${ACTION} ${ACTION_IDLE}`} title="Copy a link to this report">
             <Share2 size={18} aria-hidden="true" />Share
           </button>
         </div>
-        <button
-          type="button"
-          onClick={onPrimary}
-          title={primary.hint}
-          className={`group my-2.5 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl px-4 text-[14.5px] font-semibold transition-[transform,box-shadow,filter] duration-200 hover:-translate-y-px active:scale-[0.99] ${
-            primary.gold
-              ? `${GOLD_GRADIENT} text-navy-950 shadow-[0_1px_0_rgba(255,255,255,0.5)_inset,0_10px_22px_-12px_rgba(209,161,83,0.9)] hover:brightness-105`
-              : `${NAVY_GRADIENT} text-white shadow-[0_10px_22px_-12px_rgba(31,49,96,0.9)] hover:brightness-110`
-          }`}
-        >
-          {primary.label}<span className="text-[13px] font-medium opacity-75">· {primary.hint}</span>
-          <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-        </button>
+        <PrimaryAction label={primary.label} hint={primary.hint} gold={primary.gold} onClick={onPrimary} />
       </div>
 
       {error && <p role="alert" className="mx-4 mb-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] leading-5 text-rose-800 sm:mx-5">{error}</p>}

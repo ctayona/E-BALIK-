@@ -32,6 +32,16 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
+/** The link an auction is shared with: it opens that auction's window on the home page. */
+export const auctionLink = (id: string) => `${window.location.origin}/?auction=${encodeURIComponent(id)}`;
+
+/** Share button on an auction post. */
+export async function shareAuction(id: string) {
+  const link = auctionLink(id);
+  if (await copyText(link)) showToast("Auction link copied");
+  else showToast(`Could not copy automatically. The link is ${link}`, "error");
+}
+
 /** Share button: copy the report's link and say so. */
 export async function shareReport(reference: string) {
   const link = reportLink(reference);

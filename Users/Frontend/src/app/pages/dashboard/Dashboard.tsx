@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { ArrowRight, GitCompareArrows, Loader2, PackageCheck, RefreshCw, Search, Share2, X } from "lucide-react";
+import { ArrowRight, Gavel, GitCompareArrows, Loader2, PackageCheck, RefreshCw, Search, Share2, X } from "lucide-react";
 import type { NavigationOptions, Page } from "@/app/types";
 import type { User } from "@/app/utils/useAuth";
 import { useAuth } from "@/app/utils/useAuth";
@@ -11,17 +11,23 @@ import { CX } from "@/app/utils/clay";
 import { SkeletonBlock } from "@/app/shared/LoadingSkeleton";
 import ItemViewer from "@/app/shared/media/ItemViewer";
 import type { GalleryItem } from "@/app/shared/media/ItemImage";
-import AuctionShelf from "@/app/shared/auction/AuctionShelf";
+import AuctionDetail from "@/app/shared/auction/AuctionDetail";
+import { useWatchlist } from "@/app/shared/auction/useWatchlist";
+import { auctionsApi, msLeft, useAuctionFeed, useClosingTick, type Auction } from "@/app/utils/auctions";
 import ComposerCard from "./feed/ComposerCard";
 import LeftRail from "./feed/LeftRail";
 import PostCard from "./feed/PostCard";
 import RightRail from "./feed/RightRail";
 import StoriesBar from "./feed/StoriesBar";
+import AuctionFeedCard from "./feed/AuctionFeedCard";
 import { FEED_CARD, GOLD_GRADIENT } from "./feed/feedStyle";
 import { kindOfReference } from "@/app/utils/shareReport";
 import { showToast } from "@/app/shared/toast/toastStore";
 
-type Kind = "all" | "found" | "missing";
+type Kind = "all" | "found" | "missing" | "auctions";
+/** What the report feed itself can be asked for; "auctions" is not a report list. */
+type ReportKind = Exclude<Kind, "auctions">;
+type FeedEntry = { type: "post"; key: string; time: number; post: FeedPost; index: number } | { type: "auction"; key: string; time: number; auction: Auction };
 type Viewing = { items: GalleryItem[]; index: number } | null;
 const PAGE_SIZE = 12;
 
@@ -48,6 +54,21 @@ function takeSharedReference(): string | null {
   return pendingShare;
 }
 
+/** The auction a shared link points to (`/?auction=<id>`), read once like the shared report. */
+let pendingAuction: string | null | undefined;
+function takeSharedAuction(): string | null {
+  if (pendingAuction === undefined) {
+    const params = new URLSearchParams(window.location.search);
+    pendingAuction = (params.get("auction") || "").trim() || null;
+    if (params.has("auction")) {
+      params.delete("auction");
+      const rest = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`);
+    }
+  }
+  return pendingAuction;
+}
+
 /**
  * The home page, laid out like a social feed in three columns: you and your campus shortcuts on the left; a composer, urgent-item stories
  * and the report posts (with comments and "Helpful") in the middle; the Lost and Found Office and urgent bulletins on the right.
@@ -71,8 +92,12 @@ export default function Dashboard({ user, onNavigate }: {
   const [searchTerm, setSearchTerm] = useState("");
   const [shared, setShared] = useState<FeedPost | null>(null);
   const reduced = useReducedMotion();
+  const auctionFeed = useAuctionFeed(30000);
+  const closingTick = useClosingTick(auctionFeed.feed?.live ?? [], auctionFeed.offset);
+  const watch = useWatchlist();
+  const [openAuction, setOpenAuction] = useState<{ auction: Auction; focus?: "comments" } | null>(null);
 
-  const load = useCallback(async (which: Kind) => {
+  const load = useCallback(async (which: ReportKind) => {
     setLoading(true);
     setError("");
     const response = await feedApi.page(which, null, PAGE_SIZE);
@@ -87,7 +112,18 @@ export default function Dashboard({ user, onNavigate }: {
     setLoading(false);
   }, []);
 
-  useEffect(() => { void load(kind); }, [kind, load]);
+  const reportKind: ReportKind = kind === "auctions" ? "all" : kind;
+  // The Auctions tab shows no reports, so switching to it does not reload the report feed.
+  useEffect(() => { if (kind !== "auctions") void load(kind); }, [kind, load]);
+
+  // Live auctions, newest first. `closingTick` re-runs this just after the next auction closes so it leaves the feed without a reload.
+  const liveAuctions = useMemo(
+    () => (auctionFeed.feed?.live ?? [])
+      .filter((auction) => auction.status === "live" && msLeft(auction, Date.now(), auctionFeed.offset) > 0)
+      .sort((a, b) => (Date.parse(b.starts_at) || 0) - (Date.parse(a.starts_at) || 0)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closingTick re-runs this right after an auction closes
+    [auctionFeed.feed, auctionFeed.offset, closingTick],
+  );
 
   useEffect(() => {
     let active = true;
@@ -118,10 +154,22 @@ export default function Dashboard({ user, onNavigate }: {
     return () => { active = false; };
   }, []);
 
+  // An auction someone shared: open its window straight away.
+  useEffect(() => {
+    const id = takeSharedAuction();
+    if (!id) return;
+    let active = true;
+    void auctionsApi.detail(id).then(
+      (detail) => { if (active) { pendingAuction = null; setOpenAuction({ auction: detail.auction }); } },
+      () => { if (active) { pendingAuction = null; showToast("That auction could not be opened. It may have closed.", "error"); } },
+    );
+    return () => { active = false; };
+  }, []);
+
   async function loadMore() {
-    if (!more.has || loadingMore) return;
+    if (!more.has || loadingMore || kind === "auctions") return;
     setLoadingMore(true);
-    const response = await feedApi.page(kind, more.before, PAGE_SIZE);
+    const response = await feedApi.page(reportKind, more.before, PAGE_SIZE);
     if (response.error || !response.data) {
       setError(response.error || "Unable to load more posts.");
     } else {
@@ -142,6 +190,22 @@ export default function Dashboard({ user, onNavigate }: {
   const openStory = view.guard((index: number) => setViewing({ items: storyItems, index }));
   const openShared = view.guard(() => { if (shared) setViewing({ items: [toGallery(shared)], index: 0 }); });
 
+  // What the list shows. In "All posts" live auctions sit between the reports by the time they opened; while more reports are still to
+  // load, only auctions newer than the oldest loaded report are mixed in, so older ones do not jump in front of reports that are not shown yet.
+  const entries = useMemo<FeedEntry[]>(() => {
+    if (kind === "auctions") return liveAuctions.map((auction) => ({ type: "auction", key: `auction-${auction.id}`, time: Date.parse(auction.starts_at) || 0, auction }));
+    const reports: FeedEntry[] = posts.map((post, index) => ({ type: "post", key: `${post.kind}-${post.reference}`, time: Date.parse(post.created_at) || 0, post, index }));
+    if (kind !== "all") return reports;
+    const oldest = posts.length ? Date.parse(posts[posts.length - 1].created_at) || 0 : 0;
+    const auctions: FeedEntry[] = liveAuctions
+      .filter((auction) => !more.has || (Date.parse(auction.starts_at) || 0) >= oldest)
+      .map((auction) => ({ type: "auction", key: `auction-${auction.id}`, time: Date.parse(auction.starts_at) || 0, auction }));
+    return [...reports, ...auctions].sort((a, b) => b.time - a.time);
+  }, [kind, posts, liveAuctions, more.has]);
+
+  const openAuctionWindow = useCallback((auction: Auction, focus?: "comments") => setOpenAuction({ auction, focus }), []);
+  const closeAuction = useCallback(() => setOpenAuction(null), []);
+
   function primaryAction(post: FeedPost) {
     if (post.kind === "found") onNavigate("claim", { foundItemId: post.reference });
     else if (myMissing.includes(post.reference)) onNavigate("matches", { reportId: post.reference });
@@ -157,6 +221,7 @@ export default function Dashboard({ user, onNavigate }: {
     { value: "all", label: "All posts" },
     { value: "found", label: "Found", count: counts?.found },
     { value: "missing", label: "Missing", count: counts?.missing },
+    ...(auctionFeed.setupRequired ? [] : [{ value: "auctions" as Kind, label: "Auctions", count: auctionFeed.loading ? undefined : liveAuctions.length }]),
   ];
 
   return (
@@ -200,7 +265,6 @@ export default function Dashboard({ user, onNavigate }: {
 
             <div className="xl:hidden"><RightRail counts={counts} urgent={stories.length} compact /></div>
 
-            <AuctionShelf onViewAll={() => onNavigate("auction-hall")} onVerify={() => onNavigate("profile")} />
 
             {myMissing.length > 0 && (
               <section className="relative overflow-hidden rounded-[22px] bg-[linear-gradient(120deg,#1f3160_0%,#283b6c_55%,#3f58b3_100%)] p-4 text-white shadow-raised ring-1 ring-white/10 sm:p-5">
@@ -240,37 +304,50 @@ export default function Dashboard({ user, onNavigate }: {
               ))}
             </div>
 
-            {error && (
+            {error && kind !== "auctions" && (
               <div role="alert" className={`${CX.alertError} flex flex-wrap items-center justify-between gap-3`}>
                 <span>{error}</span>
-                <button type="button" onClick={() => void load(kind)} className={`${CX.btnGhost} min-h-[44px] px-3 text-[13px] sm:min-h-[38px]`}><RefreshCw size={14} aria-hidden="true" />Try again</button>
+                <button type="button" onClick={() => void load(reportKind)} className={`${CX.btnGhost} min-h-[44px] px-3 text-[13px] sm:min-h-[38px]`}><RefreshCw size={14} aria-hidden="true" />Try again</button>
               </div>
             )}
 
-            {loading && posts.length === 0 ? (
+            {kind !== "auctions" && loading && posts.length === 0 ? (
               <div className="space-y-4" aria-busy="true">{Array.from({ length: 2 }, (_, index) => <SkeletonBlock key={index} className="h-[420px] w-full rounded-[22px]" />)}</div>
-            ) : posts.length === 0 && !error ? (
+            ) : entries.length === 0 && (!error || kind === "auctions") ? (
               <div className={`${FEED_CARD} flex flex-col items-center gap-3 px-6 py-12 text-center`}>
-                <span className={`flex size-14 items-center justify-center rounded-2xl text-navy-950 shadow-[0_10px_24px_-12px_rgba(209,161,83,0.9)] ${GOLD_GRADIENT}`}><PackageCheck size={26} aria-hidden="true" /></span>
+                <span className={`flex size-14 items-center justify-center rounded-2xl text-navy-950 shadow-[0_10px_24px_-12px_rgba(209,161,83,0.9)] ${GOLD_GRADIENT}`}>{kind === "auctions" ? <Gavel size={26} aria-hidden="true" /> : <PackageCheck size={26} aria-hidden="true" />}</span>
                 <div>
-                  <p className="text-[16px] font-semibold text-ink">{kind === "found" ? "Nothing is in custody right now" : kind === "missing" ? "No open missing reports" : "The feed is quiet"}</p>
-                  <p className="mx-auto mt-1 max-w-[46ch] text-[14px] text-ink-muted">New found items and missing reports from the campus appear here as soon as they are posted.</p>
+                  <p className="text-[16px] font-semibold text-ink">{kind === "auctions" ? "No live auctions right now" : kind === "found" ? "Nothing is in custody right now" : kind === "missing" ? "No open missing reports" : "The feed is quiet"}</p>
+                  <p className="mx-auto mt-1 max-w-[46ch] text-[14px] text-ink-muted">{kind === "auctions" ? "Items unclaimed for a month are auctioned here. See what sold recently in the Auction Hall." : "New found items and missing reports from the campus appear here as soon as they are posted."}</p>
                 </div>
+                {kind === "auctions" && <button type="button" onClick={() => onNavigate("auction-hall")} className={`${CX.btnGhost} mt-1`}>Open the Auction Hall <ArrowRight size={15} aria-hidden="true" /></button>}
               </div>
             ) : (
-              <div className={`space-y-4 transition-opacity ${loading ? "opacity-60" : ""}`}>
-                {posts.map((post, index) => (
+              <div className={`space-y-4 transition-opacity ${loading && kind !== "auctions" ? "opacity-60" : ""}`}>
+                {entries.map((entry) => entry.type === "post" ? (
                   <PostCard
-                    key={`${post.kind}-${post.reference}`}
-                    post={post}
+                    key={entry.key}
+                    post={entry.post}
                     user={user}
-                    mine={post.kind === "missing" && myMissing.includes(post.reference)}
+                    mine={entry.post.kind === "missing" && myMissing.includes(entry.post.reference)}
                     ensureVerified={social.ensure}
-                    onOpenImage={() => openPost(index)}
-                    onPrimary={() => primaryAction(post)}
+                    onOpenImage={() => openPost(entry.index)}
+                    onPrimary={() => primaryAction(entry.post)}
+                  />
+                ) : (
+                  <AuctionFeedCard
+                    key={entry.key}
+                    auction={entry.auction}
+                    offset={auctionFeed.offset}
+                    watching={watch.watching(entry.auction.id)}
+                    hearts={watch.countFor(entry.auction.id, entry.auction.reaction_count ?? 0)}
+                    onToggleWatch={watch.toggle}
+                    onOpen={openAuctionWindow}
                   />
                 ))}
-                {more.has ? (
+                {kind === "auctions" ? (
+                  <button type="button" onClick={() => onNavigate("auction-hall")} className={`${CX.btnGhost} w-full`}>Open the Auction Hall <ArrowRight size={15} aria-hidden="true" /></button>
+                ) : more.has ? (
                   <button type="button" onClick={() => void loadMore()} disabled={loadingMore} className={`${CX.btnGhost} w-full`}>
                     {loadingMore ? <><Loader2 size={16} className="animate-spin" aria-hidden="true" />Loading…</> : "Show more posts"}
                   </button>
@@ -286,6 +363,17 @@ export default function Dashboard({ user, onNavigate }: {
           </div>
         </div>
       </div>
+
+      {openAuction && (
+        <AuctionDetail
+          auction={openAuction.auction}
+          signedIn
+          focus={openAuction.focus}
+          onClose={closeAuction}
+          onChanged={() => void auctionFeed.refresh()}
+          onVerify={() => { closeAuction(); onNavigate("profile"); }}
+        />
+      )}
 
       {viewing && (
         <ItemViewer

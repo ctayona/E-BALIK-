@@ -190,6 +190,18 @@ Sign in as **Student B** (the finder) and **Student A** (the owner).
 | 4.7.6 | Open a shared link to a report that has since been claimed or closed. | A red toast says the report is closed. The feed loads normally. | ☐ |
 | 4.7.7 | On a phone, open the Home feed. | No sideways scroll. The three action buttons are about a third of the width each with the count on the icon; the gold or navy action button spans the card. The stories row scrolls sideways by itself. | ☐ |
 
+### 4.8 Auctions in the home feed
+
+| # | Do this | You should see | Pass |
+|---|---|---|---|
+| 4.8.1 | With at least one live auction, open **Home**. | There is no separate "Live auctions" panel. In **All posts** auction posts sit between the reports, newest first: "Auction Hall" with a tick, the lot number, a "Live auction" badge, the photos with a closing clock on them, the current bid, who leads (a `Bidder_` alias) and the bid count. | ☐ |
+| 4.8.2 | Open the **Auctions** tab. | Only live auctions, with the live count on the tab and an "Open the Auction Hall" button at the end. With none live: "No live auctions right now" and the same button. | ☐ |
+| 4.8.3 | Press **Watch** on an auction, then again. | The heart fills and the count badge changes; the Auction Hall shows the same auction as watched. | ☐ |
+| 4.8.4 | Press **Comment**, then **Place a bid**. | The auction window opens, at the comments for Comment. Bidding works as in the Auction Hall (exact steps, Buy Now, the verification pop-up for an unverified account). | ☐ |
+| 4.8.5 | Press **Share**, paste the link in a new tab and sign in. | A toast says "Auction link copied". The home page opens with that auction's window and a clean address bar. For a closed auction a red toast says it could not be opened. | ☐ |
+| 4.8.6 | When an auction's timer reaches zero while you watch the feed. | Its post leaves the feed without a reload. | ☐ |
+| 4.8.7 | On a phone. | No sideways scroll; the three buttons share the row; the wide button reads "Place a bid · from ₱..." on one line. | ☐ |
+
 ### 4.6 Notification menu
 
 | # | Do this | You should see | Pass |
