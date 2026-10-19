@@ -1,6 +1,7 @@
 """Smart Tags (user side): the public scan page, registering a tag, managing your tags, and the finder action."""
 from functools import wraps
-from flask import Blueprint, current_app, jsonify, request
+import io
+from flask import Blueprint, current_app, jsonify, request, send_file
 from app.utils import get_db, rate_limit
 from app.utils.smart_tags import MAX_PHOTO_BYTES, SURRENDER_INSTRUCTIONS, SmartTagService, TagError, TagsUnavailable
 from Users.Backend.shared.request_auth import _authenticated_account_id
@@ -73,7 +74,9 @@ def my_tags():
 @_handled('load your contact methods')
 def my_contacts():
     """The signed-in owner's saved contact methods (Messenger, Facebook, ...). Never shown to anyone else except through a tag the owner chose."""
-    return _private({'contacts': _service().get_contacts(_authenticated_account_id())})
+    account_id = _authenticated_account_id()
+    service = _service()
+    return _private({'contacts': service.get_contacts(account_id), 'settings': service.get_settings(account_id)})
 
 
 @smart_tags_bp.route('/contacts', methods=['PUT'])
@@ -82,7 +85,20 @@ def save_contacts():
     account_id = _authenticated_account_id()
     if not rate_limit.allow(f'tag-contacts:{account_id}', 30, 3600):
         raise TagError('Too many changes. Try again in a while.', 429)
-    return _private({'success': True, 'contacts': _service().save_contacts(account_id, request.get_json(silent=True) or {})})
+    body = request.get_json(silent=True) or {}
+    service = _service()
+    contacts = service.save_contacts(account_id, body, body.get('settings') if isinstance(body.get('settings'), dict) else None)
+    return _private({'success': True, 'contacts': contacts, 'settings': service.get_settings(account_id)})
+
+
+@smart_tags_bp.route('/<tag_id>/qr', methods=['GET'])
+@_handled('load the QR code')
+def my_tag_qr(tag_id):
+    """The QR image of one of your own tags (for printing a replacement sticker). Owner only; never cached."""
+    png = _service().owner_qr(tag_id, _authenticated_account_id())
+    reply = send_file(io.BytesIO(png), mimetype='image/png', max_age=0)
+    reply.headers['Cache-Control'] = 'no-store'
+    return reply
 
 
 @smart_tags_bp.route('/<tag_id>', methods=['GET'])

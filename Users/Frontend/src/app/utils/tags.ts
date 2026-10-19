@@ -3,16 +3,22 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 /** Other ways a finder may be offered to reach the owner. The owner saves each once (Profile) and switches them on per tag. */
-export type ContactKind = "phone2" | "messenger" | "facebook" | "instagram" | "telegram" | "whatsapp";
+export type ContactKind = "phone2" | "email" | "messenger" | "facebook" | "twitter" | "instagram" | "telegram" | "whatsapp";
 export type ContactMethods = Record<ContactKind, string>;
-export const CONTACT_KINDS: Array<{ kind: ContactKind; label: string; placeholder: string; hint: string; inputMode?: "tel" | "text" }> = [
-  { kind: "phone2", label: "Alternate phone number", placeholder: "0917 123 4567", hint: "A second number, for example a parent's or a work phone.", inputMode: "tel" },
-  { kind: "messenger", label: "Messenger", placeholder: "your.username or m.me/your.username", hint: "Your Facebook username or your m.me link." },
-  { kind: "facebook", label: "Facebook", placeholder: "your.username or facebook.com/your.username", hint: "Your Facebook profile link or username." },
+export const CONTACT_KINDS: Array<{ kind: ContactKind; label: string; placeholder: string; hint: string; inputMode?: "tel" | "text" | "email"; main?: boolean }> = [
+  { kind: "phone2", label: "Phone number", placeholder: "0917 123 4567", hint: "A number finders can call or text. A parent's or work phone is fine.", inputMode: "tel", main: true },
+  { kind: "email", label: "Email address", placeholder: "name@umak.edu.ph", hint: "An email address finders can write to.", inputMode: "email", main: true },
+  { kind: "facebook", label: "Facebook", placeholder: "your.username or facebook.com/your.username", hint: "Your Facebook profile link or username.", main: true },
+  { kind: "messenger", label: "Messenger", placeholder: "your.username or m.me/your.username", hint: "Your Facebook username or your m.me link.", main: true },
+  { kind: "twitter", label: "X (Twitter)", placeholder: "@your_handle or x.com/your_handle", hint: "Your X handle, with or without the @.", main: true },
   { kind: "instagram", label: "Instagram", placeholder: "your_username", hint: "Your Instagram username, without the @." },
   { kind: "telegram", label: "Telegram", placeholder: "your_username or t.me/your_username", hint: "Your Telegram username." },
   { kind: "whatsapp", label: "WhatsApp", placeholder: "+63 917 123 4567", hint: "Your WhatsApp number with the country code.", inputMode: "tel" },
 ];
+
+/** Owner choices kept next to the contact methods: how their name appears to a finder, and the language of their scan page. */
+export interface TagSettings { name_display: "full" | "initials"; language: "en" | "fil" }
+export const DEFAULT_TAG_SETTINGS: TagSettings = { name_display: "full", language: "en" };
 
 export type PublicTagStatus = "blank" | "pending_verification" | "active" | "lost" | "expired" | "disabled" | "inactive";
 
@@ -26,6 +32,8 @@ export interface PublicTag {
   /** Only the details the owner chose to share are present. */
   contact?: { name?: string; email?: string; phone?: string; /** Links the owner chose to show, already built by the server (https or tel only). */ links?: Array<{ kind: string; label: string; url: string }> };
   is_owner?: boolean;
+  /** The language the owner chose for this page. */
+  language?: "en" | "fil";
 }
 
 export interface OwnerTag {
@@ -115,9 +123,10 @@ export const tagsApi = {
   found: (id: string, input: { message: string; contact: string }) => request<FoundResult>(`/${encodeURIComponent(id)}/found`, { method: "POST", body: input, auth: false }),
   mine: () => request<{ tags: OwnerTag[] }>("/mine"),
   /** The signed-in owner's saved contact methods. */
-  contacts: () => request<{ contacts: ContactMethods }>("/contacts"),
-  /** Save contact methods; an empty value clears one. */
-  saveContacts: (input: Partial<ContactMethods>) => request<{ contacts: ContactMethods }>("/contacts", { method: "PUT", body: input }),
+  contacts: () => request<{ contacts: ContactMethods; settings?: TagSettings }>("/contacts"),
+  /** Save contact methods (an empty value clears one) and, optionally, the name and language settings, in one request. */
+  saveContacts: (input: Partial<ContactMethods>, settings?: Partial<TagSettings>) =>
+    request<{ contacts: ContactMethods; settings?: TagSettings }>("/contacts", { method: "PUT", body: settings ? { ...input, settings } : input }),
   /** Registration is multipart: the details plus the photo taken live with the camera. */
   claim: (id: string, input: TagDetailsInput & { dpa_consent: boolean }, photo: File) => {
     const form = new FormData();
@@ -159,6 +168,20 @@ export const spacedCode = (code: string) => code.replace(/(.{4})/g, "$1 ").trim(
 
 /** Only render links for values that really look like an email address or phone number (never a script URL). */
 export const safeMailto = (email: string) => (/^[^\s@<>"'()]+@[^\s@<>"'()]+\.[^\s@<>"'()]+$/.test(email) ? `mailto:${email}` : null);
-/** A finder-facing link from the server: only https and tel addresses are ever rendered as links. */
-export const safeLink = (url: string) => (/^(https:\/\/[^\s<>"']+|tel:\+?[0-9]{5,20})$/.test(url) ? url : null);
+/** A finder-facing link from the server: only https, tel and plain mailto addresses are ever rendered as links. */
+export const safeLink = (url: string) => (/^(https:\/\/[^\s<>"']+|tel:\+?[0-9]{5,20}|mailto:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,24})$/.test(url) ? url : null);
+
+const API_BASE = API_URL;
+const qrCache = new Map<string, string>();
+/** An object URL of the QR image of one of your own tags (fetched once per page visit, owner only). */
+export async function ownerQrUrl(tagId: string): Promise<string> {
+  const cached = qrCache.get(tagId);
+  if (cached) return cached;
+  const token = localStorage.getItem("ebalik_token");
+  const response = await fetch(`${API_BASE}/api/tags/${encodeURIComponent(tagId)}/qr`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: "no-store" });
+  if (!response.ok) throw new TagRequestError("QR code unavailable", response.status);
+  const url = URL.createObjectURL(await response.blob());
+  qrCache.set(tagId, url);
+  return url;
+}
 export const safeTel = (phone: string) => (/^\+?[0-9][0-9 ()\-]{5,18}[0-9]$/.test(phone) ? `tel:${phone.replace(/[^0-9+]/g, "")}` : null);

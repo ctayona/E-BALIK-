@@ -3,6 +3,8 @@ import { useSyncExternalStore } from "react";
 /** Per-device colour theme for the E-Balik user app (mirrors the admin console's theme store). */
 
 export type Theme = "light" | "dark";
+/** What the person chose: a fixed theme, or "system" to follow the device. */
+export type ThemePreference = Theme | "system";
 
 const THEME_KEY = "ebalik_user_theme";
 const EVENT = "ebalik-user-theme";
@@ -16,7 +18,11 @@ function readStored(): Theme | null {
   }
 }
 
-let theme: Theme = readStored() ?? (typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+const systemQuery = () => (typeof window !== "undefined" ? window.matchMedia?.("(prefers-color-scheme: dark)") : undefined);
+const systemTheme = (): Theme => (systemQuery()?.matches ? "dark" : "light");
+
+let preference: ThemePreference = readStored() ?? "system";
+let theme: Theme = preference === "system" ? systemTheme() : preference;
 
 function apply() {
   const root = document.documentElement;
@@ -26,15 +32,23 @@ function apply() {
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#070c19" : "#162448");
 }
 
-/** Call before the first render so the page never flashes the wrong theme. */
+/** Call before the first render so the page never flashes the wrong theme. Also follows the device while the preference is "system". */
 export function initTheme() {
   apply();
+  systemQuery()?.addEventListener?.("change", () => {
+    if (preference !== "system") return;
+    theme = systemTheme();
+    apply();
+    window.dispatchEvent(new Event(EVENT));
+  });
 }
 
-export function setTheme(next: Theme) {
-  theme = next;
+export function setThemePreference(next: ThemePreference) {
+  preference = next;
+  theme = next === "system" ? systemTheme() : next;
   try {
-    localStorage.setItem(THEME_KEY, next);
+    if (next === "system") localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, next);
   } catch {
     // Storage can be blocked; the choice still applies for this visit.
   }
@@ -42,12 +56,23 @@ export function setTheme(next: Theme) {
   window.dispatchEvent(new Event(EVENT));
 }
 
+export function setTheme(next: Theme) {
+  setThemePreference(next);
+}
+
 function subscribe(callback: () => void) {
   window.addEventListener(EVENT, callback);
   return () => window.removeEventListener(EVENT, callback);
 }
 
+/** The theme in use, and a toggle between light and dark (the header button). */
 export function useTheme(): [Theme, () => void] {
   const current = useSyncExternalStore(subscribe, () => theme);
   return [current, () => setTheme(current === "dark" ? "light" : "dark")];
+}
+
+/** The saved choice (light, dark or system), for settings screens. */
+export function useThemePreference(): [ThemePreference, (next: ThemePreference) => void] {
+  const current = useSyncExternalStore(subscribe, () => preference);
+  return [current, setThemePreference];
 }

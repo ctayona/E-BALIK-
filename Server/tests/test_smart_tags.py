@@ -253,7 +253,7 @@ class PublicViewTests(unittest.TestCase):
     def test_the_answer_uses_only_allow_listed_fields(self):
         service, _, _ = make_service([tag_row(show_name=True, show_email=True, show_phone=True)])
         view = service.public_view(TAG)
-        self.assertEqual(set(view), {'tag_id', 'status', 'item_name', 'item_description', 'photo_url', 'contact', 'is_owner'})
+        self.assertEqual(set(view), {'tag_id', 'status', 'item_name', 'item_description', 'photo_url', 'contact', 'language', 'is_owner'})
         for secret in ('owner-1', 'K1', 'created_at', 'claimed_at', 'batch', 'disabled', 'owner_account_id', 'contact_phone'):
             self.assertNotIn(secret, str(view))
 

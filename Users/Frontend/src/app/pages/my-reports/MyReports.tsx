@@ -180,7 +180,7 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
         </dl>
 
         {/* Filters + view */}
-        <div className="glass sticky top-[calc(76px+env(safe-area-inset-top))] z-20 mb-5 flex items-center justify-between gap-2 rounded-[20px] p-2">
+        <div className="glass sticky top-[calc(var(--app-header-h)+12px+env(safe-area-inset-top))] z-20 mb-5 flex items-center justify-between gap-2 rounded-[20px] p-2">
           <div role="tablist" aria-label="Report type" className="no-scrollbar flex min-w-0 gap-1 overflow-x-auto">
             {(["all", "missing", "found", "completed"] as const).map((tab) => (
               <button

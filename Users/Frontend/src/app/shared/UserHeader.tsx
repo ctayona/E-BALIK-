@@ -6,6 +6,7 @@ import type { NavigationOptions, Page } from "@/app/types";
 import type { User } from "@/app/utils/useAuth";
 import { notificationsAPI } from "@/app/utils/api";
 import { useTheme } from "@/app/utils/theme";
+import { playNotificationChime } from "@/app/utils/notificationSound";
 import NotificationMenu from "@/app/shared/NotificationMenu";
 
 const NAV_LINKS: { label: string; page: Page; icon: ReactNode }[] = [
@@ -52,6 +53,7 @@ export default function UserHeader({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const lastCount = useRef<number | null>(null);
   const accountRef = useRef<HTMLDivElement>(null);
   const [scrolled, setScrolled] = useState(false);
   const reduced = useReducedMotion();
@@ -63,7 +65,11 @@ export default function UserHeader({
     const loadUnreadCount = async () => {
       const response = await notificationsAPI.getUnreadCount();
       const count = Number((response.data as { unreadCount?: number } | undefined)?.unreadCount ?? 0);
-      if (active && !response.error) setUnreadCount(count);
+      if (!active || response.error) return;
+      // A chime when the count goes up after the first load (only if the person switched the sound on).
+      if (lastCount.current !== null && count > lastCount.current) playNotificationChime();
+      lastCount.current = count;
+      setUnreadCount(count);
     };
     loadUnreadCount().catch(() => { if (active) setUnreadCount(0); });
     const handleNotificationsUpdated = () => { loadUnreadCount().catch(() => undefined); };
@@ -82,6 +88,13 @@ export default function UserHeader({
       window.clearInterval(refreshInterval);
     };
   }, []);
+
+  // On narrower desktops the page strip scrolls: keep the open page's tab in view.
+  const stripRef = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    const active = stripRef.current?.querySelector<HTMLElement>('[data-active="true"]');
+    active?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: reduced ? "auto" : "smooth" });
+  }, [currentPage, reduced]);
 
   // The bar gets a touch more opaque and casts a deeper shadow once content scrolls underneath it.
   useEffect(() => {
@@ -148,49 +161,15 @@ export default function UserHeader({
             <span className="flex size-10 items-center justify-center rounded-[11px] bg-white/10 ring-1 ring-white/15 transition-[box-shadow,transform] duration-300 group-hover:scale-105 group-hover:ring-gold-400/60 group-hover:shadow-[0_0_18px_-2px_rgba(209,161,83,0.55)]">
               <img decoding="async" alt="" className="size-8 object-contain" src={headerUmSeal} />
             </span>
-            <span className="hidden text-left leading-tight sm:block lg:hidden 2xl:block">
+            <span className="hidden text-left leading-tight sm:block">
               <span className="block font-[family-name:var(--font-heading)] text-[15px] font-semibold tracking-[-0.01em]">E-Balik</span>
               <span className="block whitespace-nowrap text-[11px] font-medium text-gold-300">University of Makati · Lost &amp; Found</span>
             </span>
           </button>
 
-          {/* Desktop nav: a glass capsule with one gold-lit active pill that glides between links. Icons only below xl so it never crowds the actions. */}
-          <nav className="hidden min-w-0 flex-1 justify-center lg:flex" aria-label="Main navigation">
-            <ul className="flex items-center gap-0.5 rounded-2xl border border-white/10 bg-white/[0.045] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] backdrop-blur-md">
-              {NAV_LINKS.map((link) => {
-                const active = currentPage === link.page;
-                return (
-                  <li key={link.page}>
-                    <button
-                      type="button"
-                      onClick={() => navigate(link.page)}
-                      aria-current={active ? "page" : undefined}
-                      aria-label={link.label}
-                      title={link.label}
-                      className={`group relative flex h-10 items-center whitespace-nowrap rounded-xl px-3 text-[14px] font-medium transition-[color,background-color] duration-200 ${
-                        active ? "text-white" : "text-navy-200 hover:bg-white/[0.07] hover:text-white"
-                      }`}
-                    >
-                      {active && (
-                        <motion.span
-                          layoutId="user-nav-active"
-                          className="absolute inset-0 rounded-xl bg-white/[0.13] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_8px_18px_-10px_rgba(0,0,0,0.7)] ring-1 ring-white/15"
-                          transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 38 }}
-                        />
-                      )}
-                      {active && <span className="absolute inset-x-0 bottom-[3px] mx-auto h-[2px] w-5 rounded-full bg-gold-400 shadow-[0_0_8px_rgba(209,161,83,0.9)]" aria-hidden="true" />}
-                      <span className="relative flex items-center gap-1.5">
-                        <span className={`transition-[color,transform] duration-200 ${active ? "text-gold-400" : "text-navy-300 group-hover:-translate-y-px group-hover:text-gold-300"}`}>{link.icon}</span>
-                        <span className="hidden xl:inline">{link.label}</span>
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
+          <div className="min-w-0 flex-1" aria-hidden="true" />
 
-          <div className="ml-auto flex items-center gap-1.5 lg:ml-0">
+          <div className="ml-auto flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => navigate("report-item")}
@@ -271,6 +250,50 @@ export default function UserHeader({
             </button>
           </div>
         </div>
+        {/* Desktop: the pages in a second row. Each tab has an icon and a label; the open page gets a navy fill and a gold underline that slides
+            between tabs. Between 1024 and 1280 px the row scrolls sideways (with soft edges) instead of squeezing the labels. */}
+        <nav className="relative hidden border-t border-white/10 bg-white/[0.025] lg:block" aria-label="Main navigation">
+          <div className="mx-auto w-full max-w-[1440px] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))]">
+            <ul ref={stripRef} className="no-scrollbar -mx-2 flex h-[52px] items-center gap-1 overflow-x-auto scroll-smooth px-2 [mask-image:linear-gradient(90deg,transparent,#000_20px,#000_calc(100%-20px),transparent)] xl:justify-center xl:[mask-image:none]">
+              {NAV_LINKS.map((link) => {
+                const active = currentPage === link.page;
+                return (
+                  <li key={link.page} className="shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => navigate(link.page)}
+                      aria-current={active ? "page" : undefined}
+                      data-active={active ? "true" : undefined}
+                      className={`group relative flex h-10 items-center rounded-xl px-3 text-[13.5px] font-medium transition-[color,background-color] duration-200 xl:px-4 xl:text-[14px] ${
+                        active ? "text-white" : "text-navy-200 hover:bg-white/[0.07] hover:text-white"
+                      }`}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="user-nav-active"
+                          className="absolute inset-0 rounded-xl bg-[linear-gradient(180deg,#2e4687_0%,#1f3160_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_8px_18px_-10px_rgba(0,0,0,0.8)] ring-1 ring-white/15"
+                          transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 38 }}
+                        />
+                      )}
+                      {active && (
+                        <motion.span
+                          layoutId="user-nav-underline"
+                          className="absolute -bottom-[6px] left-3 right-3 h-[3px] rounded-full bg-gold-400 shadow-[0_0_10px_rgba(209,161,83,0.9)]"
+                          transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 38 }}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span className="relative flex items-center gap-2 whitespace-nowrap">
+                        <span className={`transition-[color,transform] duration-200 ${active ? "text-gold-400" : "text-navy-300 group-hover:-translate-y-px group-hover:text-gold-300"}`}>{link.icon}</span>
+                        {link.label}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </nav>
       </header>
 
       {/* ── Mobile drawer ── */}

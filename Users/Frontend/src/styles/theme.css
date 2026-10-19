@@ -524,3 +524,8 @@ input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
 
 /* Hover states that flash to white on light surfaces become a soft lift on dark ones. */
 :root[data-theme="dark"] :is(.hover\:bg-white, .hover\:bg-white\/90, .hover\:bg-frost-50):hover { background-color: rgba(255, 255, 255, 0.08); }
+
+/* Height of the user app header (without the top safe area): one row on phones and tablets, two rows (pages strip) from 1024 px.
+   Sticky toolbars use it so they never slide under the header. Keep in step with UserHeader.tsx (h-16 row + 52px strip + its 1px border + the header's 1px bottom border). */
+:root { --app-header-h: 64px; }
+@media (min-width: 1024px) { :root { --app-header-h: 118px; } }

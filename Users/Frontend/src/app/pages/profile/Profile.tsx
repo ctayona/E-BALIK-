@@ -15,7 +15,7 @@ import NameField from "@/app/shared/forms/NameField";
 import { firstTextProblem } from "@/app/utils/textGuard";
 import VerificationStatusCard, { assignedRole } from "@/app/shared/verification/VerificationStatusCard";
 import EmailPreferencesCard from "@/app/shared/profile/EmailPreferencesCard";
-import SmartTagSettings from "@/app/shared/profile/SmartTagSettings";
+import { SmartTagContactCard } from "@/app/shared/tags/SmartTagContactModal";
 
 export default function Profile({
   user: userProp,
@@ -245,7 +245,7 @@ export default function Profile({
           </form>
         </motion.div>
 
-        <SmartTagSettings onNavigate={onNavigate} />
+        <SmartTagContactCard onManageTags={() => onNavigate("my-tags")} />
 
         <EmailPreferencesCard />
       </div>

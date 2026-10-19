@@ -343,10 +343,15 @@ Read `SMART_TAGS_GUIDE.md` first if `PUBLIC_SITE_URL` is not set. **Do not print
 | 7.11 | Mark the tag as **lost**. | Status becomes lost; the public page shows the lost state. | ☐ |
 | 7.12 | Super admin: deactivate a tag with a reason, then reactivate it. | While deactivated the public page shows nothing; the owner is told why. | ☐ |
 | 7.13 | Try to register more than 25 tags on one account. | The 26th is refused. | ☐ |
-| 7.14 | As the tag owner open **Profile**, scroll to **Smart Tags**. Save a Messenger username, an Instagram username and an alternate phone number. | Saved. A pasted link such as `m.me/your.name` is turned into the username; a value that is not a username or profile link is refused with a plain message. | ☐ |
-| 7.15 | In that section press **Edit** on one of your tags. | Under **What may a finder see?** there is **Other ways to reach me**: Messenger, Instagram and the alternate phone can be switched on; methods you have not saved are greyed out and say to add them in your Profile. | ☐ |
+| 7.14 | As the tag owner open **Profile** and press **Smart Tag contact settings**. Save a Messenger username, an email address, an X handle and a phone number; type `not-an-email` first. | The window shows a preview of what a finder sees. The bad email is flagged under the field and nothing is sent; after fixing it a toast says "Smart Tag settings saved" and the Profile card summary updates. A pasted link such as `m.me/your.name` or `x.com/your_handle` is turned into the username. | ☐ |
+| 7.15 | On **My Smart Tags** press **Manage** on one of your tags, then **Edit details**. | Under **What may a finder see?** the saved methods (phone, email, Facebook, Messenger, X, and Instagram, Telegram, WhatsApp) can be switched on; methods you have not saved are greyed out and say to add them in Smart Tag contact settings. | ☐ |
 | 7.16 | Switch Messenger on for that tag only, save, and open the tag address signed out. | The public page shows a **Messenger** button that opens `m.me/<username>`, and nothing about Instagram or the phone. Another tag of yours shows nothing extra. | ☐ |
 | 7.17 | In Profile clear your Messenger username and save. | The Messenger button disappears from the tag page and its switch is off in the editor. | ☐ |
+
+| 7.18 | In Smart Tag contact settings choose **Show initials only** and **Filipino**, save, and open the tag signed out. | The name shows as initials (for example `M. S.`) and the page reads in Filipino ("Ang gamit na ito ay pag-aari ni", "Nahanap ko ang gamit na ito"). | ☐ |
+| 7.19 | Open the tag page on a phone, signed out. | Full-screen dark page with no app menu: logo and Smart Tag badge, initials in a gold ring, Active or Lost, the item, and large Call / Email / Message / Facebook / X buttons for what the owner shares. After "I found this item" the steps show and a **Log in or register** button. | ☐ |
+| 7.20 | Open **My Smart Tags**. | Stats on a gold ring, the 3-step guide, a card per tag with its QR code, status and days left; filters All / Active / Lost / Expiring / Expired. **Manage** shows the large QR with Download QR and Copy link. On a phone a round **Register** button floats above the bottom bar. With no tags: the illustration, the 3 steps and **Register your first tag**. | ☐ |
+| 7.21 | In Smart Tag contact settings switch **Notification sound** on, then have someone notify you (for example report one of your tags found). | A short chime plays when the bell count goes up. Off by default; the choice is per device. Theme Light / Dark / System applies at once. | ☐ |
 
 (Expiry and expiry reminders are tested in section 12.)
 
@@ -367,6 +372,10 @@ Read `SMART_TAGS_GUIDE.md` first if `PUBLIC_SITE_URL` is not set. **Do not print
 | 8.1.7 | Try bidding while unverified. | Refused with the verification message. | ☐ |
 | 8.1.8 | On a second auction with a Buy Now price, press **Buy Now** (or type a bid at or above that price). | The auction ends at once and you win. | ☐ |
 | 8.1.9 | Back in admin, open the lot and edit it (live or scheduled lots only). | Starting bid and Buy Now are locked once bids exist; the end time can only move later. | ☐ |
+| 8.1.10 | Open **Auction Hall** on a computer and on a phone. | Dark hero with the live count and next closing time; lots in two columns on wide screens, one on phones; each card has a LIVE or ENDING SOON ribbon (under an hour), the highest bid in gold, the bid count and a ticking clock. | ☐ |
+| 8.1.11 | On a card type a bid between two steps, then one at or above Buy Now, then a valid bid. | "Bids go up in exact steps..." with the nearest valid bid; "That reaches the Buy Now price... Open the lot"; the valid bid asks for confirmation and then shows "Bid placed". | ☐ |
+| 8.1.12 | Open a card's **Comments** tab, post a comment, and try a swear word. | The latest comments load; yours appears at once; the swear word is refused with "Please rewrite respectfully...". | ☐ |
+| 8.1.13 | With no live lots. | An illustration with "No lots on the block right now" and buttons to upcoming lots and past results. | ☐ |
 
 ### 8.1b Exact bid steps and early auctions
 

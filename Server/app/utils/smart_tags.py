@@ -120,24 +120,38 @@ def clean_phone(value: Any) -> str:
 # picks, tag by tag, which ones a finder sees. Only these kinds exist and every link is BUILT here from a validated username, so a finder is
 # never sent to an address the owner typed freely (no phishing or script links).
 CONTACT_LABELS = {
-    'phone2': 'Alternate phone number',
+    'phone2': 'Phone number',
+    'email': 'Email',
     'messenger': 'Messenger',
     'facebook': 'Facebook',
+    'twitter': 'X (Twitter)',
     'instagram': 'Instagram',
     'telegram': 'Telegram',
     'whatsapp': 'WhatsApp',
 }
+MAX_CONTACT_EMAIL = 120
+_EMAIL_RE = re.compile(r'^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24}$')
+
+# Owner choices kept next to the contact methods (same JSON column, so no migration): how the owner's name appears to a finder, and the
+# language of the scan page finders see. Only these keys and values are accepted.
+TAG_SETTING_CHOICES = {
+    'name_display': ('full', 'initials'),
+    'language': ('en', 'fil'),
+}
+TAG_SETTING_DEFAULTS = {'name_display': 'full', 'language': 'en'}
 _HANDLE_RE = {
     'messenger': re.compile(r'^[A-Za-z0-9.]{5,50}$'),
     'facebook': re.compile(r'^[A-Za-z0-9.]{5,50}$'),
     'instagram': re.compile(r'^[A-Za-z0-9._]{1,30}$'),
     'telegram': re.compile(r'^[A-Za-z0-9_]{5,32}$'),
+    'twitter': re.compile(r'^[A-Za-z0-9_]{1,15}$'),
 }
 _PROFILE_HOSTS = {
     'messenger': ('m.me', 'messenger.com', 'www.messenger.com', 'facebook.com', 'www.facebook.com', 'm.facebook.com', 'fb.com'),
     'facebook': ('facebook.com', 'www.facebook.com', 'm.facebook.com', 'fb.com', 'www.fb.com'),
     'instagram': ('instagram.com', 'www.instagram.com'),
     'telegram': ('t.me', 'telegram.me'),
+    'twitter': ('x.com', 'www.x.com', 'mobile.x.com', 'twitter.com', 'www.twitter.com', 'mobile.twitter.com'),
 }
 
 
@@ -167,6 +181,13 @@ def clean_contact(kind: str, value: Any) -> str:
         return ''
     if kind == 'phone2':
         return clean_phone(text)
+    if kind == 'email':
+        email = text.lower()
+        if text.lower().startswith('mailto:'):
+            email = email[7:]
+        if len(email) > MAX_CONTACT_EMAIL or not _EMAIL_RE.match(email) or '..' in email:
+            raise TagError('Enter a valid email address, for example name@umak.edu.ph.')
+        return email
     if kind == 'whatsapp':
         digits = re.sub(r'\D', '', text)
         if digits.startswith('0') and len(digits) == 11:
@@ -192,6 +213,10 @@ def contact_url(kind: str, value: str) -> str:
         return f'https://t.me/{value}'
     if kind == 'whatsapp':
         return f'https://wa.me/{value}'
+    if kind == 'twitter':
+        return f'https://x.com/{value}'
+    if kind == 'email':
+        return f'mailto:{value}'
     return 'tel:' + re.sub(r'[^0-9+]', '', value)
 
 
@@ -199,6 +224,32 @@ def stored_contacts(profile: Optional[Dict[str, Any]]) -> Dict[str, str]:
     raw = (profile or {}).get('tag_contacts')
     raw = raw if isinstance(raw, dict) else {}
     return {kind: str(raw[kind]) for kind in CONTACT_LABELS if raw.get(kind)}
+
+
+def stored_settings(profile: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    """The owner's tag settings, with the default for anything unset or unknown."""
+    raw = (profile or {}).get('tag_contacts')
+    raw = raw if isinstance(raw, dict) else {}
+    return {key: (str(raw.get(key)) if raw.get(key) in choices else TAG_SETTING_DEFAULTS[key]) for key, choices in TAG_SETTING_CHOICES.items()}
+
+
+def clean_settings(payload: Any) -> Dict[str, str]:
+    """Validated settings from a request; only the keys that were sent. Raises TagError for an unknown value."""
+    if not isinstance(payload, dict):
+        return {}
+    cleaned: Dict[str, str] = {}
+    for key, choices in TAG_SETTING_CHOICES.items():
+        if key in payload:
+            value = str(payload.get(key) or '').strip().lower()
+            if value not in choices:
+                raise TagError('Choose one of the options shown.')
+            cleaned[key] = value
+    return cleaned
+
+
+def initials_of(name: str) -> str:
+    """'Maria Santos' -> 'M. S.' for owners who share initials only."""
+    return ' '.join(f'{part[0].upper()}.' for part in name.split() if part[:1].isalpha())
 
 
 def sniff_image(data: bytes) -> Optional[tuple]:
@@ -480,8 +531,9 @@ class SmartTagService:
         if not owner:
             return {'tag_id': tag_id, 'status': 'inactive'}
         contact: Dict[str, str] = {}
+        settings = stored_settings(owner)
         if tag.get('show_name') and self._name(owner):
-            contact['name'] = self._name(owner)
+            contact['name'] = initials_of(self._name(owner)) if settings['name_display'] == 'initials' else self._name(owner)
         if tag.get('show_email') and owner.get('email'):
             contact['email'] = str(owner['email'])
         if tag.get('show_phone') and tag.get('contact_phone'):
@@ -496,6 +548,7 @@ class SmartTagService:
             'item_description': tag.get('item_description') or '',
             'photo_url': self._photo_url(tag.get('item_image_url')),
             'contact': {**contact, **({'links': links} if links else {})},
+            'language': settings['language'],
             'is_owner': bool(viewer_id) and str(tag.get('owner_account_id')) == str(viewer_id),
         }
 
@@ -555,9 +608,15 @@ class SmartTagService:
         saved = stored_contacts(self._profile(account_id))
         return {kind: saved.get(kind, '') for kind in CONTACT_LABELS}
 
-    def save_contacts(self, account_id: str, payload: Dict[str, Any]) -> Dict[str, str]:
-        """Validate and save the contact methods named in `payload` (an empty value clears one). Tags that showed a method that is now gone stop showing it."""
-        existing = stored_contacts(self._profile(account_id))
+    def get_settings(self, account_id: str) -> Dict[str, str]:
+        """How the owner's name appears to finders and the language of their scan page."""
+        return stored_settings(self._profile(account_id))
+
+    def save_contacts(self, account_id: str, payload: Dict[str, Any], settings: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        """Validate and save the contact methods named in `payload` (an empty value clears one), and the `settings` if given, in one write.
+        Tags that showed a method that is now gone stop showing it."""
+        profile = self._profile(account_id)
+        existing = stored_contacts(profile)
         merged = dict(existing)
         for kind in CONTACT_LABELS:
             if kind in payload:
@@ -566,8 +625,11 @@ class SmartTagService:
                     merged[kind] = value
                 else:
                     merged.pop(kind, None)
+        raw = (profile or {}).get('tag_contacts')
+        kept_settings = {key: raw[key] for key in TAG_SETTING_CHOICES if isinstance(raw, dict) and raw.get(key) in TAG_SETTING_CHOICES[key]}
+        record = {**merged, **kept_settings, **clean_settings(settings)}
         try:
-            self.client.table('user_profiles').update({'tag_contacts': merged}).eq('account_id', account_id).execute()
+            self.client.table('user_profiles').update({'tag_contacts': record}).eq('account_id', account_id).execute()
         except Exception as error:
             self._guard(error)
         removed = [kind for kind in existing if kind not in merged]
@@ -581,6 +643,16 @@ class SmartTagService:
             except Exception as error:
                 logger.info('Tag contact clean-up skipped: %s', str(error)[:120])
         return {kind: merged.get(kind, '') for kind in CONTACT_LABELS}
+
+    def owner_qr(self, raw_tag_id: Any, account_id: str) -> bytes:
+        """The QR image of one of the owner's own tags, for their Smart Tags page. Someone else's tag answers 404, like a missing one."""
+        tag_id = normalize_tag_id(raw_tag_id)
+        if not tag_id:
+            raise TagError('This Smart Tag was not found.', 404)
+        tag = self._get(tag_id)
+        if str(tag.get('owner_account_id') or '') != str(account_id):
+            raise TagError('This Smart Tag was not found.', 404)
+        return qr_png(tag_id)
 
     def _shown_contacts(self, raw: Any, account_id: str) -> List[str]:
         """The contact methods a tag may show: known kinds, no repeats, each one saved in the owner's profile."""

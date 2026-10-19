@@ -388,7 +388,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
               </div>
             </form>
 
-            <aside className="h-fit space-y-4 lg:sticky lg:top-[92px]">
+            <aside className="h-fit space-y-4 lg:sticky lg:top-[calc(var(--app-header-h)+28px)]">
               <div className="relative overflow-hidden rounded-[22px] bg-[linear-gradient(150deg,#22366a_0%,#162448_70%)] p-5 text-white shadow-raised">
                 <div className="pointer-events-none absolute -right-10 -top-10 size-40 rounded-full bg-tide-500/25 blur-2xl" aria-hidden="true" />
                 <p className="relative flex items-center gap-2 text-[12px] font-semibold text-tide-200"><Lightbulb size={15} aria-hidden="true" />Smart matching</p>
@@ -403,7 +403,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
           </div>
         ) : activeTab === "reports" ? (
           <div className="space-y-5">
-            <div className="glass sticky top-[calc(76px+env(safe-area-inset-top))] z-20 rounded-[20px] p-3">
+            <div className="glass sticky top-[calc(var(--app-header-h)+12px+env(safe-area-inset-top))] z-20 rounded-[20px] p-3">
               <div className="grid gap-2 md:grid-cols-[minmax(0,1.5fr)_repeat(2,minmax(0,1fr))_auto]">
                 <label className="sr-only" htmlFor="missing-report-search">Search your missing reports</label>
                 <input id="missing-report-search" type="search" value={reportSearch} onChange={(event) => setReportSearch(event.target.value)} placeholder="Search ID, item, details…" className={`${CX.input} w-full`} />

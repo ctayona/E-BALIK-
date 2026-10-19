@@ -1,12 +1,13 @@
 import { useId, useState } from "react";
 import { useEffect } from "react";
-import { Eye, EyeOff, Mail, MessageCircle, Phone, ShieldAlert, UserRound } from "lucide-react";
+import { Eye, EyeOff, Mail, Phone, ShieldAlert, UserRound } from "lucide-react";
 import Modal from "@/app/shared/modal/Modal";
 import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
 import ItemTypePicker from "@/app/shared/tags/ItemTypePicker";
 import LivePhotoField from "@/app/shared/tags/LivePhotoField";
 import { CX } from "@/app/utils/clay";
 import { useCurrentUser } from "@/app/utils/system";
+import { ContactIcon } from "@/app/shared/tags/contactIcons";
 import { CONTACT_KINDS, tagsApi, type ContactKind, type ContactMethods, type OwnerTag, type TagDetailsInput } from "@/app/utils/tags";
 
 function Switch({ checked, onChange, label, hint, icon, disabled = false }: { checked: boolean; onChange: (value: boolean) => void; label: string; hint: string; icon: React.ReactNode; disabled?: boolean }) {
@@ -121,8 +122,8 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
                   disabled={!has}
                   onChange={(value) => toggleContact(method.kind, value)}
                   label={`Show my ${method.label}`}
-                  hint={has ? `Finders get a button to contact you on ${method.label}.` : "Not saved yet. Add it in your Profile, under Smart Tags."}
-                  icon={method.kind === "phone2" ? <Phone size={18} /> : <MessageCircle size={18} />}
+                  hint={has ? `Finders get a button to contact you by ${method.label}.` : "Not saved yet. Add it in Profile, Smart Tag contact settings."}
+                  icon={<ContactIcon kind={method.kind} />}
                 />
               );
             })}

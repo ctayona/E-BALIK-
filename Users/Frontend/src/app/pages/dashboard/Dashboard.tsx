@@ -230,7 +230,7 @@ export default function Dashboard({ user, onNavigate }: {
       {social.prompt}
       <div className="mx-auto w-full max-w-[1320px]">
         <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_320px]">
-          <div className="hidden lg:sticky lg:top-24 lg:block">
+          <div className="hidden lg:sticky lg:top-[calc(var(--app-header-h)+28px)] lg:block">
             <LeftRail user={user} activeReports={myMissing.length} onNavigate={onNavigate} />
           </div>
 
@@ -295,7 +295,7 @@ export default function Dashboard({ user, onNavigate }: {
                   {kind === tab.value && (
                     <motion.span
                       layoutId="feed-tab"
-                      className="absolute inset-0 rounded-xl bg-[linear-gradient(180deg,#2b4282_0%,#1f3160_100%)] shadow-[0_8px_18px_-8px_rgba(31,49,96,0.9),inset_0_1px_0_rgba(255,255,255,0.14)]"
+                      className="absolute inset-0 rounded-xl bg-[linear-gradient(180deg,#2e4687_0%,#1f3160_100%)] shadow-[0_8px_18px_-8px_rgba(31,49,96,0.9),inset_0_1px_0_rgba(255,255,255,0.14)]"
                       transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 520, damping: 38 }}
                     />
                   )}
@@ -358,7 +358,7 @@ export default function Dashboard({ user, onNavigate }: {
             )}
           </div>
 
-          <div className="hidden xl:sticky xl:top-24 xl:block xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto xl:pb-2 no-scrollbar">
+          <div className="hidden xl:sticky xl:top-[calc(var(--app-header-h)+28px)] xl:block xl:max-h-[calc(100vh-var(--app-header-h)-3rem)] xl:overflow-y-auto xl:pb-2 no-scrollbar">
             <RightRail counts={counts} urgent={stories.length} />
           </div>
         </div>

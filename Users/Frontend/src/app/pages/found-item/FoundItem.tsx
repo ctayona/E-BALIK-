@@ -359,7 +359,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
           </form>
         ) : (
           <div className="space-y-5">
-            <div className="glass sticky top-[calc(76px+env(safe-area-inset-top))] z-20 rounded-[20px] p-3">
+            <div className="glass sticky top-[calc(var(--app-header-h)+12px+env(safe-area-inset-top))] z-20 rounded-[20px] p-3">
               <div className="grid gap-2 md:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))_auto]">
                 <label className="sr-only" htmlFor="found-report-search">Search your found reports</label>
                 <input id="found-report-search" type="search" value={reportSearch} onChange={(event) => setReportSearch(event.target.value)} placeholder="Search ID, item, guard…" className={`${CX.input} w-full`} />

@@ -143,7 +143,7 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
         )}
 
         {/* Toolbar */}
-        <section aria-label="Filters" className="glass sticky top-[calc(76px+env(safe-area-inset-top))] z-20 mb-5 rounded-[22px] p-3 sm:p-4">
+        <section aria-label="Filters" className="glass sticky top-[calc(var(--app-header-h)+12px+env(safe-area-inset-top))] z-20 mb-5 rounded-[22px] p-3 sm:p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <div className="relative flex-1">
               <label htmlFor="browse-search" className="sr-only">Search listings</label>
