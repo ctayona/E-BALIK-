@@ -155,14 +155,14 @@ def send_message(db, audience: Any, account_id: Any, title: Any, body: Any, send
             db.client.table('user_notifications').insert(rows[start:start + 500]).execute()
             result['in_app'] += len(rows[start:start + 500])
     if email:
-        from config import Config
+        from app.utils.email_service import provider_key
         with_email = [r for r in recipients if r.get('email')]
         if audience == 'all':
             from app.utils import email_prefs
             eligible = [r for r in with_email if email_prefs.allows(r, 'announcements')]
             result['email_opted_out'] = len(with_email) - len(eligible)
             with_email = eligible
-        if not Config.SENDGRID_API_KEY:
+        if not provider_key():
             result['email_unavailable'] = True
         elif audience == 'user':
             outcome = _send_emails(with_email, subject, text)
@@ -443,11 +443,12 @@ def send_test_email(db, actor_id: str) -> Dict[str, Any]:
     email = (rows[0].get('email') if rows else '') or ''
     if not email:
         raise ToolError('Your account has no email address to send the test to.', 400)
-    if not Config.SENDGRID_API_KEY:
-        return {'ok': False, 'to': mask_email(email), 'provider': 'SendGrid', 'detail': 'SENDGRID_API_KEY is not set on the server, so no email can be sent.', 'status_code': None}
-    from app.utils.email_service import EmailService
+    from app.utils.email_service import EmailService, provider_key, provider_name
+    if not provider_key():
+        return {'ok': False, 'to': mask_email(email), 'provider': 'None', 'detail': 'No email key is set on the server (BREVO_API_KEY or SENDGRID_API_KEY), so no email can be sent.', 'status_code': None}
     ok, detail, status = EmailService().send_test_email(email, str((rows[0] or {}).get('fname') or ''))
-    return {'ok': ok, 'to': mask_email(email), 'provider': 'SendGrid', 'detail': detail, 'status_code': status, 'from': Config.SENDGRID_FROM_EMAIL}
+    return {'ok': ok, 'to': mask_email(email), 'provider': provider_name(), 'detail': detail, 'status_code': status,
+            'from': Config.BREVO_FROM_EMAIL if provider_key() == 'brevo' else Config.SENDGRID_FROM_EMAIL}
 
 
 def humanize_bytes(value: int) -> str:

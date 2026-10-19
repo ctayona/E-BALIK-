@@ -11,6 +11,18 @@ FRONTEND_ENV_FILE = os.path.join(ENV_CONFIG_DIR, 'frontend', '.env.local')
 load_dotenv(BACKEND_ENV_FILE)
 load_dotenv(FRONTEND_ENV_FILE)
 
+
+def _secret(name):
+    """An environment value with stray spaces, line breaks and wrapping quotes removed.
+
+    A key pasted into a hosting dashboard often carries a trailing newline or quotes, and SendGrid then answers
+    401 Unauthorized although the key itself is valid.
+    """
+    value = (os.getenv(name) or '').strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+        value = value[1:-1].strip()
+    return value or None
+
 class Config:
     """Base configuration"""
     FLASK_ENV = os.getenv('FLASK_ENV', 'development')
@@ -22,8 +34,13 @@ class Config:
     SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_KEY')
     
     # SendGrid
-    SENDGRID_API_KEY = os.getenv('SENDGRID_API_KEY')
-    SENDGRID_FROM_EMAIL = os.getenv('SENDGRID_FROM_EMAIL')
+    SENDGRID_API_KEY = _secret('SENDGRID_API_KEY')
+    SENDGRID_FROM_EMAIL = _secret('SENDGRID_FROM_EMAIL')
+    # Brevo (free: 300 emails a day, works over HTTPS so it is not blocked on Render's free plan). When BREVO_API_KEY is set it is used
+    # instead of SendGrid. BREVO_FROM_EMAIL must be a sender verified in Brevo; it falls back to SENDGRID_FROM_EMAIL.
+    BREVO_API_KEY = _secret('BREVO_API_KEY')
+    BREVO_FROM_EMAIL = _secret('BREVO_FROM_EMAIL') or _secret('SENDGRID_FROM_EMAIL')
+    EMAIL_FROM_NAME = _secret('EMAIL_FROM_NAME') or 'E-Balik Lost & Found'
     
     # Auction winner notice: 'auto' sends when SENDGRID_API_KEY is set (else logs); 'mock' only logs; 'sendgrid' always sends.
     AUCTION_EMAIL_MODE = os.getenv('AUCTION_EMAIL_MODE', 'auto').strip().lower()

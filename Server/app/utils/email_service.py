@@ -1,8 +1,11 @@
 """
 Email and OTP utilities using SendGrid. Message layout lives in email_templates.py.
 """
+import json
 import random
 import string
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Email, To, Content, Header
@@ -13,20 +16,76 @@ from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+BREVO_URL = 'https://api.brevo.com/v3/smtp/email'
+
+
+class EmailDeliveryError(Exception):
+    """The provider refused or could not take the message. `status_code` is its HTTP status when it answered."""
+
+    def __init__(self, message: str, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def provider_key() -> str:
+    """'brevo' when BREVO_API_KEY is set, else 'sendgrid' when SENDGRID_API_KEY is set, else ''. Read at call time."""
+    return 'brevo' if Config.BREVO_API_KEY else ('sendgrid' if Config.SENDGRID_API_KEY else '')
+
+
+def provider_name() -> str:
+    """'Brevo', 'SendGrid' or '' when no email provider is configured."""
+    return {'brevo': 'Brevo', 'sendgrid': 'SendGrid'}.get(provider_key(), '')
+
+
 class EmailService:
-    """SendGrid email service. Every message is built by `email_templates.render_email` (Navy and Gold HTML plus plain text)."""
+    """Email service (Brevo or SendGrid, whichever key is set). Every message is built by `email_templates.render_email` (Navy and Gold HTML plus plain text)."""
+
+    provider = 'sendgrid'  # overwritten in __init__; the default keeps tests that skip __init__ on the SendGrid path
 
     def __init__(self):
+        self.provider = provider_key()
         try:
-            self.sg = SendGridAPIClient(Config.SENDGRID_API_KEY)
-            self.from_email = Config.SENDGRID_FROM_EMAIL
-            logger.info("✓ SendGrid email service initialized")
+            if self.provider == 'brevo':
+                self.sg = None
+                self.from_email = Config.BREVO_FROM_EMAIL
+                if not self.from_email:
+                    raise ValueError('BREVO_FROM_EMAIL (or SENDGRID_FROM_EMAIL) is not set')
+            else:
+                self.sg = SendGridAPIClient(Config.SENDGRID_API_KEY)
+                self.from_email = Config.SENDGRID_FROM_EMAIL
+            logger.info("✓ %s email service initialized", provider_name() or 'Email')
         except Exception as e:
-            logger.error(f"✗ Failed to initialize SendGrid: {e}")
+            logger.error(f"✗ Failed to initialize the email service: {e}")
             raise
 
+    def _send_brevo(self, to_email: str, subject: str, html: str, text: str, headers: Optional[Dict[str, str]] = None) -> bool:
+        body = {
+            'sender': {'name': Config.EMAIL_FROM_NAME, 'email': self.from_email},
+            'to': [{'email': to_email}],
+            'subject': subject, 'htmlContent': html, 'textContent': text,
+        }
+        if headers:
+            body['headers'] = dict(headers)
+        request = urllib.request.Request(BREVO_URL, data=json.dumps(body).encode('utf-8'), method='POST', headers={
+            'api-key': Config.BREVO_API_KEY or '', 'Content-Type': 'application/json', 'Accept': 'application/json',
+        })
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                return 200 <= int(response.status) < 300
+        except urllib.error.HTTPError as error:
+            detail = ''
+            try:
+                detail = json.loads(error.read().decode('utf-8', 'replace')).get('message', '')
+            except Exception:
+                pass
+            raise EmailDeliveryError(f'Brevo answered {error.code}: {detail or error.reason}', error.code) from error
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            raise EmailDeliveryError(f'Brevo could not be reached: {error}') from error
+
     def _send(self, to_email: str, subject: str, html: str, text: str, headers: Optional[Dict[str, str]] = None) -> bool:
-        """Send one message with an HTML and a plain-text part. True only when SendGrid accepts it."""
+        """Send one message with an HTML and a plain-text part. True only when the provider accepts it."""
+        if self.provider == 'brevo':
+            return self._send_brevo(to_email, subject, html, text, headers)
         message = Mail(
             from_email=self.from_email,
             to_emails=to_email,
@@ -308,6 +367,10 @@ class EmailService:
                 details={'Sent': datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")},
                 tone='success',
             )
+            name = provider_name() or 'The email provider'
+            if self.provider == 'brevo':
+                self._send_brevo(to_email, 'E-Balik email test', html, text)
+                return True, 'Brevo accepted the message. Check your inbox (and spam) in a minute.', 201
             response = self.sg.send(Mail(from_email=self.from_email, to_emails=to_email, subject='E-Balik email test', html_content=html, plain_text_content=text))
             status = int(response.status_code)
             if 200 <= status < 300:
@@ -315,7 +378,9 @@ class EmailService:
             return False, f'SendGrid answered with status {status}.', status
         except Exception as error:
             status = getattr(error, 'status_code', None)
-            reason = {401: 'The API key was rejected (401). Check SENDGRID_API_KEY.', 403: 'SendGrid refused the sender (403). Verify SENDGRID_FROM_EMAIL in SendGrid.'}.get(status)
+            name = provider_name() or 'The email provider'
+            key = 'BREVO_API_KEY' if self.provider == 'brevo' else 'SENDGRID_API_KEY'
+            reason = {401: f'The API key was rejected (401). Check {key}; an expired trial or a revoked key gives this answer.', 403: f'{name} refused the sender (403). Verify the sender address in {name}.'}.get(status)
             return False, reason or f'The email could not be sent: {str(error)[:160]}', status
 
 

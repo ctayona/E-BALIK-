@@ -29,7 +29,9 @@ SUPABASE_SERVICE_KEY    =
 APP_ENCRYPTION_KEY      =   (copy from your local .env)
 GOOGLE_CLIENT_ID        =   (only if you use Google sign-in)
 GOOGLE_CLIENT_SECRET    =   (only if you use Google sign-in)
-SENDGRID_API_KEY        =   (only if you send real emails)
+BREVO_API_KEY           =   (only if you send real emails: see "Sending email with Brevo" below)
+BREVO_FROM_EMAIL        =   (the sender you verified in Brevo)
+SENDGRID_API_KEY        =   (older option, only if you still have a working SendGrid plan)
 SENDGRID_FROM_EMAIL     =   (only if you send real emails)
 RENDER URL              =   (filled in at Phase 2)
 VERCEL URL              =   (filled in at Phase 3)
@@ -318,3 +320,15 @@ Preview deployments on Vercel have different addresses and are not trusted by de
 - `SUPABASE_SERVICE_KEY`, `JWT_SECRET_KEY`, `APP_ENCRYPTION_KEY`, `GOOGLE_CLIENT_SECRET` and `SENDGRID_API_KEY` belong **only** in Render. If one ever leaks, rotate it in its own dashboard and update Render.
 - Do not commit `.env` files. The `*.example` files in `Environment_Configs/` hold placeholders only.
 - Keep the GitHub repository private if it ever contains anything you would not publish.
+
+## Sending email with Brevo (free)
+
+SendGrid no longer has a free plan, and an expired trial makes every email fail with `401 Unauthorized` in the Render log (OTP codes, password resets, claim and Smart Tag notices). Brevo is free for 300 emails a day and works from Render's free plan because it is called over HTTPS (Render's free plan blocks normal mail ports, so Gmail SMTP will not work).
+
+1. Create a free account at brevo.com.
+2. **Senders, domains and dedicated IPs > Senders > Add a sender**: use the address people should see (for example your Gmail), then open the confirmation email Brevo sends to it. Only a confirmed sender can send.
+3. **SMTP & API > API keys > Generate a new API key**. Copy it once.
+4. In Render > your service > **Environment**, add `BREVO_API_KEY` (the key) and `BREVO_FROM_EMAIL` (the confirmed sender). Save; Render redeploys. You can leave the old SendGrid values: when `BREVO_API_KEY` is set, Brevo is used.
+5. Check it: System control > email test (it names the provider and explains a rejected key), then **Forgot password** on the site.
+
+Mail to Gmail inboxes from a free Gmail sender can land in spam until you verify your own domain in Brevo. For a school address, verifying the domain (a DNS record) fixes it.

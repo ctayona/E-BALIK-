@@ -1026,7 +1026,7 @@ class SmartTagService:
         except Exception as error:
             logger.error('Smart tag email failed: %s', error)
         if not sent:
-            logger.error('Smart Tag %s: the "someone found your item" email was NOT delivered (check the SendGrid key and sender)', tag.get('tag_id'))
+            logger.error('Smart Tag %s: the "someone found your item" email was NOT delivered (check the email provider key and sender)', tag.get('tag_id'))
         return sent
 
     def link_found_item(self, raw_tag_id: Any, reference: str, item_name: str, found_item_id: Any = None) -> Dict[str, Any]:

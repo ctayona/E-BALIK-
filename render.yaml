@@ -43,6 +43,11 @@ services:
         sync: false
       - key: SENDGRID_FROM_EMAIL
         sync: false
+      # Brevo replaces SendGrid when BREVO_API_KEY is set (SendGrid's free plan ended). BREVO_FROM_EMAIL falls back to SENDGRID_FROM_EMAIL.
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_FROM_EMAIL
+        sync: false
       # Lets an external scheduler call POST /api/cron/run (header X-Cron-Secret). Leave unset to keep that endpoint off.
       - key: CRON_SECRET
         sync: false
