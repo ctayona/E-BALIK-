@@ -3,8 +3,10 @@
   import App from "./app/App.tsx";
   import "./styles/index.css";
   import { initTheme } from "./app/utils/theme";
+  import { initPreferences } from "./app/utils/preferences";
 
   initTheme();
+  initPreferences();
 
   createRoot(document.getElementById("root")!).render(<App />);
 

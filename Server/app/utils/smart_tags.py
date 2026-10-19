@@ -20,7 +20,9 @@ ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 TAG_LENGTH = 12
 MAX_BATCH = 500
 MAX_TAGS_PER_ACCOUNT = 25
-FOUND_COOLDOWN_SECONDS = 300
+FOUND_COOLDOWN_SECONDS = 60
+# A lost Smart Tag is posted as a missing report whose distinguishing marks start with this text, so the report can be found again.
+REPORT_MARK = 'Smart Tag'
 MAX_ITEM_NAME = 120
 MAX_DESCRIPTION = 500
 MAX_FINDER_MESSAGE = 300
@@ -736,6 +738,10 @@ class SmartTagService:
             if status not in ('active', 'lost'):
                 raise TagError('A tag can be marked active or lost.')
             changes['status'] = status
+            if status == 'active' and tag.get('status') == 'lost':
+                # "I found it": forget the earlier finder notices so a future scan alerts the owner afresh.
+                changes['last_found_notice_at'] = None
+                changes['found_notice_count'] = 0
         if not changes:
             raise TagError('Nothing to change.')
         changes['updated_at'] = _iso(_now())
@@ -745,9 +751,68 @@ class SmartTagService:
             self._guard(error)
         if not rows:
             raise TagError('The tag changed while you were editing it. Reload and try again.', 409)
+        result = self._owner(rows[0])
         if 'status' in changes and changes['status'] != tag.get('status'):
             self._log(account_id, 'Mark Smart Tag Lost' if changes['status'] == 'lost' else 'Mark Smart Tag Found', rows[0])
-        return self._owner(rows[0])
+            if changes['status'] == 'lost':
+                result['lost_report'] = self._open_lost_report(rows[0])
+            elif tag.get('status') == 'lost':
+                result['closed_reports'] = self._close_lost_reports(rows[0])
+        return result
+
+    # ------------------------------------------------------------------ lost report linked to a tag
+    @staticmethod
+    def _report_mark(tag_id: str) -> str:
+        return f'{REPORT_MARK} {tag_id}'
+
+    def _lost_reports(self, tag: Dict[str, Any], statuses: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        mark = self._report_mark(tag['tag_id'])
+        try:
+            rows = self.client.table('missing_items').select('mpost_id,status,distinctive_marks').eq('account_id', str(tag['owner_account_id'])).limit(500).execute().data or []
+        except Exception as error:
+            logger.warning('Could not look up the report of Smart Tag %s: %s', tag.get('tag_id'), error)
+            return []
+        return [row for row in rows if str(row.get('distinctive_marks') or '').startswith(mark) and (statuses is None or row.get('status') in statuses)]
+
+    def _open_lost_report(self, tag: Dict[str, Any]) -> Optional[str]:
+        """Marking a tag lost posts a missing-item report for it (once). Returns the report reference, or None when it could not be made.
+
+        Never raises: the tag is already marked lost, and a report problem must not undo that.
+        """
+        try:
+            existing = self._lost_reports(tag, ['missing', 'found', 'matched'])
+            if existing:
+                return existing[0]['mpost_id']
+            owner = self._profile(tag.get('owner_account_id')) or {}
+            today = _now().astimezone(timezone(timedelta(hours=8))).date()  # the campus is in Manila time
+            mpost_id = self.db.next_mpost_id(today.isoformat(), str(today.weekday() + 1))
+            name = tag.get('item_name') or 'Smart Tag item'
+            description = (tag.get('item_description') or '').strip() or f'{name}. Marked as lost by its owner through its E-Balik Smart Tag.'
+            self.db.create_missing_item({
+                'account_id': str(tag['owner_account_id']), 'mpost_id': mpost_id,
+                'reporter_account_id': str(tag['owner_account_id']), 'reporter_email': owner.get('email'),
+                'reporter_campus_id': owner.get('campus_id'), 'item_name': name, 'category': 'Others',
+                'description': description[:1000],
+                'distinctive_marks': f'{self._report_mark(tag["tag_id"])}. Anyone who scans the sticker can alert the owner.',
+                'last_location': 'Not specified (marked lost from a Smart Tag)', 'last_seen_date': today.isoformat(), 'status': 'missing',
+            })
+            self._notify(tag.get('owner_account_id'), 'Your lost Smart Tag item was posted',
+                         f'We posted a missing report ({mpost_id}) for "{name}". It closes when you mark the tag as found.', 'smart_tag_lost')
+            return mpost_id
+        except Exception as error:
+            logger.warning('Could not post a missing report for Smart Tag %s: %s', tag.get('tag_id'), error)
+            return None
+
+    def _close_lost_reports(self, tag: Dict[str, Any]) -> List[str]:
+        """The owner has the item back: close every open report that was posted for this tag."""
+        closed: List[str] = []
+        for row in self._lost_reports(tag, ['missing', 'found', 'matched']):
+            try:
+                self.client.table('missing_items').update({'status': 'resolved', 'updated_at': _iso(_now())}).eq('mpost_id', row['mpost_id']).eq('account_id', str(tag['owner_account_id'])).execute()
+                closed.append(row['mpost_id'])
+            except Exception as error:
+                logger.warning('Could not close report %s: %s', row.get('mpost_id'), error)
+        return closed
 
     # ------------------------------------------------------------------ staff verification
     def admin_photos(self, raw_tag_id: Any) -> Dict[str, Any]:
@@ -889,13 +954,22 @@ class SmartTagService:
         try:
             claimed = query.execute().data or []
         except Exception as error:
-            self._guard(error)
+            if _is_missing_schema(error):
+                self._guard(error)
+            # A timestamp that does not compare equal must never silence the alert: fall back to an unconditional update.
+            logger.warning('Smart tag notice claim failed (%s); notifying anyway', error)
+            claimed = [{}]
+            try:
+                self._table().update({'last_found_notice_at': _iso(now), 'found_notice_count': int(tag.get('found_notice_count') or 0) + 1}).eq('tag_id', tag_id).execute()
+            except Exception as inner:
+                logger.warning('Smart tag notice counter not saved: %s', inner)
         if not claimed:
             return {**result, 'cooldown': True}
-        self._notify_owner(tag, note, contact)
-        return {**result, 'notified': True}
+        emailed = self._notify_owner(tag, note, contact)
+        return {**result, 'notified': True, 'emailed': emailed}
 
-    def _notify_owner(self, tag: Dict[str, Any], note: str, contact: str) -> None:
+    def _notify_owner(self, tag: Dict[str, Any], note: str, contact: str) -> bool:
+        """Tell the owner in the app and by email. Returns whether the mail service accepted the email."""
         item = tag.get('item_name') or 'your item'
         owner = self._profile(tag.get('owner_account_id')) or {}
         text = f'Someone scanned the Smart Tag on "{item}" and says they found it. They were asked to bring it to the OHSO guard post.'
@@ -910,18 +984,24 @@ class SmartTagService:
             )
         except Exception as error:
             logger.warning('Smart tag in-app notice failed: %s', error)
-        if owner.get('email'):
-            try:
-                from app.utils.email_service import send_reference_email_best_effort
-                send_reference_email_best_effort(
-                    to_email=owner['email'], recipient_name=str(owner.get('fname') or '').strip(),
-                    subject=f'Someone found your item: {item}',
-                    summary='Someone scanned your Smart Tag and says they found your item. They were asked to bring it to the OHSO guard post. Check with the guard post before you go, and do not share your passwords or codes with anyone.',
-                    reference_label='Smart Tag code', reference=tag['tag_id'],
-                    details={'Item': item, 'Message from the finder': note, 'Finder contact': contact},
-                )
-            except Exception as error:
-                logger.warning('Smart tag email failed: %s', error)
+        if not owner.get('email'):
+            logger.error('Smart Tag %s: the owner has no email address on file, so no email was sent', tag.get('tag_id'))
+            return False
+        sent = False
+        try:
+            from app.utils.email_service import send_reference_email_best_effort
+            sent = bool(send_reference_email_best_effort(
+                to_email=owner['email'], recipient_name=str(owner.get('fname') or '').strip(),
+                subject=f'Someone found your item: {item}',
+                summary='Someone scanned your Smart Tag and says they found your item. They were asked to bring it to the OHSO guard post. Check with the guard post before you go, and do not share your passwords or codes with anyone.',
+                reference_label='Smart Tag code', reference=tag['tag_id'],
+                details={'Item': item, 'Message from the finder': note, 'Finder contact': contact},
+            ))
+        except Exception as error:
+            logger.error('Smart tag email failed: %s', error)
+        if not sent:
+            logger.error('Smart Tag %s: the "someone found your item" email was NOT delivered (check the SendGrid key and sender)', tag.get('tag_id'))
+        return sent
 
     def link_found_item(self, raw_tag_id: Any, reference: str, item_name: str, found_item_id: Any = None) -> Dict[str, Any]:
         """The office registered an item from this Smart Tag: tell the owner it is safe at the office and how to collect it.

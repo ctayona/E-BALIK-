@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bell, ChevronDown, ClipboardCheck, KeyRound, Files, Gavel, GitCompareArrows, LayoutDashboard, LibraryBig, LogOut, Menu, Moon, PackagePlus, QrCode, Sun, UserRound, X } from "lucide-react";
+import { Bell, ChevronDown, ClipboardCheck, KeyRound, Files, Gavel, GitCompareArrows, LayoutDashboard, LibraryBig, LogOut, Menu, Moon, PackagePlus, QrCode, Settings2, Sun, UserRound, X } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import headerUmSeal from "@/imports/Header/9aefa1789ba406d6291f8aa816f84df70a02953b.webp";
 import type { NavigationOptions, Page } from "@/app/types";
@@ -8,6 +8,7 @@ import { notificationsAPI } from "@/app/utils/api";
 import { useTheme } from "@/app/utils/theme";
 import { playNotificationChime } from "@/app/utils/notificationSound";
 import NotificationMenu from "@/app/shared/NotificationMenu";
+import UserSettingsModal from "@/app/shared/settings/UserSettingsModal";
 
 const NAV_LINKS: { label: string; page: Page; icon: ReactNode }[] = [
   { label: "Dashboard",    page: "dashboard",    icon: <LayoutDashboard size={16} aria-hidden="true" /> },
@@ -52,6 +53,7 @@ export default function UserHeader({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const lastCount = useRef<number | null>(null);
   const accountRef = useRef<HTMLDivElement>(null);
@@ -230,6 +232,9 @@ export default function UserHeader({
                       <button type="button" role="menuitem" onClick={() => navigate("profile")} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] font-medium text-ink-soft hover:bg-navy-50">
                         <UserRound size={16} className="text-navy-500" aria-hidden="true" /> Profile &amp; verification
                       </button>
+                      <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); setSettingsOpen(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] font-medium text-ink-soft hover:bg-navy-50">
+                        <Settings2 size={16} className="text-navy-500" aria-hidden="true" /> Settings
+                      </button>
                       <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); onLogout(); }} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] font-medium text-rose-700 hover:bg-rose-50">
                         <LogOut size={16} aria-hidden="true" /> Log out
                       </button>
@@ -376,6 +381,9 @@ export default function UserHeader({
                     <KeyRound size={16} aria-hidden="true" /> {consoleLabel}
                   </button>
                 )}
+                <button type="button" onClick={() => { setSidebarOpen(false); setSettingsOpen(true); }} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-navy-100 hover:bg-white/[0.06]">
+                  <Settings2 size={16} aria-hidden="true" /> Settings
+                </button>
                 <button type="button" onClick={toggleTheme} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-navy-100 hover:bg-white/[0.06]">
                   {theme === "dark" ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />} {theme === "dark" ? "Light mode" : "Dark mode"}
                 </button>
@@ -388,6 +396,7 @@ export default function UserHeader({
           </motion.div>
         )}
       </AnimatePresence>
+      <UserSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} onNavigate={onNavigate} />
     </>
   );
 }

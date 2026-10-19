@@ -237,6 +237,11 @@ export const authApi = {
     });
   },
 
+  /** Is this email still free? Used while typing on the sign-up form. `available` is null when it could not be checked. */
+  async emailAvailable(email: string) {
+    return apiCall<{ valid: boolean; available: boolean | null }>(`/api/auth/email-available?email=${encodeURIComponent(email)}`);
+  },
+
   /**
    * Request password reset OTP
    */

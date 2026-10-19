@@ -436,6 +436,74 @@ class FinderTests(unittest.TestCase):
         db.create_user_notification.assert_called_once()
 
 
+class LostReportTests(unittest.TestCase):
+    """Marking a tag lost posts a missing report; marking it found closes that report and resets the finder notices."""
+
+    @staticmethod
+    def service(rows):
+        service, db, store = make_service(rows)
+        store['missing_items'] = []
+        db.next_mpost_id.return_value = 'MP1001'
+        db.create_missing_item.side_effect = lambda data: (store['missing_items'].append(dict(data)), data)[1]
+        return service, db, store
+
+    def test_marking_lost_posts_one_missing_report(self):
+        service, db, store = self.service([tag_row()])
+        view = service.update(TAG, OWNER, {'status': 'lost'})
+        self.assertEqual(view['lost_report'], 'MP1001')
+        report = store['missing_items'][0]
+        self.assertEqual((report['account_id'], report['item_name'], report['status']), (OWNER, 'Black Dell laptop', 'missing'))
+        self.assertTrue(report['distinctive_marks'].startswith(f'Smart Tag {TAG}'))
+        self.assertEqual(report['reporter_email'], 'maria@umak.edu.ph')
+
+    def test_a_report_is_not_posted_twice(self):
+        service, db, store = self.service([tag_row()])
+        service.update(TAG, OWNER, {'status': 'lost'})
+        store['smart_tags'][0]['status'] = 'active'  # marked active without going through the found flow
+        service.update(TAG, OWNER, {'status': 'lost'})
+        self.assertEqual(len(store['missing_items']), 1)
+
+    def test_a_failing_report_never_undoes_the_lost_mark(self):
+        service, db, store = self.service([tag_row()])
+        db.create_missing_item.side_effect = RuntimeError('database down')
+        view = service.update(TAG, OWNER, {'status': 'lost'})
+        self.assertEqual(view['status'], 'lost')
+        self.assertIsNone(view['lost_report'])
+
+    def test_marking_found_closes_the_report_and_resets_finder_notices(self):
+        service, db, store = self.service([tag_row()])
+        service.update(TAG, OWNER, {'status': 'lost'})
+        store['smart_tags'][0].update({'last_found_notice_at': '2026-10-19T00:00:00+00:00', 'found_notice_count': 3})
+        view = service.update(TAG, OWNER, {'status': 'active'})
+        self.assertEqual(view['closed_reports'], ['MP1001'])
+        self.assertEqual(store['missing_items'][0]['status'], 'resolved')
+        self.assertIsNone(store['smart_tags'][0]['last_found_notice_at'])
+        self.assertEqual(store['smart_tags'][0]['found_notice_count'], 0)
+
+    def test_other_owners_reports_are_left_alone(self):
+        service, db, store = self.service([tag_row()])
+        store['missing_items'].append({'account_id': OTHER, 'mpost_id': 'MP9', 'status': 'missing', 'distinctive_marks': f'Smart Tag {TAG}'})
+        service.update(TAG, OWNER, {'status': 'lost'})
+        service.update(TAG, OWNER, {'status': 'active'})
+        self.assertEqual(next(r for r in store['missing_items'] if r['mpost_id'] == 'MP9')['status'], 'missing')
+
+    def test_a_scan_after_found_alerts_the_owner_again(self):
+        service, db, store = self.service([tag_row()])
+        with patch('app.utils.email_service.send_reference_email_best_effort', return_value=True) as send:
+            self.assertTrue(service.report_found(TAG, '', '')['notified'])
+            service.update(TAG, OWNER, {'status': 'lost'})
+            service.update(TAG, OWNER, {'status': 'active'})
+            self.assertTrue(service.report_found(TAG, '', '')['notified'])
+        self.assertEqual(send.call_count, 2)
+
+    def test_the_result_says_whether_the_email_was_accepted(self):
+        service, db, store = self.service([tag_row()])
+        with patch('app.utils.email_service.send_reference_email_best_effort', return_value=False):
+            result = service.report_found(TAG, '', '')
+        self.assertTrue(result['notified'])
+        self.assertFalse(result['emailed'])
+
+
 class AdminServiceTests(unittest.TestCase):
     def test_a_batch_creates_that_many_unique_blank_tags(self):
         service, _, store = make_service()

@@ -179,7 +179,9 @@ export default function MyTags({ onLoaded, onRegister, reloadKey = 0 }: {
       showInfoModal({
         variant: status === "lost" ? "warning" : "success",
         title: status === "lost" ? "Marked as lost" : "Marked as found",
-        message: status === "lost" ? `Anyone who scans the tag on "${tag.item_name}" will see that it is lost, and you will be notified when someone reports finding it.` : `"${tag.item_name}" is active again.`,
+        message: status === "lost"
+          ? `Anyone who scans the tag on "${tag.item_name}" will see that it is lost, and you will be notified by email and in the app when someone reports finding it.${result.tag.lost_report ? ` We also posted a missing report for it (${result.tag.lost_report}). Find it under My Reports.` : ""}`
+          : `"${tag.item_name}" is active again. Earlier finder alerts were cleared${result.tag.closed_reports?.length ? ` and the missing report ${result.tag.closed_reports.join(", ")} was closed` : ""}.`,
       });
     } catch (reason) {
       showInfoModal({ variant: "error", title: "Tag not updated", message: reason instanceof Error ? reason.message : "Unable to update the tag." });

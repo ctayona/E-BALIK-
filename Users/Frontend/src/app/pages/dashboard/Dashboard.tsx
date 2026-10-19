@@ -16,6 +16,8 @@ import { useWatchlist } from "@/app/shared/auction/useWatchlist";
 import { auctionsApi, msLeft, useAuctionFeed, useClosingTick, type Auction } from "@/app/utils/auctions";
 import ComposerCard from "./feed/ComposerCard";
 import LeftRail from "./feed/LeftRail";
+import { getPreferences, usePreferences } from "@/app/utils/preferences";
+import type { ActivityCounts } from "./feed/MyActivity";
 import PostCard from "./feed/PostCard";
 import RightRail from "./feed/RightRail";
 import StoriesBar from "./feed/StoriesBar";
@@ -78,8 +80,9 @@ export default function Dashboard({ user, onNavigate }: {
   user: User | null;
   onNavigate: (page: Page, options?: NavigationOptions) => void;
 }) {
-  const { getMissingItems } = useAuth();
-  const [kind, setKind] = useState<Kind>("all");
+  const { getMissingItems, getFoundItems } = useAuth();
+  const preferences = usePreferences();
+  const [kind, setKind] = useState<Kind>(() => getPreferences().homeFeed);
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [stories, setStories] = useState<FeedStory[]>([]);
   const [counts, setCounts] = useState<FeedCounts | null>(null);
@@ -88,6 +91,7 @@ export default function Dashboard({ user, onNavigate }: {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [myMissing, setMyMissing] = useState<string[]>([]);
+  const [activity, setActivity] = useState<ActivityCounts | null>(null);
   const [viewing, setViewing] = useState<Viewing>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [shared, setShared] = useState<FeedPost | null>(null);
@@ -127,12 +131,16 @@ export default function Dashboard({ user, onNavigate }: {
 
   useEffect(() => {
     let active = true;
-    void getMissingItems().then((result) => {
+    void Promise.all([getMissingItems(), getFoundItems()]).then(([missing, found]) => {
       if (!active) return;
-      setMyMissing((result.items || []).filter((item: { status?: string }) => !isCompletedReport("Missing", item.status)).map((item: { mpost_id: string }) => item.mpost_id));
+      const lost: Array<{ status?: string; mpost_id: string }> = missing.items || [];
+      const handedIn: Array<{ status?: string }> = found.items || [];
+      setMyMissing(lost.filter((item) => !isCompletedReport("Missing", item.status)).map((item) => item.mpost_id));
+      const completed = lost.filter((item) => isCompletedReport("Missing", item.status)).length + handedIn.filter((item) => isCompletedReport("Found", item.status)).length;
+      setActivity({ found: handedIn.length, missing: lost.length, completed, open: lost.length + handedIn.length - completed });
     });
     return () => { active = false; };
-  }, [getMissingItems]);
+  }, [getMissingItems, getFoundItems]);
 
   // A report someone shared with this person: shown at the top of the feed, whether or not it is on the first page.
   useEffect(() => {
@@ -229,12 +237,12 @@ export default function Dashboard({ user, onNavigate }: {
       {view.prompt}
       {social.prompt}
       <div className="mx-auto w-full max-w-[1320px]">
-        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_320px]">
-          <div className="hidden lg:sticky lg:top-[calc(var(--app-header-h)+28px)] lg:block">
-            <LeftRail user={user} activeReports={myMissing.length} onNavigate={onNavigate} />
+        <div className={`grid grid-cols-[minmax(0,1fr)] items-start gap-5 ${preferences.focusFeed ? "" : "lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_320px]"}`}>
+          <div className={`hidden lg:sticky lg:top-[calc(var(--app-header-h)+28px)] lg:max-h-[calc(100vh-var(--app-header-h)-3rem)] lg:overflow-y-auto lg:pb-2 no-scrollbar ${preferences.focusFeed ? "" : "lg:block"}`}>
+            <LeftRail user={user} activeReports={myMissing.length} activity={activity} onNavigate={onNavigate} />
           </div>
 
-          <div className="mx-auto w-full min-w-0 max-w-[680px] space-y-4 xl:max-w-none">
+          <div className={`mx-auto w-full min-w-0 max-w-[680px] space-y-4 ${preferences.focusFeed ? "" : "xl:max-w-none"}`}>
             <h1 className="sr-only">Home feed</h1>
             <form onSubmit={submitSearch} role="search" className={`${FEED_CARD} flex items-center gap-2 !rounded-2xl p-1.5 transition-shadow duration-200 focus-within:shadow-[0_0_0_4px_rgba(110,142,240,0.16),var(--shadow-card)]`}>
               <label htmlFor="dashboard-search" className="sr-only">Search found items</label>
@@ -263,7 +271,7 @@ export default function Dashboard({ user, onNavigate }: {
             <ComposerCard user={user} onNavigate={onNavigate} />
             <StoriesBar stories={stories} loading={loading && stories.length === 0} onOpen={openStory} onCreate={() => onNavigate("report-item")} />
 
-            <div className="xl:hidden"><RightRail counts={counts} urgent={stories.length} compact /></div>
+            <div className={preferences.focusFeed ? "" : "xl:hidden"}><RightRail counts={counts} urgent={stories.length} compact /></div>
 
 
             {myMissing.length > 0 && (
@@ -358,7 +366,7 @@ export default function Dashboard({ user, onNavigate }: {
             )}
           </div>
 
-          <div className="hidden xl:sticky xl:top-[calc(var(--app-header-h)+28px)] xl:block xl:max-h-[calc(100vh-var(--app-header-h)-3rem)] xl:overflow-y-auto xl:pb-2 no-scrollbar">
+          <div className={`hidden xl:sticky xl:top-[calc(var(--app-header-h)+28px)] ${preferences.focusFeed ? "" : "xl:block"}  xl:max-h-[calc(100vh-var(--app-header-h)-3rem)] xl:overflow-y-auto xl:pb-2 no-scrollbar`}>
             <RightRail counts={counts} urgent={stories.length} />
           </div>
         </div>

@@ -3,6 +3,7 @@ import type { Page } from "@/app/types";
 import type { User } from "@/app/utils/useAuth";
 import { initialsOf } from "./ComposerCard";
 import { FEED_CARD, FEED_CARD_LIFT, GOLD_GRADIENT } from "./feedStyle";
+import MyActivity, { type ActivityCounts } from "./MyActivity";
 
 const SHORTCUTS: Array<{ page: Page; label: string; icon: LucideIcon; tone: string }> = [
   { page: "browse-items", label: "Browse items", icon: LibraryBig, tone: "bg-iris-50 text-iris-700" },
@@ -15,7 +16,7 @@ const SHORTCUTS: Array<{ page: Page; label: string; icon: LucideIcon; tone: stri
 ];
 
 /** Left column: who you are, and the campus shortcuts. Counts come from the page (your open lost reports). */
-export default function LeftRail({ user, activeReports, onNavigate }: { user: User | null; activeReports: number; onNavigate: (page: Page) => void }) {
+export default function LeftRail({ user, activeReports, activity, onNavigate }: { user: User | null; activeReports: number; activity: ActivityCounts | null; onNavigate: (page: Page) => void }) {
   const verified = String(user?.verification_status || "").toLowerCase() === "verified" || ["admin", "super_admin", "guard"].includes(String(user?.access_level || "").toLowerCase());
   const name = `${user?.fname ?? ""} ${user?.lname ?? ""}`.trim() || "Your account";
   return (
@@ -49,6 +50,8 @@ export default function LeftRail({ user, activeReports, onNavigate }: { user: Us
       <button type="button" onClick={() => onNavigate("report-item")} className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(180deg,#2b4282_0%,#1f3160_100%)] px-4 text-[14.5px] font-semibold text-white shadow-card transition-opacity hover:opacity-95">
         <PackageSearch size={18} aria-hidden="true" />Report an item
       </button>
+
+      <MyActivity counts={activity} onNavigate={onNavigate} />
     </nav>
   );
 }

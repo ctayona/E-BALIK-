@@ -308,6 +308,14 @@
   }
 }
 
+/* Same as the system setting, but chosen inside E-Balik (Settings > Reduce motion). */
+:root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
 /* ── Global information modal ─────────────────────────────────── */
 @keyframes info-modal-enter {
   from { opacity: 0; transform: translateY(12px) scale(0.98); }
@@ -468,7 +476,7 @@ a, button, [role="button"], input, select, textarea, label { touch-action: manip
 }
 
 /* Light surfaces become navy glass; dialogs and menus stay near-opaque for legibility. */
-:root[data-theme="dark"] :is(.bg-white, .bg-white\/95, .bg-white\/90, .bg-white\/85, .bg-white\/80, .bg-white\/70,.bg-\[\#f8fafc\], .bg-\[\#f1f4f9\]) { background-color: var(--surface); }
+:root[data-theme="dark"] :is(.bg-white, .bg-white\/95, .bg-white\/90, .bg-white\/85, .bg-white\/80, .bg-white\/70, .bg-white\/60, .bg-white\/50,.bg-\[\#f8fafc\], .bg-\[\#f1f4f9\]) { background-color: var(--surface); }
 :root[data-theme="dark"] :is([role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]):is(.bg-white, [class*="bg-white/"]),
 :root[data-theme="dark"] .ui-modal-panel,
 :root[data-theme="dark"] .fixed.inset-0 > div[class*="bg-white"] {

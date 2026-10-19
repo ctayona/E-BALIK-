@@ -8,7 +8,7 @@ from flask import Blueprint, current_app, jsonify, request
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from email_validator import EmailNotValidError, validate_email
-from app.utils import EmailService, get_db, JWTService, OTPGenerator, PasswordService, otp_guard
+from app.utils import EmailService, get_db, JWTService, OTPGenerator, PasswordService, otp_guard, rate_limit
 from app.utils.otp_guard import OtpBlocked
 from app.utils.text_guard import TextRejected, clean_field
 from app.utils.admin_mfa import hash_recovery_code, matched_totp_step
@@ -491,6 +491,31 @@ def login():
         return jsonify({'error': 'Login failed', 'details': str(e)}), 500
 
 
+@home_bp.route('/auth/email-available', methods=['GET'])
+def email_available():
+    """Lets the sign-up form say "already registered" while the person is still typing, before anything is submitted.
+
+    Throttled per address. Answers only yes or no, never any detail of the account.
+    """
+    ip = otp_guard.client_ip()
+    if not rate_limit.allow(f'email-available:{ip}', 40, 60):
+        return jsonify({'error': 'Too many checks. Wait a moment and try again.'}), 429
+    email = _ensure_email_normalized(request.args.get('email'))
+    try:
+        validate_email(email, check_deliverability=False)
+    except EmailNotValidError:
+        return jsonify({'valid': False, 'available': None}), 200
+    try:
+        db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        taken = bool(db.get_user_by_email(email))
+    except Exception as error:
+        current_app.logger.warning('Email availability check failed: %s', error)
+        return jsonify({'valid': True, 'available': None}), 200
+    reply = jsonify({'valid': True, 'available': not taken})
+    reply.headers['Cache-Control'] = 'no-store'
+    return reply, 200
+
+
 @home_bp.route('/auth/google-login', methods=['POST'])
 def google_login():
     """Authenticate a Google ID token. If no account exists, return a no-account payload so the UI can prompt registration."""
@@ -540,6 +565,14 @@ def google_login():
         if user.get('email') and user.get('email') != email:
             return jsonify({
                 'message': 'This email is already registered with a different account.',
+                'code': 'EMAIL_ALREADY_REGISTERED',
+                'google_profile': google_profile,
+            }), 200
+
+        if str(data.get('purpose') or '').lower() == 'register':
+            # Registering with an email that already has an account: say so at once, and never sign anyone in from the sign-up page.
+            return jsonify({
+                'message': 'This email is already registered. Log in instead, or use "Forgot password" if you cannot remember it.',
                 'code': 'EMAIL_ALREADY_REGISTERED',
                 'google_profile': google_profile,
             }), 200

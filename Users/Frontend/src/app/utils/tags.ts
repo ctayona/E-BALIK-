@@ -38,6 +38,10 @@ export interface PublicTag {
 
 export interface OwnerTag {
   tag_id: string;
+  /** Set only on the answer to marking a tag lost: the missing report posted for it. */
+  lost_report?: string | null;
+  /** Set only on the answer to marking a tag found: the missing reports that were closed. */
+  closed_reports?: string[];
   status: "active" | "lost" | "blank" | "expired" | "pending_verification";
   tag_type?: "qr" | "rfid" | "nfc";
   validity_months?: number | null;
@@ -78,7 +82,7 @@ export interface TagDetailsInput {
   shown_contacts?: ContactKind[];
 }
 
-export interface FoundResult { success: boolean; notified: boolean; cooldown: boolean; instructions: string[] }
+export interface FoundResult { success: boolean; notified: boolean; emailed?: boolean; cooldown: boolean; instructions: string[] }
 
 export class TagRequestError extends Error {
   status: number;

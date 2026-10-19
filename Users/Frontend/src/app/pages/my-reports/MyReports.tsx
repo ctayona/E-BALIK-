@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { CalendarDays, CheckCircle2, FileStack, GitCompareArrows, Layers, MapPin, Pencil, ShieldCheck, Tag, Trash2, Search, AlertTriangle } from "lucide-react";
+import { CalendarDays, CheckCircle2, FileStack, GitCompareArrows, Layers, MapPin, Pencil, ShieldCheck, Tag, Trash2, Search, AlertTriangle, Plus, RefreshCw, QrCode } from "lucide-react";
 import type { NavigationOptions, Page } from "@/app/types";
 import { useAuth } from "@/app/utils/useAuth";
 import { isCompletedReport, reportStatusLabel } from "@/app/utils/reportLifecycle";
@@ -51,6 +51,8 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
   const [confirmCountdown, setConfirmCountdown] = useState(5);
   const [confirmChecked, setConfirmChecked] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [query, setQuery] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if ((!confirmDelete && !confirmEdit) || confirmCountdown <= 0) return;
@@ -139,10 +141,20 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
     found: inProgress.filter((r) => r.kind === "Found").length,
     completed: finished.length,
   }), [inProgress, finished]);
-  const visibleReports = useMemo(
-    () => (active === "completed" ? finished : inProgress.filter((r) => active === "all" || r.kind.toLowerCase() === active)),
-    [finished, inProgress, active],
-  );
+  const visibleReports = useMemo(() => {
+    const pool = active === "completed" ? finished : inProgress.filter((r) => active === "all" || r.kind.toLowerCase() === active);
+    const needle = query.trim().toLowerCase();
+    if (!needle) return pool;
+    return pool.filter((r) => [r.name, r.id, r.category, r.location, r.description].some((part) => String(part || "").toLowerCase().includes(needle)));
+  }, [finished, inProgress, active, query]);
+  // Reports made by marking a Smart Tag as lost carry the tag's code in their private marks.
+  const fromTag = (report: Report) => /^smart tag\b/i.test(report.distinctive_marks || "");
+
+  async function refresh() {
+    setRefreshing(true);
+    await loadReports();
+    setRefreshing(false);
+  }
   const selectedCompleted = Boolean(selected && isCompletedReport(selected.kind, selected.status));
   const visibleGallery = useMemo(() => visibleReports.map(toGallery), [visibleReports]);
   const confirming = (confirmDelete || confirmEdit) && Boolean(selected);
@@ -151,31 +163,45 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
     <main className={CX.page}>
       <div className={CX.inner}>
         {/* Header */}
-        <header className="mb-6 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className={CX.eyebrow}>Personal workspace</p>
-            <h1 className={`${CX.pageTitle} mt-1`}>My reports</h1>
-            <p className={CX.pageLead}>Everything you've reported, in one place. Open a report to review, edit or remove it.</p>
+        <header className="relative mb-6 overflow-hidden rounded-[28px] bg-[linear-gradient(135deg,#22366a_0%,#162448_62%,#0e1830_100%)] p-5 text-white shadow-[0_24px_60px_-34px_rgba(14,24,48,0.9)] sm:p-7">
+          <span aria-hidden="true" className="pointer-events-none absolute -right-16 -top-20 size-64 rounded-full bg-[radial-gradient(circle,rgba(209,161,83,0.38),transparent_68%)]" />
+          <div className="relative flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-gold-300">Personal workspace</p>
+              <h1 className="mt-1 font-[family-name:var(--font-heading)] text-[28px] font-semibold leading-tight sm:text-[34px]">My reports</h1>
+              <p className="mt-1.5 max-w-[56ch] text-[14.5px] leading-6 text-navy-100">Everything you've reported, in one place. Open a report to review, edit or remove it.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => onNavigate("matches")} className="inline-flex min-h-[46px] items-center gap-2 rounded-2xl bg-white/10 px-4 text-[14px] font-semibold text-white ring-1 ring-white/20 transition-colors hover:bg-white/15">
+                <GitCompareArrows size={16} aria-hidden="true" /> View matches
+              </button>
+              <button type="button" onClick={() => onNavigate("report-item")} className="inline-flex min-h-[46px] items-center gap-2 rounded-2xl bg-[linear-gradient(180deg,#ecc787,#d1a153)] px-4 text-[14px] font-semibold text-navy-950 shadow-[0_10px_22px_-12px_rgba(209,161,83,0.95)] transition-transform active:scale-[0.98]">
+                <Plus size={16} aria-hidden="true" /> New report
+              </button>
+            </div>
           </div>
-          <button type="button" onClick={() => onNavigate("matches")} className={`${CX.btnNavy} self-start md:self-auto`}>
-            <GitCompareArrows size={16} aria-hidden="true" /> View matches
-          </button>
         </header>
 
         <dl className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-          {[
-            { label: "In progress", value: counts.all, icon: FileStack, tone: "bg-iris-50 text-iris-600" },
-            { label: "Missing", value: counts.missing, icon: Search, tone: "bg-tide-50 text-tide-700" },
-            { label: "Found", value: counts.found, icon: ShieldCheck, tone: "bg-gold-50 text-gold-700" },
-            { label: "Completed", value: counts.completed, icon: CheckCircle2, tone: "bg-emerald-50 text-emerald-700" },
-          ].map(({ label, value, icon: Icon, tone }) => (
-            <div key={label} className={`${CX.card} flex items-center gap-3 p-3 sm:p-4`}>
+          {([
+            { label: "In progress", tab: "all", value: counts.all, icon: FileStack, tone: "bg-iris-50 text-iris-600" },
+            { label: "Missing", tab: "missing", value: counts.missing, icon: Search, tone: "bg-tide-50 text-tide-700" },
+            { label: "Found", tab: "found", value: counts.found, icon: ShieldCheck, tone: "bg-gold-50 text-gold-700" },
+            { label: "Completed", tab: "completed", value: counts.completed, icon: CheckCircle2, tone: "bg-emerald-50 text-emerald-700" },
+          ] as const).map(({ label, tab, value, icon: Icon, tone }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setActive(tab)}
+              aria-pressed={active === tab}
+              className={`${CX.card} flex min-h-[64px] items-center gap-3 p-3 text-left transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 active:scale-[0.99] sm:p-4 ${active === tab ? "ring-2 ring-gold-400/70" : ""}`}
+            >
               <span className={`hidden size-11 shrink-0 items-center justify-center rounded-2xl sm:flex ${tone}`}><Icon size={19} aria-hidden="true" /></span>
               <div className="min-w-0">
                 <dt className="truncate text-[12px] font-medium text-ink-muted sm:text-[13px]">{label}</dt>
                 <dd className="font-[family-name:var(--font-heading)] text-[22px] font-semibold leading-tight tabular-nums text-ink sm:text-[26px]">{loading ? "–" : value}</dd>
               </div>
-            </div>
+            </button>
           ))}
         </dl>
 
@@ -201,6 +227,28 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
           <ViewToggle compact />
         </div>
 
+        <div className="mb-4 flex items-center gap-2">
+          <div role="search" className="relative min-w-0 flex-1">
+            <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted" aria-hidden="true" />
+            <label htmlFor="my-reports-search" className="sr-only">Search my reports</label>
+            <input
+              id="my-reports-search"
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search by item, place or reference"
+              autoComplete="off"
+              enterKeyHint="search"
+              className={`${CX.input} h-12 w-full pl-10`}
+            />
+          </div>
+          <button type="button" onClick={() => void refresh()} disabled={loading || refreshing} aria-label="Refresh my reports" className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-line bg-white/80 text-ink-soft transition-colors hover:border-iris-300 hover:text-iris-700 disabled:opacity-60">
+            <RefreshCw size={17} className={refreshing ? "animate-spin" : ""} aria-hidden="true" />
+          </button>
+        </div>
+
+        {query.trim() && !loading && <p className="mb-3 text-[13px] text-ink-muted" aria-live="polite">{visibleReports.length} {visibleReports.length === 1 ? "report matches" : "reports match"} "{query.trim()}".</p>}
+
         {loading ? <ReportGridSkeleton count={4} /> : (
           <ItemCollection
             label="My reports"
@@ -208,8 +256,23 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
             highlightId={highlightId}
             mode={mode}
             onOpen={(_item, index) => openReport(visibleReports[index])}
-            badge={(item) => <StatusPill status={item.status || ""} />}
-            empty={active === "completed" ? (
+            badge={(item) => {
+              const report = visibleReports.find((r) => r.id === item.id);
+              return (
+                <span className="inline-flex flex-col items-end gap-1 sm:flex-row sm:items-center">
+                  {report && fromTag(report) && <span className="inline-flex items-center gap-1 rounded-full bg-gold-50 px-2 py-1 text-[11px] font-semibold text-gold-800 ring-1 ring-gold-200"><QrCode size={11} aria-hidden="true" /><span className="hidden sm:inline">Smart Tag</span><span className="sr-only sm:hidden">Smart Tag</span></span>}
+                  <StatusPill status={item.status || ""} />
+                </span>
+              );
+            }}
+            empty={query.trim() ? (
+              <div className="glass flex flex-col items-center gap-3 rounded-[22px] px-6 py-14 text-center">
+                <span className="flex size-14 items-center justify-center rounded-2xl bg-frost-100 text-iris-600"><Search size={26} aria-hidden="true" /></span>
+                <p className="text-[16px] font-semibold text-ink">Nothing matches your search</p>
+                <p className="max-w-[44ch] text-[14px] text-ink-muted">Try a different word, or clear the search to see every report in this tab.</p>
+                <button type="button" onClick={() => setQuery("")} className={CX.btnGhost}>Clear search</button>
+              </div>
+            ) : active === "completed" ? (
               <div className="glass flex flex-col items-center gap-3 rounded-[22px] px-6 py-14 text-center">
                 <span className="flex size-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"><CheckCircle2 size={26} aria-hidden="true" /></span>
                 <p className="text-[16px] font-semibold text-ink">Nothing completed yet</p>

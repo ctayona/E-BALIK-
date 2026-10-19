@@ -3,6 +3,7 @@ import { Eye, EyeOff, X, CheckCircle2, XCircle, ShieldCheck, Sparkles } from "lu
 import umakLogo from "@/imports/umaklogo.webp";
 import OTPModal from "@/app/pages/home/OTPModal";
 import { useAuth } from "@/app/utils/useAuth";
+import { authApi } from "@/app/utils/api";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import NameField from "@/app/shared/forms/NameField";
 import { focusFirstInvalid } from "@/app/shared/forms/FieldHint";
@@ -76,6 +77,8 @@ export default function Register({
   const [middleName, setMiddleName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  /** Live answer for the typed email: "taken" shows a warning at once, before anything is submitted. */
+  const [emailState, setEmailState] = useState<"idle" | "checking" | "free" | "taken">("idle");
   const [studentId, setStudentId] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -127,6 +130,27 @@ export default function Register({
   }, []);
 
   useEffect(() => {
+    const candidate = email.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(candidate)) {
+      setEmailState("idle");
+      return;
+    }
+    setEmailState("checking");
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const reply = await authApi.emailAvailable(candidate);
+      if (cancelled) return;
+      if (reply.data?.available === false) setEmailState("taken");
+      else if (reply.data?.available === true) setEmailState("free");
+      else setEmailState("idle");
+    }, 450);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [email]);
+
+  useEffect(() => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     if (!clientId || !googleReady || !window.google || !window.google.accounts) return;
 
@@ -162,7 +186,10 @@ export default function Register({
           }
 
           if (result.code === 'EMAIL_ALREADY_REGISTERED') {
-            showInfoModal({ variant: "warning", title: "Account already exists", message: "This email is already registered. Please log in instead." });
+            const taken = result.google_profile?.email;
+            if (taken) setEmail(taken);
+            setEmailState("taken");
+            showInfoModal({ variant: "warning", title: "This email already has an account", message: `${taken ?? "This email"} is already registered, so there is nothing to sign up for. Log in instead, or use Forgot password if you cannot remember it.` });
             return;
           }
 
@@ -210,6 +237,11 @@ export default function Register({
 
     if (!normalizedEmail.endsWith("@umak.edu.ph") && !normalizedEmail.endsWith("@gmail.com")) {
       setSubmitError("Use a valid UMak email or continue with Google.");
+      return;
+    }
+
+    if (emailState === "taken") {
+      setSubmitError("This email is already registered. Please log in instead.");
       return;
     }
 
@@ -336,7 +368,13 @@ export default function Register({
           <div className="flex flex-col gap-2 flex-1 min-w-0">
             <label className="font-bold text-navy-800 text-[12px]">University email</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value.toLowerCase())}
-              placeholder="username@umak.edu.ph" required className={clayInput} />
+              placeholder="username@umak.edu.ph" required aria-invalid={emailState === "taken"} aria-describedby="register-email-hint"
+              className={`${clayInput} ${emailState === "taken" ? "!border-rose-400 !ring-2 !ring-rose-200" : ""}`} />
+            <p id="register-email-hint" role={emailState === "taken" ? "alert" : undefined} aria-live="polite" className={`min-h-[16px] text-[12px] font-semibold ${emailState === "taken" ? "text-rose-600" : emailState === "free" ? "text-emerald-600" : "text-navy-800/55"}`}>
+              {emailState === "taken" && "This email is already registered. Please log in instead."}
+              {emailState === "free" && "This email is available."}
+              {emailState === "checking" && "Checking this email..."}
+            </p>
           </div>
           <div className="flex flex-col gap-2 flex-1 min-w-0">
             <label className="font-bold text-navy-800 text-[12px]">Student or employee ID</label>

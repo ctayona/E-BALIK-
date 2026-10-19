@@ -29,7 +29,7 @@ function initials(name: string) {
 }
 
 /** A row of mutually exclusive choices (name display, language, theme). */
-function Segmented<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: Array<{ value: T; label: string; icon?: React.ReactNode }>; onChange: (value: T) => void }) {
+export function Segmented<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: Array<{ value: T; label: string; icon?: React.ReactNode }>; onChange: (value: T) => void }) {
   return (
     <div role="radiogroup" aria-label={label} className="grid auto-cols-fr grid-flow-col gap-1 rounded-2xl bg-frost-100 p-1 ring-1 ring-line">
       {options.map((option) => (
@@ -50,7 +50,7 @@ function Segmented<T extends string>({ label, value, options, onChange }: { labe
   );
 }
 
-function SwitchRow({ checked, onChange, label, hint, icon, action }: { checked: boolean; onChange: (value: boolean) => void; label: string; hint: string; icon: React.ReactNode; action?: React.ReactNode }) {
+export function SwitchRow({ checked, onChange, label, hint, icon, action }: { checked: boolean; onChange: (value: boolean) => void; label: string; hint: string; icon: React.ReactNode; action?: React.ReactNode }) {
   const id = useId();
   return (
     <div className={`flex items-center gap-3 rounded-2xl border p-3.5 transition-colors ${checked ? "border-gold-300 bg-gold-50" : "border-line bg-white/80"}`}>
@@ -67,7 +67,7 @@ function SwitchRow({ checked, onChange, label, hint, icon, action }: { checked: 
   );
 }
 
-function Section({ title, icon, children, note }: { title: string; icon: React.ReactNode; children: React.ReactNode; note?: string }) {
+export function Section({ title, icon, children, note }: { title: string; icon: React.ReactNode; children: React.ReactNode; note?: string }) {
   return (
     <section className="space-y-3">
       <div>

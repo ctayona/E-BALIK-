@@ -86,6 +86,12 @@ function MainApp() {
 
     setPage((currentPage) => {
       if (currentPage !== "home") return currentPage;
+      // Home-screen shortcuts open the app at /?open=<page>; honour it once, then tidy the address.
+      const requested = new URLSearchParams(window.location.search).get("open") as Page | null;
+      if (requested && AUTHENTICATED_PAGES.includes(requested)) {
+        window.history.replaceState(null, "", window.location.pathname);
+        return requested;
+      }
       const storedPage = localStorage.getItem(USER_PAGE_STORAGE_KEY) as Page | null;
       return storedPage && AUTHENTICATED_PAGES.includes(storedPage) ? storedPage : "dashboard";
     });
