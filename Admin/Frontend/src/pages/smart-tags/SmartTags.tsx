@@ -293,6 +293,23 @@ function BatchModal({ maxBatch, tagTypes, onClose, onCreated }: { maxBatch: numb
   );
 }
 
+/** A titled block of label and value rows inside the tag window (a quieter alternative to a wall of boxed cards). */
+function TagFacts({ title, rows }: { title: string; rows: [string, ReactNode][] }) {
+  return (
+    <section aria-label={tr(title)}>
+      <h3 className="mb-1.5 text-[13px] font-semibold text-gold-700 dark:text-gold-300">{tr(title)}</h3>
+      <dl className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-[var(--surface)]">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex items-center justify-between gap-4 px-4 py-2.5">
+            <dt className="shrink-0 text-[13.5px] text-ink-muted">{tr(label)}</dt>
+            <dd className="min-w-0 break-words text-right text-[14px] font-semibold text-ink">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
 function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew, onEdit }: { tag: AdminSmartTag; canBan: boolean; onClose: () => void; onDeactivate: () => void; onReactivate: () => void; onRenew: () => void; onEdit: () => void }) {
   const [qr, setQr] = useState("");
   const [qrError, setQrError] = useState(false);
@@ -320,54 +337,89 @@ function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew, o
     try { await navigator.clipboard.writeText(tag.url); setCopied(true); window.setTimeout(() => setCopied(false), 1800); } catch { /* clipboard blocked: the URL is shown for manual copy */ }
   };
 
+  const registered = tag.status !== "blank";
+  const owner = tag.owner;
+  const priceText = tag.price ? PESO(tag.price) : tr("Free");
+  const guide = tag.tag_type === "rfid" ? tag.tag_id : tag.url;
+
   return (
     <AdminModal
       title={SPACED(tag.tag_id)}
-      description={tr("Batch: {0}", { "0": tag.batch_label || "—" })}
-      icon={<QrCode size={20} />}
+      description={<span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1.5"><StatusPill tone={state.tone}>{state.label}</StatusPill><span>{tr("Batch: {0}", { "0": tag.batch_label || "—" })}</span></span>}
+      icon={<QrCode size={21} />}
+      size="xl"
       onClose={onClose}
       footer={<>
-        {canBan && tag.status !== "blank" && (tag.is_disabled
-          ? <button type="button" onClick={onReactivate} className={`${BTN.ghost} sm:mr-auto`}><ShieldCheck size={16} aria-hidden="true" />{tr("Reactivate")}</button>
-          : <button type="button" onClick={onDeactivate} className={`${BTN.danger} sm:mr-auto`}><Ban size={16} aria-hidden="true" />{tr("Deactivate tag")}</button>)}
-        {tag.owner && tag.status !== "blank" && <button type="button" onClick={onEdit} className={BTN.ghost}><Pencil size={16} aria-hidden="true" />{tr("Edit")}</button>}
-        {tag.owner && tag.status !== "blank" && tag.status !== "pending_verification" && <button type="button" onClick={onRenew} className={BTN.ghost}><RotateCw size={16} aria-hidden="true" />{tr("Renew")}</button>}
-        {qr && <a href={qr} download={`smart-tag-${tag.tag_id}.png`} className={BTN.ghost}><Download size={16} aria-hidden="true" />{tr("Download QR")}</a>}
-        <button type="button" onClick={onClose} className={BTN.primary}>{tr("Close")}</button>
+        {canBan && registered && (tag.is_disabled
+          ? <button type="button" onClick={onReactivate} className={`${BTN.ghost} whitespace-nowrap sm:mr-auto`}><ShieldCheck size={16} aria-hidden="true" />{tr("Reactivate")}</button>
+          : <button type="button" onClick={onDeactivate} className="inline-flex min-h-[42px] items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-4 text-[14px] font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 sm:mr-auto dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/20"><Ban size={16} aria-hidden="true" />{tr("Deactivate tag")}</button>)}
+        {owner && registered && <button type="button" onClick={onEdit} className={`${BTN.ghost} whitespace-nowrap`}><Pencil size={16} aria-hidden="true" />{tr("Edit")}</button>}
+        {owner && registered && tag.status !== "pending_verification" && <button type="button" onClick={onRenew} className={`${BTN.ghost} whitespace-nowrap`}><RotateCw size={16} aria-hidden="true" />{tr("Renew")}</button>}
+        <button type="button" onClick={onClose} className={`${BTN.primary} whitespace-nowrap`}>{tr("Close")}</button>
       </>}
     >
-      <div className="grid gap-5 sm:grid-cols-[200px_minmax(0,1fr)]">
-        <div className="mx-auto w-full max-w-[200px]">
-          <div className="flex aspect-square items-center justify-center rounded-2xl border border-line bg-white p-2">
-            {qr ? <img src={qr} alt={tr("QR code for Smart Tag {0}", { "0": tag.tag_id })} className="size-full" /> : qrError ? <span className="px-3 text-center text-[13px] text-rose-700">{tr("The QR code could not be created.")}</span> : <SkeletonBlock className="size-full rounded-xl" />}
+      <div className="grid gap-6 lg:grid-cols-[272px_minmax(0,1fr)]">
+        {/* The sticker: the QR on a navy and gold plate, with what staff do with it (copy the link, print the QR). */}
+        <aside className="mx-auto w-full max-w-[300px] lg:max-w-none">
+          <div className="relative overflow-hidden rounded-[24px] bg-[linear-gradient(160deg,#22366a_0%,#162448_62%,#0e1830_100%)] p-4 shadow-[0_24px_50px_-28px_rgba(14,24,48,0.9)] ring-1 ring-white/10">
+            <span aria-hidden="true" className="pointer-events-none absolute -right-14 -top-16 size-44 rounded-full bg-[radial-gradient(circle,rgba(209,161,83,0.4),transparent_68%)]" />
+            <p className="relative mb-3 flex items-center justify-between text-[12px] font-semibold text-gold-300"><span className="inline-flex items-center gap-1.5"><QrCode size={13} aria-hidden="true" />E-Balik Smart Tag</span><span>{TYPE_LABEL[tag.tag_type] ?? "QR Code"}</span></p>
+            <div className="relative flex aspect-square items-center justify-center rounded-2xl bg-white p-3 shadow-[inset_0_0_0_1px_rgba(14,24,48,0.06)]">
+              {qr ? <img src={qr} alt={tr("QR code for Smart Tag {0}", { "0": tag.tag_id })} className="size-full" /> : qrError ? <span className="px-3 text-center text-[13px] text-rose-700">{tr("The QR code could not be created.")}</span> : <SkeletonBlock className="size-full rounded-xl" />}
+            </div>
+            <p className="relative mt-3 text-center font-mono text-[15px] font-semibold tracking-[0.14em] text-white">{SPACED(tag.tag_id)}</p>
           </div>
-          <button type="button" onClick={() => void copy()} className={`${BTN.ghost} mt-3 w-full`}>{copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied ? tr("Copied") : tr("Copy link")}</button>
-        </div>
-        <div className="min-w-0 space-y-3">
-          {photoState !== "none" && (
-            <figure className="overflow-hidden rounded-2xl border border-line bg-navy-950">
-              {photoState === "ready" ? <img src={photo} alt={tr("Photo of the item with its sticker, taken by the owner at registration")} className="max-h-[260px] w-full object-contain" onError={() => setPhotoState("error")} />
-                : photoState === "loading" ? <SkeletonBlock className="h-40 w-full rounded-none" />
-                : <p className="px-4 py-8 text-center text-[13px] text-[#fecdd3]">{tr("The photo could not be loaded.")}</p>}
-              <figcaption className="bg-[var(--surface)] px-3.5 py-2 text-[12.5px] text-ink-muted">{tr("Photo taken live by the owner at registration")}</figcaption>
-            </figure>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => void copy()} className={`${BTN.ghost} !px-2 whitespace-nowrap`}>{copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied ? tr("Copied") : tr("Copy link")}</button>
+            {qr ? <a href={qr} download={`smart-tag-${tag.tag_id}.png`} className={`${BTN.ghost} !px-2 whitespace-nowrap`}><Download size={16} aria-hidden="true" />{tr("Download QR")}</a> : <span className={`${BTN.ghost} !px-2 opacity-50`}><Download size={16} aria-hidden="true" />{tr("Download QR")}</span>}
+          </div>
+          <p className="mt-3 break-all rounded-xl bg-frost-50 px-3 py-2 font-mono text-[11.5px] leading-5 text-ink-muted">{guide}</p>
+        </aside>
+
+        <div className="min-w-0 space-y-5">
+          {tag.is_disabled && tag.disabled_reason && <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13.5px] leading-6 text-rose-800 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-200"><TriangleAlert size={15} className="mr-1.5 inline" aria-hidden="true" />{tr("Deactivated: {0}", { "0": tag.disabled_reason })}</p>}
+
+          {registered && (
+            <section className="flex flex-col gap-4 sm:flex-row">
+              {photoState !== "none" && (
+                <figure className="w-full shrink-0 overflow-hidden rounded-2xl border border-line bg-navy-950 sm:w-[210px]">
+                  {photoState === "ready" ? <img src={photo} alt={tr("Photo of the item with its sticker, taken by the owner at registration")} className="h-[170px] w-full object-cover" onError={() => setPhotoState("error")} />
+                    : photoState === "loading" ? <SkeletonBlock className="h-[170px] w-full rounded-none" />
+                    : <p className="flex h-[170px] items-center justify-center px-4 text-center text-[13px] text-[#fecdd3]">{tr("The photo could not be loaded.")}</p>}
+                  <figcaption className="bg-[var(--surface)] px-3 py-2 text-[12px] leading-4 text-ink-muted">{tr("Photo taken live by the owner at registration")}</figcaption>
+                </figure>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-[12.5px] font-medium text-ink-muted">{tr("Item")}</p>
+                <p className="mt-0.5 font-[family-name:var(--font-heading)] text-[22px] font-semibold leading-tight text-ink">{tag.item_name || tr("Not registered")}</p>
+                <div className="mt-3 flex items-center gap-3 rounded-2xl border border-line bg-frost-50 p-3">
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-[14px] font-bold text-navy-950" aria-hidden="true">{(owner?.name || "?").split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[14.5px] font-semibold text-ink">{owner?.name || "—"}</p>
+                    <p className="truncate text-[12.5px] text-ink-muted">{[owner?.campus_id, owner?.email].filter(Boolean).join(" · ") || "—"}</p>
+                  </div>
+                </div>
+                {tag.status !== "blank" && !tag.has_photo && <p className="mt-3 rounded-xl border border-dashed border-line-strong px-3.5 py-2.5 text-[12.5px] text-ink-muted">{tr("No registration photo. This tag was registered before photos were required.")}</p>}
+              </div>
+            </section>
           )}
-          {tag.status !== "blank" && !tag.has_photo && <p className="rounded-xl border border-dashed border-line-strong px-3.5 py-2.5 text-[12.5px] text-ink-muted">{tr("No registration photo. This tag was registered before photos were required.")}</p>}
-          <div className="flex flex-wrap items-center gap-2"><StatusPill tone={state.tone}>{state.label}</StatusPill>{tag.found_notice_count > 0 && <StatusPill tone="iris">{tr("{0} finder alerts", { "0": tag.found_notice_count })}</StatusPill>}</div>
-          {tag.is_disabled && tag.disabled_reason && <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13.5px] leading-6 text-rose-800"><TriangleAlert size={15} className="mr-1.5 inline" aria-hidden="true" />{tr("Deactivated: {0}", { "0": tag.disabled_reason })}</p>}
-          <DetailGrid items={[
-            ["Type", TYPE_LABEL[tag.tag_type] ?? "QR Code"],
-            [tag.tag_type === "rfid" ? "Value to write" : "Link", <span key="u" className="break-all font-mono text-[12.5px]">{tag.tag_type === "rfid" ? tag.tag_id : tag.url}</span>],
-            ["Item", tag.item_name || tr("Not registered")],
-            ["Owner", tag.owner ? `${tag.owner.name} (${tag.owner.campus_id || "—"})` : "—"],
-            ["Owner email", tag.owner?.email || "—"],
+
+          <TagFacts title="Lifecycle" rows={[
             ["Created", formatDateTime(tag.created_at)],
             ["Registered", tag.claimed_at ? formatDateTime(tag.claimed_at) : "—"],
             ["Validity", tag.validity_months ? tr("{0} from registration", { "0": monthsLabel(tag.validity_months) }) : tr("Never expires")],
-            ["Valid until", tag.valid_until ? <span key="v" className="inline-flex flex-wrap items-center gap-2">{formatDateTime(tag.valid_until)}{tag.status === "expired" ? <StatusPill tone="rose">{tr("Expired")}</StatusPill> : tag.days_left !== null && <StatusPill tone={daysTone(tag.days_left)}>{daysText(tag.days_left)}</StatusPill>}</span> : "—"],
-            ["Price", tag.price ? <span key="p" className="inline-flex flex-wrap items-center gap-2">{PESO(tag.price)}{tag.paid_at ? <StatusPill tone="mint">{tr("Paid {0}", { "0": formatDateTime(tag.paid_at) })}</StatusPill> : tag.status !== "blank" && <StatusPill tone="gold">{tr("Payment due at approval")}</StatusPill>}</span> : tr("Free")],
+            ["Valid until", tag.valid_until ? <span key="v" className="inline-flex flex-wrap items-center justify-end gap-2">{formatDateTime(tag.valid_until)}{tag.status === "expired" ? <StatusPill tone="rose">{tr("Expired")}</StatusPill> : tag.days_left !== null && <StatusPill tone={daysTone(tag.days_left)}>{daysText(tag.days_left)}</StatusPill>}</span> : "—"],
+          ]} />
+
+          <TagFacts title="Payment" rows={[
+            ["Price", priceText],
+            ["Status", tag.price ? (tag.paid_at ? <StatusPill key="s" tone="mint">{tr("Paid {0}", { "0": formatDateTime(tag.paid_at) })}</StatusPill> : registered ? <StatusPill key="s" tone="gold">{tr("Payment due at approval")}</StatusPill> : <span key="s" className="text-ink-muted">{tr("Paid when registered")}</span>) : tr("Free")],
+          ]} />
+
+          <TagFacts title="Activity" rows={[
             ["Times scanned", String(tag.scan_count)],
             ["Last scanned", tag.last_scanned_at ? formatDateTime(tag.last_scanned_at) : "—"],
+            ["Finder alerts", tag.found_notice_count > 0 ? <StatusPill key="f" tone="iris">{tr("{0} finder alerts", { "0": tag.found_notice_count })}</StatusPill> : "0"],
             ["Last finder alert", tag.last_found_notice_at ? formatDateTime(tag.last_found_notice_at) : "—"],
           ]} />
         </div>
