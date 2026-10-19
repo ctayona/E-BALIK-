@@ -49,8 +49,9 @@ def generate_batch():
     admin = _require_admin()
     db, service = _service()
     payload = request.get_json(silent=True) or {}
-    batch = service.create_batch(payload.get('count'), payload.get('label'), admin['account_id'], payload.get('tag_type'), payload.get('validity_months'))
-    _log_admin_action(db, admin, 'Generate Smart Tag Batch', 'Smart Tags', f"{batch['count']} {batch['tag_type'].upper()} tags ({batch['batch_label']})", batch['batch_id'])
+    batch = service.create_batch(payload.get('count'), payload.get('label'), admin['account_id'], payload.get('tag_type'), payload.get('validity_months'), payload.get('price'))
+    price_note = f" at ₱{batch['price']:,.2f} each" if batch.get('price') else ' (free)'
+    _log_admin_action(db, admin, 'Generate Smart Tag Batch', 'Smart Tags', f"{batch['count']} {batch['tag_type'].upper()} tags ({batch['batch_label']}){price_note}", batch['batch_id'])
     return jsonify({'success': True, **batch, 'message': f"{batch['count']} blank Smart Tags were generated."}), 201
 
 
@@ -60,6 +61,16 @@ def list_batches():
     _require_admin()
     _, service = _service()
     return jsonify(service.batches()), 200
+
+
+@smart_tags_bp.route('/smart-tags/batches/<batch_id>/price', methods=['POST'])
+@_handled('change the batch price')
+def batch_price(batch_id):
+    admin = _require_admin(required_level='super_admin')
+    db, service = _service()
+    result = service.set_batch_price(batch_id, (request.get_json(silent=True) or {}).get('price'), admin['account_id'])
+    _log_admin_action(db, admin, 'Set Smart Tag Price', 'Smart Tags', f"₱{result['price']:,.2f} for {result['updated']} unsold tags", batch_id)
+    return jsonify({'success': True, **result, 'message': f"{result['updated']} unsold tags now cost ₱{result['price']:,.2f}."}), 200
 
 
 @smart_tags_bp.route('/smart-tags/batches/<batch_id>/disable', methods=['POST'])

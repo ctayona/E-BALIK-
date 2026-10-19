@@ -365,6 +365,8 @@ class SmartTagService:
         return self.client.table('smart_tags')
 
     def _guard(self, error: Exception):
+        if ("'price'" in str(error) or 'paid_at' in str(error) or 'smart_tags.price' in str(error)) and ('column' in str(error) or 'PGRST204' in str(error)):
+            raise TagsUnavailable('Tag prices need the latest database update. Run 20261022_income_ledger.sql in Supabase.') from error
         if 'shown_contacts' in str(error) or 'tag_contacts' in str(error):
             raise TagsUnavailable('Contact links need the latest database update. Run 20261019_tag_contact_links.sql in Supabase.') from error
         if _is_missing_schema(error):
@@ -523,7 +525,8 @@ class SmartTagService:
         if tag.get('is_disabled'):
             return {'tag_id': tag_id, 'status': 'disabled'}
         if tag.get('status') == 'blank':
-            return {'tag_id': tag_id, 'status': 'blank'}
+            # The price is public on purpose: someone about to register a sticker should know what they will pay at the office.
+            return {'tag_id': tag_id, 'status': 'blank', 'price': float(tag.get('price') or 0)}
         if tag.get('status') == 'expired':
             return {'tag_id': tag_id, 'status': 'expired'}
         if tag.get('status') == PENDING:
@@ -572,6 +575,7 @@ class SmartTagService:
             'awaiting_approval': row.get('status') == PENDING,
             'photo_pending': bool(row.get('pending_image_url')),
             'is_reregistration': bool(row.get('prior_status')),
+            'price': float(row.get('price') or 0), 'paid': bool(row.get('paid_at')),
         }
 
     def my_tags(self, account_id: str) -> List[Dict[str, Any]]:
@@ -862,9 +866,31 @@ class SmartTagService:
         if not rows:
             raise TagError('Someone else just reviewed this tag. Reload the list.', 409, code='not_pending')
         self._remove_photo(replaced)
+        self._record_tag_sale(rows[0], tag, admin_id, moment)
         self._notify(tag.get('owner_account_id'), 'Smart Tag approved',
                      f'Staff verified your Smart Tag for "{tag.get("item_name") or "your item"}". It is active now and finders can see what you chose to share.', 'smart_tag_approved')
         return rows[0]
+
+    def _record_tag_sale(self, row: Dict[str, Any], before: Dict[str, Any], admin_id: str, moment: datetime) -> None:
+        """First approval of a priced tag: the owner paid at the office, so the sale goes into the income ledger (once)."""
+        from decimal import Decimal, InvalidOperation
+        try:
+            price = Decimal(str(before.get('price') or 0))
+        except (InvalidOperation, ValueError):
+            return
+        if price <= 0 or before.get('prior_status') or before.get('paid_at'):
+            return  # free tag, a re-photo of an approved tag, or already paid
+        from app.utils.income import IncomeService
+        entry = IncomeService(self.db).record_sale(
+            'smart_tag', row['tag_id'], price, f"Smart Tag {row['tag_id']} ({row.get('item_name') or 'item'})",
+            payer_account_id=row.get('owner_account_id'), recorded_by=admin_id,
+        )
+        if entry:
+            try:
+                self._table().update({'paid_at': _iso(moment)}).eq('tag_id', row['tag_id']).is_('paid_at', 'null').execute()
+                row['paid_at'] = _iso(moment)
+            except Exception as error:
+                logger.warning('Smart Tag %s paid_at not saved: %s', row.get('tag_id'), error)
 
     def reject(self, raw_tag_id: Any, reason: Any, admin_id: str) -> Dict[str, Any]:
         """A new registration is cleared so the sticker can be registered again; a rejected new photo just returns to the old one."""
@@ -1047,7 +1073,7 @@ class SmartTagService:
             logger.warning('Smart tag activity log failed: %s', error)
 
     # ------------------------------------------------------------------ admin
-    def create_batch(self, count: Any, label: Any, admin_id: str, tag_type: Any = 'qr', validity_months: Any = None) -> Dict[str, Any]:
+    def create_batch(self, count: Any, label: Any, admin_id: str, tag_type: Any = 'qr', validity_months: Any = None, price: Any = None) -> Dict[str, Any]:
         try:
             number = int(count)
         except (TypeError, ValueError):
@@ -1060,6 +1086,11 @@ class SmartTagService:
         if kind not in enabled_tag_types():
             raise TagError(f'{TAG_TYPES[kind]} tags are not available yet.')
         months = parse_validity(validity_months)
+        from app.utils.income import IncomeError, parse_tag_price
+        try:
+            unit_price = parse_tag_price(price)
+        except IncomeError as error:
+            raise TagError(error.message)
         batch_id = str(uuid.uuid4())
         batch = clean_text(label, 80) or f"Batch {_now().strftime('%Y-%m-%d %H:%M')}"
         ids: List[str] = []
@@ -1072,10 +1103,14 @@ class SmartTagService:
                     seen.add(candidate)
                     ids.append(candidate)
             rows = [{'tag_id': tag_id, 'status': 'blank', 'batch_label': batch, 'batch_id': batch_id, 'tag_type': kind, 'validity_months': months, 'created_by': admin_id} for tag_id in ids]
+            if unit_price > 0:  # a free batch needs no price column, so it still works before migration 20261022
+                for row in rows:
+                    row['price'] = str(unit_price)
             try:
                 for start in range(0, len(rows), 200):
                     self._table().insert(rows[start:start + 200]).execute()
                 return {'count': number, 'batch_label': batch, 'batch_id': batch_id, 'tag_type': kind, 'validity_months': months, 'tag_ids': ids,
+                        'price': float(unit_price), 'stock_value': float(unit_price * number),
                         'values': [encode_value(kind, tag_id) for tag_id in ids], 'tag_url_base': public_base_url(), 'url_check': url_check()}
             except Exception as error:
                 if 'duplicate' in str(error).lower() or '23505' in str(error):
@@ -1130,6 +1165,7 @@ class SmartTagService:
                 'submitted_at': row.get('review_requested_at') if row.get('status') == PENDING else None, 'verified_at': row.get('verified_at'),
                 'item_description': row.get('item_description') or '', 'show_name': bool(row.get('show_name')), 'show_email': bool(row.get('show_email')),
                 'show_phone': bool(row.get('show_phone')), 'contact_phone': row.get('contact_phone') or '',
+                'price': float(row.get('price') or 0), 'paid_at': row.get('paid_at'),
                 'owner': {'name': self._name(owner), 'email': owner.get('email') or '', 'campus_id': owner.get('campus_id') or ''} if owner else None,
                 'url': tag_url(row['tag_id']),
             }
@@ -1179,7 +1215,15 @@ class SmartTagService:
         """One row per generated batch, the ones whose registered tags expire soonest first."""
         self._expire_due()
         try:
-            rows = self._all_rows('tag_id,status,is_disabled,batch_id,batch_label,tag_type,validity_months,valid_until,created_at,scan_count,last_scanned_at')
+            base = 'tag_id,status,is_disabled,batch_id,batch_label,tag_type,validity_months,valid_until,created_at,scan_count,last_scanned_at'
+            try:
+                rows = self._all_rows(base + ',price,paid_at')
+                priced = True
+            except Exception as error:
+                if 'price' not in str(error) and 'paid_at' not in str(error):
+                    raise
+                rows = self._all_rows(base)  # before migration 20261022: no prices yet
+                priced = False
         except Exception as error:
             self._guard(error)
         now = _now()
@@ -1190,8 +1234,17 @@ class SmartTagService:
                 'batch_id': row.get('batch_id'), 'label': row.get('batch_label') or 'Unnamed batch', 'tag_type': row.get('tag_type') or 'qr',
                 'validity_months': row.get('validity_months'), 'created_at': row.get('created_at'),
                 'total': 0, 'blank': 0, 'active': 0, 'lost': 0, 'expired': 0, 'pending': 0, 'disabled': 0, 'expiring_soon': 0, 'scans': 0, 'next_expiry': None,
+                'price': None, 'sold': 0, 'revenue': 0.0,
             })
             group['total'] += 1
+            if priced:
+                unit = float(row.get('price') or 0)
+                # The price shown is what an unsold tag costs now; a batch with none left shows what its tags were sold for.
+                if row.get('status') == 'blank' or group['price'] is None:
+                    group['price'] = unit
+                if row.get('paid_at'):
+                    group['sold'] += 1
+                    group['revenue'] += unit
             group['scans'] += int(row.get('scan_count') or 0)
             if row.get('is_disabled'):
                 group['disabled'] += 1
@@ -1213,7 +1266,24 @@ class SmartTagService:
         items.sort(key=lambda b: (b['next_expiry'] is None, b['next_expiry'] or '', str(b['created_at'] or '')), reverse=False)
         with_expiry = [b for b in items if b['next_expiry']]
         without = sorted([b for b in items if not b['next_expiry']], key=lambda b: str(b['created_at'] or ''), reverse=True)
-        return {'batches': with_expiry + without, 'warning_days': EXPIRY_WARNING_DAYS}
+        return {'batches': with_expiry + without, 'warning_days': EXPIRY_WARNING_DAYS, 'prices_enabled': priced}
+
+    def set_batch_price(self, raw_batch_id: Any, price: Any, admin_id: str) -> Dict[str, Any]:
+        """Change the price of the tags in a batch that nobody has registered yet. Registered and paid tags keep what was paid."""
+        try:
+            batch_id = str(uuid.UUID(str(raw_batch_id)))
+        except (TypeError, ValueError):
+            raise TagError('This batch was not found.', 404)
+        from app.utils.income import IncomeError, parse_tag_price
+        try:
+            unit_price = parse_tag_price(price)
+        except IncomeError as error:
+            raise TagError(error.message)
+        try:
+            rows = self._table().update({'price': str(unit_price), 'updated_at': _iso(_now())}).eq('batch_id', batch_id).eq('status', 'blank').execute().data or []
+        except Exception as error:
+            self._guard(error)
+        return {'batch_id': batch_id, 'price': float(unit_price), 'updated': len(rows)}
 
     def set_batch_disabled(self, raw_batch_id: Any, disabled: bool, reason: Any, admin_id: str) -> Dict[str, Any]:
         """Switch a whole batch off (or back on), for example when a roll of stickers is stolen."""

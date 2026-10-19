@@ -25,6 +25,8 @@ export type PublicTagStatus = "blank" | "pending_verification" | "active" | "los
 export interface PublicTag {
   tag_id: string;
   status: PublicTagStatus;
+  /** Blank tags only: what registering it costs, paid at the office when staff approve it (0 = free). */
+  price?: number;
   item_name?: string;
   item_description?: string;
   /** Short-lived signed link to the photo taken at registration. Absent for tags registered before photos existed. */
@@ -55,6 +57,9 @@ export interface OwnerTag {
   item_name_locked?: boolean;
   /** Registered, or given a new photo, and waiting for staff to verify it. */
   awaiting_approval?: boolean;
+  /** Price of the tag in pesos (0 = free) and whether it has been paid at the office. */
+  price?: number;
+  paid?: boolean;
   /** A new photo is waiting; the previously approved one is still the official photo. */
   photo_pending?: boolean;
   is_reregistration?: boolean;

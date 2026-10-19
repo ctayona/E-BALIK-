@@ -283,7 +283,7 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
 
   return (<>
     {createPortal(
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-navy-950/70 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="ui-modal-backdrop fixed inset-0 z-[60] flex items-end justify-center bg-navy-950/70 backdrop-blur-md sm:items-center sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="ui-modal-panel relative flex h-[94dvh] w-full max-w-[1120px] flex-col overflow-hidden rounded-t-[28px] border border-white/70 bg-white shadow-overlay sm:h-[min(90dvh,840px)] sm:rounded-[28px] lg:flex-row">
         <div className="relative shrink-0 bg-navy-950 lg:w-[52%]">
           <Gallery images={a.gallery} alt={a.title} aspect="aspect-[4/3] max-h-[38dvh] lg:aspect-auto lg:max-h-none lg:h-full" className="lg:h-full" />

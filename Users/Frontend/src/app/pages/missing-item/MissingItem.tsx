@@ -17,6 +17,8 @@ import ItemViewer from "@/app/shared/media/ItemViewer";
 import ViewToggle from "@/app/shared/view/ViewToggle";
 import { useViewMode } from "@/app/shared/view/useViewMode";
 import Modal, { CountdownConsent } from "@/app/shared/modal/Modal";
+import DateField from "@/app/shared/forms/DateField";
+import { campusToday, reportDateProblem } from "@/app/utils/reportDates";
 import VerificationGate from "@/app/shared/verification/VerificationGate";
 import { isVerified, useCurrentUser } from "@/app/utils/system";
 
@@ -65,7 +67,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
   const [description, setDescription] = useState("");
   const [distinctiveMarks, setDistinctiveMarks] = useState("");
   const [lastLocation, setLastLocation] = useState(CAMPUS_LOCATIONS[0]);
-  const [lastSeenDate, setLastSeenDate] = useState(new Date().toISOString().slice(0, 10));
+  const [lastSeenDate, setLastSeenDate] = useState(campusToday);
   const [authorized, setAuthorized] = useState(false);
   const [image, setImage] = useState<File | undefined>();
   const [imagePreview, setImagePreview] = useState("");
@@ -163,6 +165,13 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
     event.preventDefault();
     setError("");
     if (!ensure()) return;
+    const dateIssue = reportDateProblem(lastSeenDate, "last seen date");
+    if (dateIssue) {
+      setAttempted(true);
+      setError(dateIssue);
+      focusFirstInvalid();
+      return;
+    }
     const textIssue = firstTextProblem([
       { field: "itemName", value: itemName, kind: "title", label: "item name" },
       { field: "description", value: description, kind: "description" },
@@ -367,7 +376,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
                   <Field label="Item name" value={itemName} onChange={setItemName} placeholder="Black leather wallet" required rule={{ kind: "title", label: "item name" }} forceShow={attempted} maxLength={120} />
                   <SelectField label="Category" value={category} onChange={setCategory} options={CATEGORIES} />
                   <SelectField label="Last seen location" value={lastLocation} onChange={setLastLocation} options={CAMPUS_LOCATIONS} icon={<MapPin size={15} />} />
-                  <Field label="Last seen date" value={lastSeenDate} onChange={setLastSeenDate} type="date" icon={<CalendarRange size={15} />} required />
+                  <DateField label="Last seen date" ruleLabel="last seen date" value={lastSeenDate} onChange={setLastSeenDate} icon={<CalendarRange size={15} />} required forceShow={attempted} />
                   <div className="md:col-span-2"><TextAreaField label="Description" value={description} onChange={setDescription} placeholder="Include brand, color, size, condition, and visible features." required rule={{ kind: "description" }} forceShow={attempted} /></div>
                   <div className="md:col-span-2"><TextAreaField label="Private distinctive marks" value={distinctiveMarks} onChange={setDistinctiveMarks} placeholder="Optional: unique marks or contents to verify a future claim." icon={<Tag size={15} />} rule={{ kind: "marks", label: "distinctive marks", required: false }} forceShow={attempted} /></div>
                   <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 text-[14px] leading-6 transition-colors md:col-span-2 ${authorized ? "border-tide-200 bg-tide-50 text-ink" : "border-line bg-frost-50 text-ink-soft"}`}>
@@ -471,7 +480,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
                 <label className="sr-only" htmlFor="missing-search-location">Location</label>
                 <input id="missing-search-location" value={searchLocation} onChange={(event) => setSearchLocation(event.target.value)} placeholder="Location contains…" className={`${CX.input} w-full`} />
                 <label className="sr-only" htmlFor="missing-search-date">Date found</label>
-                <input id="missing-search-date" type="date" value={searchDate} onChange={(event) => setSearchDate(event.target.value)} className={`${CX.input} w-full`} />
+                <input id="missing-search-date" type="date" max={campusToday()} value={searchDate} onChange={(event) => setSearchDate(event.target.value)} className={`${CX.input} w-full`} />
                 <button type="submit" disabled={resultsLoading} className={`${CX.btnNavy} w-full`}><Search size={16} aria-hidden="true" />{resultsLoading ? "Searching…" : "Search found items"}</button>
               </form>
             </section>

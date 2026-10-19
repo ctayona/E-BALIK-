@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Ban, CalendarClock, Check, ClipboardCheck, Copy, Database, Download, Eye, Hourglass, Layers, Nfc, Package, Pencil, QrCode, Radio, RefreshCw, RotateCw, ShieldCheck, ShieldOff, Tags, TriangleAlert } from "lucide-react";
+import { Ban, CalendarClock, Check, ClipboardCheck, Copy, Database, Download, Eye, Hourglass, Layers, Nfc, Package, Pencil, PhilippinePeso, QrCode, Radio, RefreshCw, RotateCw, ShieldCheck, ShieldOff, Tags, TriangleAlert } from "lucide-react";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import AdminModal from "../../components/ui/AdminModal";
 import { BTN, INPUT, PageHeader, RolePill } from "../../components/ui/primitives";
 import { DataTable, DetailGrid, ExportButton, IconAction, RowActions, SearchField, SegmentedFilter, StatusPill, TableFooter, Toolbar, usePagination, type Tone } from "../../components/ui/management";
 import {
-  SmartTagSetupError, deactivateSmartTag, deactivateTagBatch, fetchSmartTagPhoto, fetchSmartTagQr, fetchSmartTags, fetchTagBatches, generateSmartTagBatch, reactivateSmartTag, reactivateTagBatch, renewSmartTag,
+  SmartTagSetupError, deactivateSmartTag, deactivateTagBatch, fetchSmartTagPhoto, fetchSmartTagQr, fetchSmartTags, fetchTagBatches, generateSmartTagBatch, reactivateSmartTag, reactivateTagBatch, renewSmartTag, setTagBatchPrice,
   type AdminSmartTag, type GeneratedBatch, type SmartTagList, type TagBatch, type TagFilter, type TagType, type TagTypeOption,
 } from "../../utils/smartTagsApi";
 import AdminTagEditModal from "./AdminTagEditModal";
@@ -15,6 +15,8 @@ import { downloadCsv } from "../../utils/csv";
 import { formatDateTime } from "../../utils/countdown";
 import { canDelete } from "../../utils/permissions";
 import { tr } from "../../utils/preferences";
+
+const PESO = (value: number) => `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const SPACED = (code: string) => code.replace(/(.{4})/g, "$1 ").trim();
 
@@ -55,7 +57,7 @@ function ValidityCell({ tag }: { tag: AdminSmartTag }) {
 }
 
 /** Batches with the soonest-expiring registered tags first, so renewals and reprints are never a surprise. */
-function BatchPanel({ batches, superAdmin, onDeactivate, onReactivate }: { batches: TagBatch[]; superAdmin: boolean; onDeactivate: (batch: TagBatch) => void; onReactivate: (batch: TagBatch) => void }) {
+function BatchPanel({ batches, superAdmin, onDeactivate, onReactivate, onPrice }: { batches: TagBatch[]; superAdmin: boolean; onDeactivate: (batch: TagBatch) => void; onReactivate: (batch: TagBatch) => void; onPrice: (batch: TagBatch) => void }) {
   const [all, setAll] = useState(false);
   if (!batches.length) return null;
   const shown = all ? batches : batches.slice(0, 4);
@@ -77,6 +79,12 @@ function BatchPanel({ batches, superAdmin, onDeactivate, onReactivate }: { batch
               <div className="min-w-[180px] flex-1">
                 <div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-ink">{batch.label}</span><StatusPill tone="slate">{TYPE_LABEL[batch.tag_type]}</StatusPill>{batch.all_disabled && <StatusPill tone="rose">{tr("Deactivated")}</StatusPill>}</div>
                 <p className="mt-0.5 text-[12.5px] text-ink-muted">{tr("{0} tags, {1} registered, {2} blank", { "0": batch.total, "1": registered, "2": batch.blank })} · {monthsLabel(batch.validity_months)}</p>
+                {batch.price !== null && batch.price !== undefined && (
+                  <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
+                    <span className="inline-flex items-center gap-1 font-semibold text-gold-800 dark:text-gold-300"><PhilippinePeso size={13} aria-hidden="true" />{batch.price > 0 ? tr("{0} each", { "0": PESO(batch.price) }) : tr("Free")}</span>
+                    {batch.sold > 0 && <span className="text-tide-700 dark:text-tide-300">{tr("{0} paid · {1} earned", { "0": batch.sold, "1": PESO(batch.revenue) })}</span>}
+                  </p>
+                )}
               </div>
               <div className="min-w-[150px]">
                 {expiry !== null ? <StatusPill tone={daysTone(expiry)}>{expiry < 0 ? tr("Expired") : tr("Next expiry: {0}", { "0": daysText(expiry) })}</StatusPill>
@@ -85,7 +93,8 @@ function BatchPanel({ batches, superAdmin, onDeactivate, onReactivate }: { batch
                 {batch.expired > 0 && expiry !== null && <p className="mt-1 text-[12.5px] text-rose-700 dark:text-rose-300">{tr("{0} already expired", { "0": batch.expired })}</p>}
               </div>
               {superAdmin && batch.batch_id && (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                  {batch.price !== null && batch.price !== undefined && batch.blank > 0 && <button type="button" onClick={() => onPrice(batch)} className={`${BTN.ghost} !min-h-[38px]`}><PhilippinePeso size={15} aria-hidden="true" />{tr("Set price")}</button>}
                   {batch.disabled < batch.total && <button type="button" onClick={() => onDeactivate(batch)} className={`${BTN.ghost} !min-h-[38px] text-rose-700 dark:text-rose-300`}><Ban size={15} aria-hidden="true" />{tr("Deactivate batch")}</button>}
                   {batch.disabled > 0 && <button type="button" onClick={() => onReactivate(batch)} className={`${BTN.ghost} !min-h-[38px]`}><ShieldCheck size={15} aria-hidden="true" />{tr("Reactivate batch")}</button>}
                 </div>
@@ -95,6 +104,55 @@ function BatchPanel({ batches, superAdmin, onDeactivate, onReactivate }: { batch
         })}
       </ul>
     </section>
+  );
+}
+
+/** Super admins: change what an unsold tag in this batch costs. Tags already registered keep the price that was paid. */
+function BatchPriceModal({ batch, onClose, onSaved }: { batch: TagBatch; onClose: () => void; onSaved: () => void }) {
+  const [price, setPrice] = useState(String(batch.price ?? 0));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const value = Number(price || "0");
+  const valid = /^\d{0,6}(\.\d{0,2})?$/.test(price) && value >= 0 && value <= 100000;
+  const save = async () => {
+    if (!valid || busy || !batch.batch_id) return;
+    setBusy(true);
+    setError("");
+    try {
+      await setTagBatchPrice(batch.batch_id, value);
+      onSaved();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : tr("Unable to change the price."));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <AdminModal
+      title={tr("Price for {0}", { "0": batch.label })}
+      description={tr("Applies to the {0} unsold tags in this batch. Tags already registered keep the price that was paid.", { "0": batch.blank })}
+      icon={<PhilippinePeso size={19} />}
+      tone="gold"
+      size="sm"
+      busy={busy}
+      onClose={onClose}
+      footer={(
+        <>
+          <button type="button" onClick={onClose} disabled={busy} className={BTN.ghost}>{tr("Cancel")}</button>
+          <button type="button" onClick={() => void save()} disabled={!valid || busy} className={BTN.primary}>{busy ? tr("Saving…") : tr("Save price")}</button>
+        </>
+      )}
+    >
+      <label className="block">
+        <span className="mb-1.5 block text-[14px] font-semibold text-ink-soft">{tr("Price per tag")}</span>
+        <span className="relative block">
+          <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[15px] font-semibold text-ink-muted" aria-hidden="true">₱</span>
+          <input value={price} onChange={(event) => setPrice(event.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" className={`${INPUT} pl-8`} data-autofocus />
+        </span>
+        <span className={`mt-1 block text-[12.5px] ${valid ? "text-ink-muted" : "text-rose-600"}`}>{valid ? tr("Stock value after the change: {0}.", { "0": PESO(value * batch.blank) }) : tr("Enter a price from 0 to 100,000 pesos (up to 2 decimals).")}</span>
+      </label>
+      {error && <p role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[13.5px] text-rose-800">{error}</p>}
+    </AdminModal>
   );
 }
 
@@ -122,6 +180,7 @@ function BatchModal({ maxBatch, tagTypes, onClose, onCreated }: { maxBatch: numb
   const [tagType, setTagType] = useState<TagType>("qr");
   const [preset, setPreset] = useState("12");
   const [custom, setCustom] = useState("18");
+  const [price, setPrice] = useState("0");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<GeneratedBatch | null>(null);
@@ -129,14 +188,16 @@ function BatchModal({ maxBatch, tagTypes, onClose, onCreated }: { maxBatch: numb
   const countValid = Number.isInteger(amount) && amount >= 1 && amount <= maxBatch;
   const months = preset === "custom" ? Number(custom) : Number(preset);
   const monthsValid = preset === "0" || (Number.isInteger(months) && months >= 1 && months <= 120);
-  const valid = countValid && monthsValid;
+  const unitPrice = Number(price || "0");
+  const priceValid = /^\d{0,6}(\.\d{0,2})?$/.test(price) && unitPrice >= 0 && unitPrice <= 100000;
+  const valid = countValid && monthsValid && priceValid;
 
   const submit = async () => {
     if (!valid || busy) return;
     setBusy(true);
     setError("");
     try {
-      setResult(await generateSmartTagBatch(amount, label.trim(), tagType, preset === "0" ? null : months));
+      setResult(await generateSmartTagBatch(amount, label.trim(), tagType, preset === "0" ? null : months, unitPrice));
       onCreated();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : tr("Unable to generate the batch."));
@@ -171,7 +232,7 @@ function BatchModal({ maxBatch, tagTypes, onClose, onCreated }: { maxBatch: numb
     >
       {result ? (
         <div className="space-y-3">
-          <p className="rounded-2xl border border-line bg-frost-50 px-4 py-3 text-[14px] leading-6 text-ink-soft">{tr("Batch: {0}", { "0": result.batch_label })} · {TYPE_LABEL[result.tag_type]} · {monthsLabel(result.validity_months)}</p>
+          <p className="rounded-2xl border border-line bg-frost-50 px-4 py-3 text-[14px] leading-6 text-ink-soft">{tr("Batch: {0}", { "0": result.batch_label })} · {TYPE_LABEL[result.tag_type]} · {monthsLabel(result.validity_months)} · {result.price ? tr("{0} each", { "0": PESO(result.price) }) : tr("Free")}</p>
           <ul className="max-h-48 overflow-y-auto rounded-2xl border border-line px-4 py-2 font-mono text-[13px] leading-7 text-ink-soft">
             {result.tag_ids.slice(0, 8).map((id) => <li key={id}>{SPACED(id)}</li>)}
             {result.tag_ids.length > 8 && <li className="text-ink-muted">{tr("…and {0} more in the download", { "0": result.tag_ids.length - 8 })}</li>}
@@ -209,6 +270,18 @@ function BatchModal({ maxBatch, tagTypes, onClose, onCreated }: { maxBatch: numb
             {preset === "custom" && <input value={custom} onChange={(event) => setCustom(event.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" aria-label={tr("Months")} className={`${INPUT} mt-2`} />}
             <span className={`mt-1 block text-[12.5px] ${monthsValid ? "text-ink-muted" : "text-rose-600"}`}>{monthsValid ? (preset === "0" ? tr("These tags never expire.") : tr("Counted from the day the owner registers the tag.")) : tr("Enter between 1 and 120 months.")}</span>
           </div>
+          <label className="block">
+            <span className="mb-1.5 block text-[14px] font-semibold text-ink-soft">{tr("Price per tag")}</span>
+            <span className="relative block">
+              <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[15px] font-semibold text-ink-muted" aria-hidden="true">₱</span>
+              <input value={price} onChange={(event) => setPrice(event.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" aria-describedby="batch-price-hint" className={`${INPUT} pl-8`} />
+            </span>
+            <span id="batch-price-hint" className={`mt-1 block text-[12.5px] ${priceValid ? "text-ink-muted" : "text-rose-600"}`}>
+              {!priceValid ? tr("Enter a price from 0 to 100,000 pesos (up to 2 decimals).")
+                : unitPrice > 0 ? tr("Owners pay {0} at the office when staff approve the tag. Stock value: {1}.", { "0": PESO(unitPrice), "1": PESO(unitPrice * (countValid ? amount : 0)) })
+                : tr("0 makes these tags free.")}
+            </span>
+          </label>
           <label className="block">
             <span className="mb-1.5 block text-[14px] font-semibold text-ink-soft">{tr("Batch name (optional)")}</span>
             <input value={label} onChange={(event) => setLabel(event.target.value)} maxLength={80} placeholder={tr("Freshman orientation pack")} className={INPUT} />
@@ -292,6 +365,7 @@ function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew, o
             ["Registered", tag.claimed_at ? formatDateTime(tag.claimed_at) : "—"],
             ["Validity", tag.validity_months ? tr("{0} from registration", { "0": monthsLabel(tag.validity_months) }) : tr("Never expires")],
             ["Valid until", tag.valid_until ? <span key="v" className="inline-flex flex-wrap items-center gap-2">{formatDateTime(tag.valid_until)}{tag.status === "expired" ? <StatusPill tone="rose">{tr("Expired")}</StatusPill> : tag.days_left !== null && <StatusPill tone={daysTone(tag.days_left)}>{daysText(tag.days_left)}</StatusPill>}</span> : "—"],
+            ["Price", tag.price ? <span key="p" className="inline-flex flex-wrap items-center gap-2">{PESO(tag.price)}{tag.paid_at ? <StatusPill tone="mint">{tr("Paid {0}", { "0": formatDateTime(tag.paid_at) })}</StatusPill> : tag.status !== "blank" && <StatusPill tone="gold">{tr("Payment due at approval")}</StatusPill>}</span> : tr("Free")],
             ["Times scanned", String(tag.scan_count)],
             ["Last scanned", tag.last_scanned_at ? formatDateTime(tag.last_scanned_at) : "—"],
             ["Last finder alert", tag.last_found_notice_at ? formatDateTime(tag.last_found_notice_at) : "—"],
@@ -322,6 +396,7 @@ export default function SmartTags() {
   const [batchBan, setBatchBan] = useState<TagBatch | null>(null);
   const [batchReason, setBatchReason] = useState("");
   const [batchRevive, setBatchRevive] = useState<TagBatch | null>(null);
+  const [batchPricing, setBatchPricing] = useState<TagBatch | null>(null);
   const [busy, setBusy] = useState(false);
   const superAdmin = canDelete();
 
@@ -437,7 +512,8 @@ export default function SmartTags() {
         </section>
       )}
 
-      <BatchPanel batches={batches} superAdmin={superAdmin} onDeactivate={(b) => { setBatchReason(""); setBatchBan(b); }} onReactivate={setBatchRevive} />
+      <BatchPanel batches={batches} superAdmin={superAdmin} onDeactivate={(b) => { setBatchReason(""); setBatchBan(b); }} onReactivate={setBatchRevive} onPrice={setBatchPricing} />
+      {batchPricing && <BatchPriceModal batch={batchPricing} onClose={() => setBatchPricing(null)} onSaved={() => { setBatchPricing(null); void loadBatches(); }} />}
 
       {loadError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] text-rose-800">{loadError}</p>}
 

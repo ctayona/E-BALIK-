@@ -56,7 +56,8 @@ function FoundItemFormModal({ item, busy, onClose, onSubmit }: { item?: FoundIte
   });
   const [error, setError] = useState("");
   const set = (key: keyof FoundForm, value: string) => setForm((current) => ({ ...current, [key]: value }));
-  const today = new Date().toISOString().slice(0, 10);
+  // The campus day (Manila, UTC+8): the server refuses a later date (Server/app/utils/report_dates.py).
+  const today = new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10);
 
   const choosePhoto = (file?: File) => {
     if (!file) return;

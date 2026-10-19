@@ -131,9 +131,10 @@ Server/manual_migrations/20261018_auction_handover_pin.sql
 Server/manual_migrations/20261019_tag_contact_links.sql
 Server/manual_migrations/20261020_otp_attempts.sql
 Server/manual_migrations/20261021_report_comments_and_reactions.sql
+Server/manual_migrations/20261022_income_ledger.sql
 ```
 
-That is 26 files. The first creates the base tables and the photo storage areas; the others add the later features (auctions, Smart Tags, comments and so on). If a file stops with an error, read the message and see the troubleshooting table at the end.
+That is 27 files. The first creates the base tables and the photo storage areas; the others add the later features (auctions, Smart Tags, comments and so on). If a file stops with an error, read the message and see the troubleshooting table at the end.
 
 ### 3.4 Check that it worked
 

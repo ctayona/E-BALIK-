@@ -51,7 +51,7 @@ export default function ConfirmActionDialog({
   // Portaled above AdminModal (z-70) so a confirmation always sits on top of the form that opened it.
   return createPortal(
     <div
-      className="admin-modal-backdrop fixed inset-0 z-[90] flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:p-4"
+      className="admin-modal-backdrop fixed inset-0 z-[90] flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:p-6"
       onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onCancel(); }}
     >
       <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby="confirm-action-title" aria-describedby="confirm-action-desc" className="admin-modal-panel relative w-full overflow-hidden rounded-t-[28px] border border-white/70 bg-white shadow-overlay sm:max-w-md sm:rounded-[26px]">
@@ -59,7 +59,7 @@ export default function ConfirmActionDialog({
         <div className="relative p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:p-7">
           <div className="mb-4 flex items-start gap-4">
             <span
-              className={`flex size-12 shrink-0 items-center justify-center rounded-2xl text-white ${
+              className={`ui-modal-icon flex size-12 shrink-0 items-center justify-center rounded-2xl text-white ${
                 danger ? "bg-[linear-gradient(145deg,#fda4af,#e11d48)] shadow-[0_10px_24px_-12px_rgba(225,29,72,0.8)]" : "bg-[linear-gradient(145deg,#2b4282,#1f3160)] shadow-[0_10px_24px_-12px_rgba(17,27,66,0.9)]"
               }`}
               aria-hidden="true"

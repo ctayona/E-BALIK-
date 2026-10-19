@@ -110,7 +110,7 @@ export default function InfoModalHost() {
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[1000] flex items-end justify-center bg-[#0b1530]/55 p-4 backdrop-blur-[6px] sm:items-center"
+      className="admin-modal-backdrop fixed inset-0 z-[1000] flex items-end justify-center bg-navy-950/60 p-4 backdrop-blur-md sm:items-center"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) close();
       }}
@@ -131,11 +131,12 @@ export default function InfoModalHost() {
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false);
         }}
-        className="info-modal-enter relative w-full max-w-[440px] overflow-hidden admin-modal-panel rounded-[22px] border border-line bg-white shadow-overlay"
+        className="info-modal-enter admin-modal-panel relative w-full max-w-[440px] overflow-hidden rounded-[26px] border border-white/70 bg-white"
       >
-        <div className="flex items-start gap-4 px-6 pb-5 pt-6">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-32" style={{ background: `radial-gradient(80% 130% at 0% 0%, ${variant.soft}, transparent 70%)` }} aria-hidden="true" />
+        <div className="relative flex items-start gap-4 px-6 pb-5 pt-7">
           <div
-            className="flex size-12 shrink-0 items-center justify-center rounded-[14px] border"
+            className="ui-modal-icon flex size-12 shrink-0 items-center justify-center rounded-2xl border"
             style={{ background: variant.soft, color: variant.accent, borderColor: variant.ring }}
           >
             <Icon size={24} strokeWidth={2.2} aria-hidden="true" />
@@ -149,7 +150,7 @@ export default function InfoModalHost() {
                 <span className="rounded-full bg-frost-100 px-2 py-0.5 text-[11px] font-semibold text-ink-muted">1 of {queue.length}</span>
               )}
             </div>
-            <h2 id={titleId} className="mt-1 text-[19px] font-bold leading-snug text-ink" style={{ fontFamily: "var(--font-heading, inherit)" }}>
+            <h2 id={titleId} className="mt-1 text-[20px] font-semibold leading-snug tracking-[-0.015em] text-ink" style={{ fontFamily: "var(--font-heading, inherit)" }}>
               {tr(entry.title)}
             </h2>
             <p id={messageId} className="mt-2 whitespace-pre-line break-words text-[14px] leading-6 text-ink-soft">
@@ -186,18 +187,18 @@ export default function InfoModalHost() {
             type="button"
             onClick={close}
             aria-label={tr("Close message")}
-            className="-mr-2 -mt-2 rounded-lg p-2 text-ink-muted transition hover:bg-frost-100 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d1a153]"
+            className="ui-modal-close -mr-1 -mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full border border-line bg-white/80 text-ink-muted transition hover:border-line-strong hover:bg-frost-100 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d1a153]"
           >
             <X size={18} />
           </button>
         </div>
-        <div className="flex items-center justify-between gap-3 border-t border-line bg-frost-50 px-6 py-4">
+        <div className="ui-modal-footer relative flex items-center justify-between gap-3 border-t border-line bg-frost-50/80 px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-4">
           <span className="text-[12px] text-ink-muted">{tr(autoCloseMs === null ? tr("Press Esc to close") : paused ? tr("Paused") : tr("Closes automatically"))}</span>
           <button
             ref={primaryRef}
             type="button"
             onClick={close}
-            className="min-w-[112px] rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)] transition hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d1a153]"
+            className="min-h-[46px] min-w-[120px] rounded-2xl px-5 py-2.5 text-[14px] font-semibold text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)] transition hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d1a153]"
             style={{ background: entry.variant === "info" ? "#1f3160" : variant.accent }}
           >
             {tr(entry.actionLabel || (entry.variant === "error" ? tr("Got it") : tr("Continue")))}

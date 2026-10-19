@@ -129,7 +129,9 @@ def claim(tag_id):
         raise TagError('Too many registration attempts. Try again in a while.', 429)
     payload, photo = _payload_and_photo()
     tag = _service().claim(tag_id, account_id, payload, photo)
-    return _private({'success': True, 'tag': tag, 'message': 'Your Smart Tag was submitted. Bring the item to the Lost and Found Office so staff can approve it.'}, 201)
+    price = float(tag.get('price') or 0)
+    pay = f' and ₱{price:,.2f} for the tag' if price > 0 and not tag.get('paid') else ''
+    return _private({'success': True, 'tag': tag, 'message': f'Your Smart Tag was submitted. Bring the item{pay} to the Lost and Found Office so staff can approve it.'}, 201)
 
 
 @smart_tags_bp.route('/<tag_id>/photo', methods=['POST'])

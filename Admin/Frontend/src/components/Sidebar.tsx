@@ -3,9 +3,9 @@ import umakLogo from "../imports/umak-logo.png";
 import { AdminUser } from "../utils/api";
 import { useT, tr } from "../utils/preferences";
 import type { StringKey } from "../i18n/strings";
-import { ArchiveRestore, ClipboardList, Gavel, KeyRound, QrCode, SlidersHorizontal } from "lucide-react";
+import { ArchiveRestore, ClipboardList, Gavel, KeyRound, PhilippinePeso, QrCode, SlidersHorizontal } from "lucide-react";
 
-type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "admin-profile";
+type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "income" | "admin-profile";
 
 interface SidebarProps {
   currentPage: Page;
@@ -44,6 +44,7 @@ const navItems = [
   { id: "reports" as Page, group: "Overview", label: "nav.reports" as StringKey, icon: (
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M3 3v18h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="m7 16 4-5 4 3 4-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
   )},
+  { id: "income" as Page, group: "Overview", label: "nav.income" as StringKey, icon: <PhilippinePeso size={18} aria-hidden="true" /> },
   { id: "notifications" as Page, group: "System", label: "nav.notifications" as StringKey, icon: (
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
   ), notifBadge: true },

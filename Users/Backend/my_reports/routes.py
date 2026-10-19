@@ -1,6 +1,7 @@
 """My Reports page: owner-scoped edit and delete of found and missing reports."""
 from flask import Blueprint, current_app, jsonify, request
 from app.utils import get_db
+from app.utils.report_dates import check_date
 from app.utils.report_lifecycle import is_completed
 from app.utils.text_guard import TextRejected, clean_field
 from Users.Backend.shared.request_auth import _authenticated_account_id
@@ -16,9 +17,15 @@ MISSING_TEXT_FIELDS = {'item_name': ('title', 'item name', True), 'description':
                        'distinctive_marks': ('marks', 'distinguishing details', False), 'last_location': ('place', 'last seen location', True)}
 
 
+DATE_FIELDS = {'found_date': 'date found', 'last_seen_date': 'last seen date'}
+
+
 def _clean_edit(body, rules):
     """The edit with every text field stripped of markup and checked; raises TextRejected naming the field that failed."""
     cleaned = dict(body)
+    for field, label in DATE_FIELDS.items():
+        if cleaned.get(field) is not None:
+            cleaned[field] = check_date(cleaned[field], field, label)
     for field, (kind, label, required) in rules.items():
         if cleaned.get(field) is not None:
             cleaned[field] = clean_field(cleaned[field], kind, field, label, required=required)

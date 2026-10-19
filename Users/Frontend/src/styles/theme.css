@@ -537,3 +537,40 @@ input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
    Sticky toolbars use it so they never slide under the header. Keep in step with UserHeader.tsx (h-16 row + 52px strip + its 1px border + the header's 1px bottom border). */
 :root { --app-header-h: 64px; }
 @media (min-width: 1024px) { :root { --app-header-h: 118px; } }
+
+/* ── Dialog signature: the same in the user app and the admin console ─────────────
+   Every dialog panel carries .ui-modal-panel (user) or .admin-modal-panel (admin): a gold hairline across the top
+   (the same mark as the emails), a crisp inner edge, a deep soft shadow, a ruled header and a ringed tone icon. */
+:is(.ui-modal-backdrop, .admin-modal-backdrop) {
+  background-image: radial-gradient(70% 55% at 50% 100%, rgba(209, 161, 83, 0.1), transparent 70%);
+}
+:is(.ui-modal-panel, .admin-modal-panel) {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65), 0 44px 96px -36px rgba(8, 14, 32, 0.7), 0 18px 42px -26px rgba(8, 14, 32, 0.5);
+}
+:is(.ui-modal-panel, .admin-modal-panel)::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, #d1a153 20%, #f3dcab 50%, #d1a153 80%, transparent 100%);
+}
+.ui-modal-header--ruled::after {
+  content: "";
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-line) 10%, var(--color-line) 90%, transparent);
+}
+.ui-modal-icon {
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 14px 26px -14px rgba(17, 27, 66, 0.75);
+}
+.ui-modal-footer { box-shadow: 0 -12px 24px -22px rgba(17, 27, 66, 0.35); }
+:root[data-theme="dark"] :is(.ui-modal-panel, .admin-modal-panel) {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 44px 96px -36px rgba(0, 0, 0, 0.85);
+}
+:root[data-theme="dark"] .ui-modal-icon { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.05), 0 0 0 5px rgba(209, 161, 83, 0.22), 0 14px 26px -14px rgba(0, 0, 0, 0.8); }
+:root[data-theme="dark"] .ui-modal-close { background-color: rgba(255, 255, 255, 0.05); }

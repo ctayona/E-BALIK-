@@ -372,7 +372,7 @@ export default function MyTags({ onLoaded, onRegister, reloadKey = 0 }: {
             {m.status === "pending_verification" && (
               <p className="flex items-start gap-2 rounded-xl border border-[#f5c451] bg-[#fef3c7] px-3 py-2 text-[13px] leading-5 text-[#78350f]">
                 <Hourglass size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-                <span>{m.is_reregistration ? "Your new photo is waiting for staff approval. Your tag is paused until then and finders see nothing." : "Bring this item and its sticker to the Lost and Found Office. Staff will check it, then the tag starts working. Finders see nothing until then."}</span>
+                <span>{m.is_reregistration ? "Your new photo is waiting for staff approval. Your tag is paused until then and finders see nothing." : `Bring this item and its sticker to the Lost and Found Office${m.price && !m.paid ? ` and pay ₱${m.price.toLocaleString("en-PH", { minimumFractionDigits: 2 })} for the tag` : ""}. Staff will check it, then the tag starts working. Finders see nothing until then.`}</span>
               </p>
             )}
             {m.status === "expired" && <p className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] leading-5 text-rose-800"><CalendarClock size={15} className="mt-0.5 shrink-0" aria-hidden="true" />Finders can no longer see your details. Ask the Lost and Found Office to renew it.</p>}

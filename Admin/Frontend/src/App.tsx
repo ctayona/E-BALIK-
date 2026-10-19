@@ -28,8 +28,9 @@ const AdminProfile = lazy(() => import("./pages/admin-profile/AdminProfile"));
 const SystemControl = lazy(() => import("./pages/system-control/SystemControl"));
 const GuardDesk = lazy(() => import("./pages/guard-desk/GuardDesk"));
 const RecycleBin = lazy(() => import("./pages/recycle-bin/RecycleBin"));
+const Income = lazy(() => import("./pages/income/Income"));
 
-type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "admin-profile";
+type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "income" | "admin-profile";
 
 const PAGE_META: Record<Page, StringKey> = {
   "dashboard": "nav.dashboard",
@@ -45,6 +46,7 @@ const PAGE_META: Record<Page, StringKey> = {
   "activity-logs": "nav.activityLogs",
   "system-control": "nav.systemControl",
   "recycle-bin": "nav.recycleBin",
+  "income": "nav.income",
   "admin-profile": "nav.profile",
 };
 
@@ -187,6 +189,7 @@ export default function App() {
       case "activity-logs": return <ActivityLogs />;
       case "system-control": return user.access_level === "super_admin" ? <SystemControl /> : <Dashboard onNavigate={(target) => navigate(target)} />;
       case "recycle-bin": return user.access_level === "super_admin" ? <RecycleBin /> : <Dashboard onNavigate={(target) => navigate(target)} />;
+      case "income": return <Income onNavigate={(target) => navigate(target)} />;
       case "admin-profile": return <AdminProfile />;
       default: return <Dashboard onNavigate={(target) => navigate(target)} />;
     }

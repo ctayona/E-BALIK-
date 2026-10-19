@@ -138,8 +138,8 @@ export default function OTPModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:px-4" role="presentation">
-      <div role="dialog" aria-modal="true" className="w-full max-h-[92dvh] overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)] sm:max-w-md rounded-t-[28px] sm:rounded-[26px] border border-white/70 bg-white shadow-overlay">
+    <div className="ui-modal-backdrop fixed inset-0 z-50 flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:px-4" role="presentation">
+      <div role="dialog" aria-modal="true" className="ui-modal-panel relative w-full max-h-[92dvh] overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)] sm:max-w-md rounded-t-[28px] sm:rounded-[26px] border border-white/70 bg-white shadow-overlay">
         {/* Header */}
         <div className="flex items-start justify-between gap-4 border-b border-line p-6">
           <div>

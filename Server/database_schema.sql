@@ -453,6 +453,10 @@ CREATE TABLE IF NOT EXISTS public.smart_tags (
     scan_count INTEGER NOT NULL DEFAULT 0,
     last_scanned_at TIMESTAMPTZ,
 
+    -- Added by 20261022: the price set for the batch (0 = free) and when the owner paid at the office.
+    price NUMERIC(10, 2) NOT NULL DEFAULT 0 CHECK (price >= 0 AND price <= 100000),
+    paid_at TIMESTAMPTZ,
+
     -- A blank tag has no owner details yet; a claimed tag has an item name.
     CONSTRAINT smart_tags_blank_has_no_details CHECK (status <> 'blank' OR (item_name IS NULL AND NOT show_name AND NOT show_email AND NOT show_phone))
 );
@@ -701,3 +705,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_report_reactions_missing ON public.report_r
 CREATE INDEX IF NOT EXISTS idx_report_reactions_account ON public.report_reactions (account_id);
 ALTER TABLE public.report_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.report_reactions ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================================
+-- TABLE: income_ledger (20261022)
+-- Money received from the Auction Hall and Smart Tags. Written by the workflows (auction collected, priced tag approved)
+-- and by super administrators (other income, refunds, adjustments). Never edited or deleted: corrections are new rows.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.income_ledger (
+    entry_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source VARCHAR(20) NOT NULL CHECK (source IN ('auction', 'smart_tag', 'other')),
+    kind VARCHAR(20) NOT NULL DEFAULT 'sale' CHECK (kind IN ('sale', 'refund', 'adjustment')),
+    source_ref VARCHAR(64),
+    description VARCHAR(255) NOT NULL,
+    amount NUMERIC(12, 2) NOT NULL CHECK (amount <> 0 AND amount BETWEEN -1000000 AND 1000000),
+    payer_account_id UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL,
+    method VARCHAR(20) NOT NULL DEFAULT 'cash' CHECK (method IN ('cash', 'gcash', 'maya', 'bank', 'other')),
+    receipt_no VARCHAR(40),
+    notes VARCHAR(500),
+    recorded_by UUID REFERENCES public.user_profiles(account_id) ON DELETE SET NULL,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT income_sale_is_positive CHECK (kind <> 'sale' OR amount > 0),
+    CONSTRAINT income_refund_is_negative CHECK (kind <> 'refund' OR amount < 0)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_income_one_sale ON public.income_ledger (source, source_ref) WHERE kind = 'sale' AND source_ref IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_income_received_at ON public.income_ledger (received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_income_source ON public.income_ledger (source, received_at DESC);
+ALTER TABLE public.income_ledger ENABLE ROW LEVEL SECURITY;

@@ -8,6 +8,7 @@ from app.utils.email_service import send_reference_email_best_effort
 from app.utils.matching import build_found_match_summaries
 from app.utils.report_guard import ReportRuleError, begin_submission, check_new_report, end_submission
 from app.utils.profanity import PROFANITY_MESSAGE, find_profanity
+from app.utils.report_dates import check_date
 from app.utils.text_guard import TextRejected, clean_field, strip_markup
 from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, consent_metadata, dpa_consent_given
 from Users.Backend.shared.request_auth import _authenticated_account_id, _public_url
@@ -95,10 +96,7 @@ def create_found_item():
         if find_profanity(guard_name_or_id):
             raise TextRejected(PROFANITY_MESSAGE, 'guard_name_or_id', 'profanity')
 
-        try:
-            datetime.strptime(found_date, '%Y-%m-%d')
-        except ValueError:
-            return jsonify({'error': 'Found date must use YYYY-MM-DD format'}), 400
+        found_date = check_date(found_date, 'found_date', 'date found')
 
         db = get_db(
             url=current_app.config['SUPABASE_URL'],

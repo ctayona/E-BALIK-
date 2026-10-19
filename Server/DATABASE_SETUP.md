@@ -142,7 +142,7 @@ Run `manual_migrations/20261017_custody_log_receipts_and_migration_log.sql` afte
 but not stored, and the health check on System control says the migration log does not exist yet. Verify with:
 
 ```sql
-SELECT count(*) FROM public.migration_log;                                                                  -- 25 on a fully migrated database (21 plus 20261018 to 20261021)
+SELECT count(*) FROM public.migration_log;                                                                  -- 26 on a fully migrated database (21 plus 20261018 to 20261022)
 SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'found_items'
   AND column_name IN ('received_at', 'received_by', 'smart_tag_id');                                         -- 3 rows
 SELECT to_regclass('public.custody_log');                                                                   -- custody_log
@@ -384,3 +384,12 @@ Optional tuning (defaults are sensible): `ADMIN_DIGEST_HOUR` (default 8, Makati 
 4. Add messaging system between users
 5. Add item categories lookup table
 6. Add campus locations lookup table
+
+## 20261022: income ledger and Smart Tag prices
+
+Run `manual_migrations/20261022_income_ledger.sql` after `20261021`. It adds `smart_tags.price` and `smart_tags.paid_at`, creates `income_ledger` (RLS on, backend only) and records every auction already paid and collected, once. **The app works without it**: free Smart Tag batches still generate, sales are simply not recorded, and the admin Income page shows the setup steps; setting a price above zero answers `setup_required`. Verify with:
+
+```sql
+SELECT to_regclass('public.income_ledger');
+SELECT source, count(*), sum(amount) FROM public.income_ledger GROUP BY source;
+```

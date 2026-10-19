@@ -18,6 +18,15 @@ const TONES: Record<ModalTone, string> = {
   iris: "bg-[linear-gradient(145deg,#c3d0fb,#6e8ef0)] text-white shadow-[0_10px_24px_-12px_rgba(110,142,240,0.9)]",
 };
 
+/** The soft wash behind the header, keyed to the tone so a warning never wears a celebration colour. */
+const GLOWS: Record<ModalTone, string> = {
+  navy: "bg-[radial-gradient(70%_120%_at_0%_0%,rgba(110,142,240,0.16),transparent_70%),radial-gradient(55%_120%_at_100%_0%,rgba(209,161,83,0.16),transparent_70%)]",
+  gold: "bg-[radial-gradient(80%_130%_at_0%_0%,rgba(209,161,83,0.22),transparent_70%),radial-gradient(50%_120%_at_100%_0%,rgba(110,142,240,0.1),transparent_70%)]",
+  mint: "bg-[radial-gradient(80%_130%_at_0%_0%,rgba(63,191,159,0.2),transparent_70%),radial-gradient(50%_120%_at_100%_0%,rgba(209,161,83,0.1),transparent_70%)]",
+  danger: "bg-[radial-gradient(80%_130%_at_0%_0%,rgba(225,29,72,0.14),transparent_70%)]",
+  iris: "bg-[radial-gradient(80%_130%_at_0%_0%,rgba(110,142,240,0.2),transparent_70%),radial-gradient(50%_120%_at_100%_0%,rgba(209,161,83,0.1),transparent_70%)]",
+};
+
 const SIZES = { sm: "sm:max-w-[440px]", md: "sm:max-w-[560px]", lg: "sm:max-w-[720px]", xl: "sm:max-w-[920px]" } as const;
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -125,7 +134,7 @@ export default function Modal({
       {open && (
         <motion.div
           key="modal-backdrop"
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:p-6"
+          className="ui-modal-backdrop fixed inset-0 z-[70] flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:p-6"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -146,28 +155,28 @@ export default function Modal({
             className={`ui-modal-panel relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[28px] border border-white/70 bg-white shadow-overlay outline-none sm:max-h-[88dvh] sm:rounded-[26px] ${SIZES[size]}`}
           >
             <span className="absolute left-1/2 top-2 z-10 h-1.5 w-10 -translate-x-1/2 rounded-full bg-slate-300/80 sm:hidden" aria-hidden="true" />
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(60%_100%_at_15%_0%,rgba(110,142,240,0.14),transparent),radial-gradient(50%_100%_at_100%_0%,rgba(209,161,83,0.14),transparent)]" aria-hidden="true" />
+            <div className={`pointer-events-none absolute inset-x-0 top-0 h-36 ${GLOWS[tone]}`} aria-hidden="true" />
 
             {hero && <div className="relative shrink-0">{hero}</div>}
 
-            <header className="relative flex shrink-0 items-start gap-4 px-6 pb-4 pt-7 sm:px-7 sm:pt-7">
-              {icon && <span className={`flex size-12 shrink-0 items-center justify-center rounded-2xl ${TONES[tone]}`} aria-hidden="true">{icon}</span>}
+            <header className={`ui-modal-header relative flex shrink-0 items-start gap-4 px-6 pb-5 pt-7 sm:px-7 sm:pt-7 ${children ? "ui-modal-header--ruled" : ""}`}>
+              {icon && <span className={`ui-modal-icon flex size-12 shrink-0 items-center justify-center rounded-2xl ${TONES[tone]}`} aria-hidden="true">{icon}</span>}
               <div className="min-w-0 flex-1 pt-0.5">
                 {eyebrow && <p className="text-[12px] font-semibold text-gold-700">{eyebrow}</p>}
                 <h2 id={titleId} className="mt-0.5 font-[family-name:var(--font-heading)] text-[21px] font-semibold leading-tight tracking-[-0.015em] text-ink sm:text-[23px]">{title}</h2>
                 {description && <p id={descId} className="mt-1.5 text-[14px] leading-6 text-ink-muted">{description}</p>}
               </div>
               {dismissible && (
-                <button type="button" onClick={onClose} aria-label="Close" className="-mr-2 -mt-1 flex size-10 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-frost-100 hover:text-ink">
+                <button type="button" onClick={onClose} aria-label="Close" className="ui-modal-close -mr-1 -mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full border border-line bg-white/80 text-ink-muted shadow-[0_1px_2px_rgba(15,23,42,0.06)] transition hover:border-line-strong hover:bg-frost-100 hover:text-ink">
                   <X size={19} aria-hidden="true" />
                 </button>
               )}
             </header>
 
-            {children && <div className={`relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 sm:px-7 ${bodyClassName}`}>{children}</div>}
+            {children && <div className={`relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 pt-5 sm:px-7 ${bodyClassName}`}>{children}</div>}
 
             {footer && (
-              <footer className="relative flex shrink-0 flex-col-reverse gap-2 border-t border-line bg-frost-50/80 px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur sm:flex-row sm:items-center sm:justify-end sm:px-7 sm:pb-4 [&>*]:w-full sm:[&>*]:w-auto">
+              <footer className="ui-modal-footer relative flex shrink-0 flex-col-reverse gap-2 border-t border-line bg-frost-50/80 px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur sm:flex-row sm:items-center sm:justify-end sm:gap-2.5 sm:px-7 sm:pb-4 [&>*]:min-h-[46px] [&>*]:w-full sm:[&>*]:w-auto">
                 {footer}
               </footer>
             )}

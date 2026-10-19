@@ -152,8 +152,8 @@ export default function Login({
       className="relative flex w-full flex-col items-start gap-6 overflow-hidden px-6 pb-[max(2rem,env(safe-area-inset-bottom))] pt-9 sm:w-[440px] sm:p-10 rounded-t-[28px] sm:rounded-[26px] border border-white/70 bg-white shadow-overlay before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-32 before:bg-[radial-gradient(60%_100%_at_15%_0%,rgba(110,142,240,0.16),transparent),radial-gradient(50%_100%_at_100%_0%,rgba(209,161,83,0.16),transparent)]"
     >
       {mfaChallengeToken && (
-        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:px-4" role="presentation">
-          <form onSubmit={handleMfaSubmit} role="dialog" aria-modal="true" aria-labelledby="admin-mfa-title" className="w-full p-7 pb-[max(1.75rem,env(safe-area-inset-bottom))] sm:max-w-md rounded-t-[28px] sm:rounded-[26px] border border-white/70 bg-white shadow-overlay">
+        <div className="ui-modal-backdrop fixed inset-0 z-[80] flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:px-4" role="presentation">
+          <form onSubmit={handleMfaSubmit} role="dialog" aria-modal="true" aria-labelledby="admin-mfa-title" className="ui-modal-panel relative w-full overflow-hidden p-7 pb-[max(1.75rem,env(safe-area-inset-bottom))] sm:max-w-md rounded-t-[28px] sm:rounded-[26px] border border-white/70 bg-white">
             <p className="text-[12px] font-semibold text-gold-700">Administrator verification</p>
             <h2 id="admin-mfa-title" className="mt-2 text-[22px] font-semibold text-navy-800" style={{ fontFamily: "var(--font-heading)" }}>Enter your authenticator code</h2>
             <p className="mt-2 text-[13px] leading-5 text-ink-muted">Use the current six-digit code from Google Authenticator, or enter one unused recovery code.</p>
@@ -299,8 +299,8 @@ export default function Login({
 
       {/* Google register prompt — nested clay dialog */}
       {googleRegisterPrompt?.open && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:px-4" role="presentation">
-          <div role="dialog" aria-modal="true" className="w-full p-8 pb-[max(2rem,env(safe-area-inset-bottom))] sm:max-w-md rounded-t-[28px] sm:rounded-[26px] border border-white/70 bg-white shadow-overlay">
+        <div className="ui-modal-backdrop fixed inset-0 z-[60] flex items-end justify-center bg-navy-950/60 backdrop-blur-md sm:items-center sm:px-4" role="presentation">
+          <div role="dialog" aria-modal="true" className="ui-modal-panel relative w-full overflow-hidden p-8 pb-[max(2rem,env(safe-area-inset-bottom))] sm:max-w-md rounded-t-[28px] sm:rounded-[26px] border border-white/70 bg-white">
             <p className="text-[12px] font-semibold text-gold-700">Account needed</p>
             <h3 className="mt-2 text-[22px] font-semibold text-navy-800" style={{ fontFamily: "var(--font-heading)" }}>
               Sign in first

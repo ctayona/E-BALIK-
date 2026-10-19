@@ -28,6 +28,10 @@ export interface AdminSmartTag {
   show_email?: boolean;
   show_phone?: boolean;
   contact_phone?: string;
+  /** Price of this tag in pesos (0 = free); set per batch when it is generated. */
+  price?: number;
+  /** When the owner paid (recorded in the income ledger at the first approval). */
+  paid_at?: string | null;
   is_disabled: boolean;
   disabled_reason: string | null;
   item_name: string;
@@ -54,12 +58,18 @@ export interface TagBatch {
   next_expiry: string | null;
   days_to_expiry: number | null;
   all_disabled: boolean;
+  /** Current price of an unsold tag (null before migration 20261022). */
+  price: number | null;
+  /** Tags paid for, and the money they brought in. */
+  sold: number;
+  revenue: number;
 }
 export interface UrlCheck { url: string; ok: boolean; reason: string }
 export interface SmartTagList { tags: AdminSmartTag[]; stats: SmartTagStats; tag_url_base: string; max_batch: number; url_check: UrlCheck; tag_types: TagTypeOption[] }
 export interface GeneratedBatch {
   count: number; batch_label: string; batch_id: string; tag_type: TagType; validity_months: number | null;
   tag_ids: string[]; values: string[]; tag_url_base: string; url_check?: UrlCheck; message?: string;
+  price?: number; stock_value?: number;
 }
 
 export class SmartTagSetupError extends Error {
@@ -90,20 +100,23 @@ async function mutate<T>(path: string, title: string, body?: unknown): Promise<T
   return payload as T;
 }
 
-export const generateSmartTagBatch = (count: number, label: string, tagType: TagType, validityMonths: number | null) =>
-  mutate<GeneratedBatch & { success: boolean }>("batch", "Generate Smart Tags", { count, label, tag_type: tagType, validity_months: validityMonths });
+export const generateSmartTagBatch = (count: number, label: string, tagType: TagType, validityMonths: number | null, price = 0) =>
+  mutate<GeneratedBatch & { success: boolean }>("batch", "Generate Smart Tags", { count, label, tag_type: tagType, validity_months: validityMonths, price });
+/** Super admins: new price for the batch's unsold (blank) tags. Tags already registered keep what was paid. */
+export const setTagBatchPrice = (batchId: string, price: number) =>
+  mutate<{ success: boolean; updated: number; price: number; message: string }>(`batches/${encodeURIComponent(batchId)}/price`, "Change Smart Tag price", { price });
 export const renewSmartTag = (id: string, months: number) => mutate<{ success: boolean; valid_until: string | null }>(`${encodeURIComponent(id)}/renew`, "Renew Smart Tag", { months });
 export const deactivateTagBatch = (batchId: string, reason: string) => mutate<{ success: boolean; changed: number }>(`batches/${encodeURIComponent(batchId)}/disable`, "Deactivate Smart Tag batch", { reason });
 export const reactivateTagBatch = (batchId: string) => mutate<{ success: boolean; changed: number }>(`batches/${encodeURIComponent(batchId)}/enable`, "Reactivate Smart Tag batch");
 
-export async function fetchTagBatches(): Promise<{ batches: TagBatch[]; warning_days: number }> {
+export async function fetchTagBatches(): Promise<{ batches: TagBatch[]; warning_days: number; prices_enabled?: boolean }> {
   const response = await fetch(`${API_URL}/api/admin/smart-tags/batches`, { headers: getAuthHeaders() });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 503 && payload.setup_required) throw new SmartTagSetupError(String(payload.error));
     throw new Error(typeof payload.error === "string" ? payload.error : "Unable to load the batches");
   }
-  return payload as { batches: TagBatch[]; warning_days: number };
+  return payload as { batches: TagBatch[]; warning_days: number; prices_enabled?: boolean };
 }
 export const deactivateSmartTag = (id: string, reason: string) => mutate<{ success: boolean }>(`${encodeURIComponent(id)}/disable`, "Deactivate Smart Tag", { reason });
 export const reactivateSmartTag = (id: string) => mutate<{ success: boolean }>(`${encodeURIComponent(id)}/enable`, "Reactivate Smart Tag");

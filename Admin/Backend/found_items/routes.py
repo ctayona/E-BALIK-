@@ -5,6 +5,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, request
+from app.utils.report_dates import date_problem
 from app.utils.recycle_bin import BinError, retention_days
 from app.utils import get_db
 from app.utils import custody_log
@@ -102,7 +103,9 @@ def create_found_item():
         storage = str(payload.get('storage') or '').strip()
         if not all((item_name, category, location, date_found, storage)):
             return jsonify({'error': 'Item, category, location, date found, and storage are required'}), 400
-        datetime.strptime(date_found, '%Y-%m-%d')
+        problem = date_problem(date_found, 'date found')
+        if problem:
+            return jsonify({'error': problem, 'field': 'dateFound', 'code': 'invalid_date'}), 400
         tag_code = str(payload.get('smartTagCode') or '').strip()
         tag_id = None
         if tag_code:
@@ -177,6 +180,10 @@ def manage_found_item(item_reference):
             return jsonify({'success': True, 'reference': item_reference, 'message': 'Moved to the Recycle bin. A super admin can restore it for the next %d days.' % retention_days()}), 200
 
         payload = request.get_json(silent=True) or {}
+        if 'dateFound' in payload:
+            problem = date_problem(payload.get('dateFound'), 'date found')
+            if problem:
+                return jsonify({'error': problem, 'field': 'dateFound', 'code': 'invalid_date'}), 400
         if str(payload.get('status') or '').strip().lower() == 'returned':
             return jsonify({
                 'error': 'Record in-person collection from the approved claim so linked reports are closed together.'

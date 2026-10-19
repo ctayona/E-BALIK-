@@ -8,6 +8,7 @@ from app.utils.email_service import send_reference_email_best_effort
 from app.utils.matching import build_match_summaries
 from app.utils.report_guard import ReportRuleError, begin_submission, check_new_report, end_submission
 from app.utils.text_guard import TextRejected, clean_field
+from app.utils.report_dates import check_date
 from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, consent_metadata, dpa_consent_given
 from Users.Backend.shared.request_auth import _authenticated_account_id, _public_url
 
@@ -48,10 +49,7 @@ def create_missing_item():
         description = clean_field(description, 'description', 'description')
         distinctive_marks = clean_field(distinctive_marks, 'marks', 'distinctive_marks', 'distinguishing details', required=False)
         last_location = clean_field(last_location, 'place', 'last_location', 'last seen location')
-        try:
-            datetime.strptime(last_seen_date, '%Y-%m-%d')
-        except ValueError:
-            return jsonify({'error': 'Last seen date must use YYYY-MM-DD format'}), 400
+        last_seen_date = check_date(last_seen_date, 'last_seen_date', 'last seen date')
 
         image_url = None
         image = request.files.get('image')

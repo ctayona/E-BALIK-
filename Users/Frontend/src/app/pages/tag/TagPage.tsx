@@ -254,6 +254,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
           {signedIn ? (
             <>
               <p className={muted}>Claim it to link this sticker to your item. If someone finds your item, you will be notified.</p>
+              {Boolean(tag.price) && <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-gold-500/15 px-3.5 py-1.5 text-[13.5px] font-semibold text-gold-200 ring-1 ring-gold-400/30">Tag price: ₱{tag.price!.toLocaleString("en-PH", { minimumFractionDigits: 2 })}, paid at the office when staff approve it</p>}
               <div className="mt-6 rounded-2xl bg-white p-4 text-left text-ink shadow-card sm:p-5">
                 {claimed ? (
                   <p className={CX.alertSuccess} role="status">Submitted. Staff will approve it once they have seen the item…</p>

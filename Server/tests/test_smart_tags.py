@@ -226,8 +226,9 @@ class TagIdTests(unittest.TestCase):
 
 class PublicViewTests(unittest.TestCase):
     def test_a_blank_tag_reveals_nothing_else(self):
-        service, _, _ = make_service([{'tag_id': TAG, 'status': 'blank', 'batch_label': 'secret batch', 'created_by': ADMIN}])
-        self.assertEqual(service.public_view(TAG), {'tag_id': TAG, 'status': 'blank'})
+        service, _, _ = make_service([{'tag_id': TAG, 'status': 'blank', 'batch_label': 'secret batch', 'created_by': ADMIN, 'price': '150.00'}])
+        # Only the price is added (a buyer should know it); the batch, creator and anything else stay private.
+        self.assertEqual(service.public_view(TAG), {'tag_id': TAG, 'status': 'blank', 'price': 150.0})
 
     def test_a_disabled_tag_shows_no_item_or_owner(self):
         service, _, _ = make_service([tag_row(is_disabled=True, show_name=True, show_email=True, disabled_reason='abuse')])

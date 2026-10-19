@@ -1,6 +1,7 @@
 """Lost Items page: list, create, edit and delete missing reports."""
 from datetime import datetime
 from flask import Blueprint, current_app, jsonify, request
+from app.utils.report_dates import date_problem
 from app.utils.recycle_bin import BinError, retention_days
 from app.utils import get_db
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
@@ -37,7 +38,9 @@ def create_lost_item():
         date_lost = str(payload.get('dateLost') or '').strip()
         if not all((item_name, category, location, date_lost)):
             return jsonify({'error': 'Item, category, location, and date lost are required'}), 400
-        datetime.strptime(date_lost, '%Y-%m-%d')
+        problem = date_problem(date_lost, 'date lost')
+        if problem:
+            return jsonify({'error': problem, 'field': 'dateLost', 'code': 'invalid_date'}), 400
 
         db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
         profile = db.get_user_by_account_id(admin['account_id']) or {}
@@ -82,6 +85,10 @@ def manage_lost_item(item_reference):
             return jsonify({'success': True, 'reference': item_reference, 'message': 'Moved to the Recycle bin. A super admin can restore it for the next %d days.' % retention_days()}), 200
 
         payload = request.get_json(silent=True) or {}
+        if 'dateLost' in payload:
+            problem = date_problem(payload.get('dateLost'), 'date lost')
+            if problem:
+                return jsonify({'error': problem, 'field': 'dateLost', 'code': 'invalid_date'}), 400
         updated = db.update_admin_missing_item(item_reference, payload)
         if not updated:
             return jsonify({'error': 'Lost item not found'}), 404

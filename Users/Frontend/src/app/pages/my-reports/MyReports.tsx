@@ -11,6 +11,7 @@ import ItemImage, { type GalleryItem } from "@/app/shared/media/ItemImage";
 import ViewToggle from "@/app/shared/view/ViewToggle";
 import { useViewMode } from "@/app/shared/view/useViewMode";
 import Modal, { CountdownConsent } from "@/app/shared/modal/Modal";
+import { campusToday, earliestReportDate, reportDateProblem } from "@/app/utils/reportDates";
 
 type Report = {
   id: string; name: string; category?: string; description?: string;
@@ -96,6 +97,11 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
 
   function saveReport() {
     if (!draft) return;
+    const dateIssue = reportDateProblem(draft.date || "", draft.kind === "Found" ? "date found" : "date lost");
+    if (dateIssue) {
+      showInfoModal({ variant: "warning", title: "Check the date", message: dateIssue });
+      return;
+    }
     setConfirmCountdown(5); setConfirmChecked(false); setConfirmEdit(true);
   }
 
@@ -343,6 +349,8 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
                   id={`${formId}-${key}`}
                   type={type}
                   required={key === "name" || key === "date"}
+                  min={key === "date" ? earliestReportDate() : undefined}
+                  max={key === "date" ? campusToday() : undefined}
                   value={(draft[key] as string) || ""}
                   onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
                   className={`${CX.input} w-full`}

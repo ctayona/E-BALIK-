@@ -17,6 +17,8 @@ import ItemImage, { type GalleryItem } from "@/app/shared/media/ItemImage";
 import ViewToggle from "@/app/shared/view/ViewToggle";
 import { useViewMode } from "@/app/shared/view/useViewMode";
 import Modal, { CountdownConsent } from "@/app/shared/modal/Modal";
+import DateField from "@/app/shared/forms/DateField";
+import { campusToday, reportDateProblem } from "@/app/utils/reportDates";
 import VerificationGate from "@/app/shared/verification/VerificationGate";
 import { isVerified, useCurrentUser } from "@/app/utils/system";
 
@@ -54,7 +56,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
   const [title, setTitle] = useState("");
   const [location, setLocation] = useState(FOUND_LOCATIONS[0]);
   const [category, setCategory] = useState(CATEGORIES[0]);
-  const [dateFound, setDateFound] = useState(new Date().toISOString().slice(0, 10));
+  const [dateFound, setDateFound] = useState(campusToday);
   const [description, setDescription] = useState("");
   const [distinctiveMarks, setDistinctiveMarks] = useState("");
   const [turnoverLocation, setTurnoverLocation] = useState(TURNOVER_LOCATIONS[0]);
@@ -150,6 +152,13 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
     event.preventDefault();
     setError("");
     if (!ensure()) return;
+    const dateIssue = reportDateProblem(dateFound, "date found");
+    if (dateIssue) {
+      setAttempted(true);
+      setError(dateIssue);
+      focusFirstInvalid();
+      return;
+    }
     const textIssue = firstTextProblem([
       { field: "title", value: title, kind: "title", label: "item title" },
       { field: "description", value: description, kind: "description", required: false },
@@ -320,7 +329,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
                 <Field label="Item title / short description" value={title} onChange={setTitle} placeholder="Blue backpack with red zipper" required rule={{ kind: "title", label: "item title" }} forceShow={attempted} maxLength={120} />
                 <SelectField label="Category" value={category} onChange={setCategory} options={CATEGORIES} />
                 <SelectField label="Where was it found?" value={location} onChange={setLocation} options={FOUND_LOCATIONS} icon={<MapPin size={15} />} />
-                <Field label="Date found" value={dateFound} onChange={setDateFound} type="date" icon={<CalendarRange size={15} />} required />
+                <DateField label="Date found" ruleLabel="date found" value={dateFound} onChange={setDateFound} icon={<CalendarRange size={15} />} required forceShow={attempted} />
                 <div className="md:col-span-2"><TextAreaField label="Description / identifying details" value={description} onChange={setDescription} placeholder="Brand, color, size, and visible details." rule={{ kind: "description", required: false }} forceShow={attempted} /></div>
                 <div className="md:col-span-2"><TextAreaField label="Distinctive marks / proof-of-ownership notes" value={distinctiveMarks} onChange={setDistinctiveMarks} placeholder="Keep private marks useful for later claim verification." icon={<Tag size={15} />} rule={{ kind: "marks", label: "distinctive marks", required: false }} forceShow={attempted} /></div>
               </div>
