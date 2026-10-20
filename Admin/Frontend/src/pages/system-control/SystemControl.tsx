@@ -1,5 +1,6 @@
 import PageIsolation from "./PageIsolation";
 import Monitoring from "./Monitoring";
+import Restore from "./Restore";
 import { MaintenanceSchedule, RoleSessionWipe } from "./ControlsExtras";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Database, HeartPulse, Info, Loader2, LockKeyhole, LogOut, RefreshCw, ShieldCheck, Trash2, Wrench, XCircle } from "lucide-react";
@@ -40,7 +41,7 @@ function SetupNotice() {
 }
 
 type Pending = "maintenance" | "logout" | "cleanup" | null;
-type Tab = "controls" | "monitoring" | "isolation" | "announcement" | "comms" | "access" | "data";
+type Tab = "controls" | "monitoring" | "isolation" | "announcement" | "comms" | "access" | "data" | "restore";
 const TABS: { value: Tab; label: string }[] = [
   { value: "controls", label: "Controls and health" },
   { value: "monitoring", label: "Monitoring" },
@@ -49,6 +50,7 @@ const TABS: { value: Tab; label: string }[] = [
   { value: "comms", label: "Communications" },
   { value: "access", label: "Admin access" },
   { value: "data", label: "Data and email" },
+  { value: "restore", label: "Backup restore" },
 ];
 
 export default function SystemControl() {
@@ -155,6 +157,7 @@ export default function SystemControl() {
       {tab === "comms" && <CommsHub />}
       {tab === "isolation" && <PageIsolation />}
       {tab === "monitoring" && <Monitoring />}
+      {tab === "restore" && <Restore />}
       {tab === "access" && <AdminGovernance />}
       {tab === "data" && (
         <div className="space-y-5">

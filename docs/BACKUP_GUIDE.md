@@ -26,7 +26,7 @@ GitHub's runners cannot reach the "Direct connection" host (`db.<project>.supaba
 
 ### 1.2 Google Drive through rclone
 1. On your computer install [rclone](https://rclone.org/downloads/) and run `rclone config`.
-2. `n` (new remote), name it **`gdrive`**, storage type **drive**, leave client id/secret empty, scope **drive** (or `drive.file`), then sign in with the Google account that will own the backups. Use a dedicated account, not a personal one.
+2. `n` (new remote), name it **`gdrive`**, storage type **drive**, leave client id/secret empty, scope **1 (full access, `drive`)**. Do not pick `drive.file`: the job could not see the folder you create by hand, then sign in with the Google account that will own the backups. Use a dedicated account, not a personal one.
 3. Print the config with `rclone config show gdrive`. Copy everything from `[gdrive]` to the end. This is the value of `RCLONE_CONFIG_DATA`.
 4. In Google Drive create a folder (for example `E-Balik backups`). Open it: the long id at the end of the address is `GDRIVE_FOLDER_ID`.
 
@@ -110,3 +110,21 @@ Sign-in accounts live in Supabase's own `auth` area, which the portable backup d
 - **Rotate the passphrase** by choosing a new one, updating the secret, and keeping the old one for as long as old backups exist.
 - **Check once a month** that Drive holds recent files and that Monitoring is green. A green card means the job reported in, not that a restore has been proven.
 - The weekly portable job does not overwrite the nightly status in the console, so a failure there only shows in the GitHub Actions tab.
+
+---
+
+## 5. Restoring from the admin console (super administrators)
+
+**System Control > Backup restore** restores tables from an encrypted portable backup (`ebalik-backup-....zip.enc`, the Sunday file) without a terminal.
+
+Safety rules, all enforced on the server:
+- Only a super administrator, and only with a Google Authenticator code (set it up in Admin Profile first). The code is checked last, so a refused request never spends it.
+- Maintenance mode must be on. You type `RESTORE <project name>`, tick three confirmations, and the file you reviewed must be the file you restore (checked by SHA-256).
+- Only encrypted E-Balik backups whose tables match their checksums. A wrong passphrase or a changed file is refused with nothing written.
+- **Merge only:** rows with the same ID are overwritten with the backup's version; nothing is ever deleted.
+- Authenticator secrets, recovery codes and one-time codes can never be restored here. Accounts and system settings are off by default and need a second phrase (`RESTORE ACCOUNTS AND SETTINGS`).
+- Three attempts per hour, every step is in the activity log, and the decrypted copy is deleted when it ends.
+
+Not covered: photos (use `restore_database.py --with-files`), backups over 80 MB, and the nightly `.sql.gz.gpg` dump (restore that with `psql`).
+
+Use it after you have **practised on a test project first**, and make a fresh backup just before a real restore.

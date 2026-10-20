@@ -1,10 +1,16 @@
 """System control page (super admin only): maintenance mode, forced logout, health scan and data cleanup, plus the Mission Control tools."""
+import json
+import shutil
+import tempfile
 from functools import wraps
+from pathlib import Path
 from flask import Blueprint, Response, current_app, jsonify, request
 from app.utils import get_db, rate_limit
+from app.utils import backup_restore
 from app.utils import mission_control as mission
 from app.utils import system_control as control
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
+from Admin.Backend.shared.authenticator import AuthenticatorError, consume_authenticator_code
 
 system_control_bp = Blueprint('admin_system_control', __name__)
 
@@ -27,6 +33,8 @@ def _super_admin_only(label):
                 return jsonify({'error': str(error), 'setup_required': True}), 503
             except mission.ToolError as error:
                 return jsonify({'error': error.message, **error.extra}), error.status
+            except (backup_restore.RestoreError, AuthenticatorError) as error:
+                return jsonify({'error': error.message}), error.status
             except PermissionError as error:
                 return jsonify({'error': str(error)}), 403
             except ValueError as error:
@@ -357,6 +365,101 @@ def email_health(admin):
 def backup_status(admin):
     from app.utils import system_ops
     return jsonify(system_ops.backup_status(control.load_settings(_database(), force=True))), 200
+
+
+# ---------------------------------------------------------------------------------------------- restore from a backup
+def _restore_upload_ok():
+    if (request.content_length or 0) > backup_restore.MAX_UPLOAD_BYTES + 1024 * 1024:
+        raise backup_restore.RestoreError('That file is too large to restore from the admin console.', 413)
+    if 'backup' not in request.files:
+        raise backup_restore.RestoreError('Choose a backup file first.')
+    return request.files['backup']
+
+
+@system_control_bp.route('/system/restore/preview', methods=['POST'])
+@_super_admin_only('read the backup')
+def restore_preview(admin):
+    """Step 1: decrypt and verify the file and show what it holds and what would change. Writes nothing."""
+    from app.utils import system_ops
+    _limit(admin, 'restore-preview', 10, 3600)
+    db = _database()
+    workdir = Path(tempfile.mkdtemp(prefix='ebalik-restore-'))
+    archive = None
+    try:
+        path = backup_restore.save_upload(_restore_upload_ok(), workdir)
+        sha = backup_restore.file_sha256(path)
+        archive, manifest = backup_restore.open_backup(path, request.form.get('passphrase', ''), workdir)
+        url = current_app.config['SUPABASE_URL']
+        settings = control.load_settings(db, force=True)
+        mfa = db.get_admin_mfa(admin['account_id']) or {}
+        result = backup_restore.preview(db, manifest, sha, url)
+        result.update(
+            confirm_phrase=backup_restore.confirm_phrase(url), sensitive_phrase=backup_restore.SENSITIVE_PHRASE,
+            maintenance_on=bool(control.effective_maintenance(settings)[0]), authenticator_enabled=bool(mfa.get('enabled_at')),
+            backup_status=system_ops.backup_status(settings)['status'], running=backup_restore.is_running(),
+        )
+        _log_admin_action(db, admin, 'Preview Restore', 'System Control', f"Backup of {manifest.get('project')}", sha[:12])
+        return jsonify(result), 200
+    finally:
+        if archive:
+            archive.close()
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+@system_control_bp.route('/system/restore/execute', methods=['POST'])
+@_super_admin_only('restore the backup')
+def restore_execute(admin):
+    """Step 2: every check runs BEFORE the authenticator code is spent; the code is the last gate. Answers 202 and works in the background."""
+    _limit(admin, 'restore-execute', 3, 3600)
+    db = _database()
+    form = request.form
+    url = current_app.config['SUPABASE_URL']
+    if not control.effective_maintenance(control.load_settings(db, force=True))[0]:
+        raise backup_restore.RestoreError('Turn on maintenance mode first, so nobody changes data while it is being restored.', 409)
+    if form.get('acknowledge') != 'yes':
+        raise backup_restore.RestoreError('Tick every box to confirm you understand.')
+    if (form.get('confirm_phrase') or '').strip() != backup_restore.confirm_phrase(url):
+        raise backup_restore.RestoreError('The confirmation phrase is not correct.')
+    if backup_restore.is_running():
+        raise backup_restore.RestoreError('A restore is already running.', 409)
+    workdir = Path(tempfile.mkdtemp(prefix='ebalik-restore-'))
+    archive = None
+    handed_over = False
+    try:
+        path = backup_restore.save_upload(_restore_upload_ok(), workdir)
+        if backup_restore.file_sha256(path) != form.get('file_sha256'):
+            raise backup_restore.RestoreError('This is not the file you reviewed. Read the backup again.')
+        archive, manifest = backup_restore.open_backup(path, form.get('passphrase', ''), workdir)
+        try:
+            requested = json.loads(form.get('tables') or '[]')
+        except ValueError:
+            requested = []
+        tables = backup_restore.validate_selection(manifest, requested, form.get('sensitive_phrase', ''))
+        missing = [t for t in tables if backup_restore.live_rows(db, t) is None]
+        if missing:
+            raise backup_restore.RestoreError(f"These tables do not exist in this database yet: {', '.join(missing)}. Run the SQL migrations first.")
+        consume_authenticator_code(db, admin['account_id'], form.get('authenticator_code'), 'restoring a backup')
+
+        def finish(job):
+            control.save_setting(db, 'last_restore', {k: job.get(k) for k in ('state', 'started_at', 'finished_at', 'by', 'total_tables', 'done_tables', 'rows', 'failed', 'error')}, admin['account_id'])
+            _log_admin_action(db, admin, 'Finish Restore', 'System Control', f"{len(job.get('done_tables') or [])} of {job.get('total_tables')} tables", job.get('state'), 'success' if job.get('state') == 'done' else 'failed')
+
+        job = backup_restore.start(db, archive, workdir, tables, admin.get('email') or 'Admin', finish)
+        handed_over = True
+        _log_admin_action(db, admin, 'Start Restore', 'System Control', f"Backup of {manifest.get('project')}: {', '.join(tables)}", (form.get('file_sha256') or '')[:12])
+        return jsonify({'success': True, 'message': 'The restore has started.', 'job': job}), 202
+    finally:
+        if not handed_over:
+            if archive:
+                archive.close()
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
+@system_control_bp.route('/system/restore/status', methods=['GET'])
+@_super_admin_only('check the restore')
+def restore_status(admin):
+    job = backup_restore.status() or control.load_settings(_database(), force=True).get('last_restore') or None
+    return jsonify({'job': job or None, 'running': backup_restore.is_running()}), 200
 
 
 @system_control_bp.route('/system/audit-export', methods=['GET'])

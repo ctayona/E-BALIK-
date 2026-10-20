@@ -407,7 +407,7 @@ export default function Register({
           </div>
         )}
 
-        <GoogleButton onCredential={(credential) => void handleGoogleCredential(credential)} failureHint="You can still register with your UMak email." />
+        <GoogleButton radius={16} onCredential={(credential) => void handleGoogleCredential(credential)} failureHint="You can still register with your UMak email." />
 
         <button
           type="submit"

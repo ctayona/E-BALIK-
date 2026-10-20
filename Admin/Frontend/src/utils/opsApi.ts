@@ -119,3 +119,54 @@ export async function downloadMonthlyReport(month: string): Promise<void> {
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
+
+/** Restoring a backup (super admin): read and check the file, then restore chosen tables behind an authenticator code. Nothing here deletes data. */
+export interface RestoreTable { name: string; rows: number; current: number | null; kind: "normal" | "sensitive" | "protected"; restorable: boolean; note: string }
+export interface RestorePreview {
+  created_at: string | null; age_days: number | null; project: string | null; same_project: boolean; includes_photos: boolean; file_sha256: string;
+  tables: RestoreTable[]; total_rows: number; confirm_phrase: string; sensitive_phrase: string;
+  maintenance_on: boolean; authenticator_enabled: boolean; backup_status: Severity; running: boolean;
+}
+export interface RestoreJob {
+  state: "running" | "done" | "partial" | "failed"; started_at?: string; finished_at?: string; by?: string; total_tables?: number;
+  done_tables?: string[]; rows?: number; current?: string; failed?: Record<string, string>; error?: string;
+}
+
+/** A multipart request must not carry our JSON content type: the browser adds the boundary itself. */
+const uploadHeaders = (): Record<string, string> => {
+  const token = localStorage.getItem("ebalik_admin_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+async function upload<T>(path: string, form: FormData, fallback: string): Promise<T> {
+  const response = await fetch(`${API_URL}/api/admin/system/restore/${path}`, { method: "POST", headers: uploadHeaders(), body: form });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : fallback);
+  return payload as T;
+}
+
+export function previewRestore(file: File, passphrase: string): Promise<RestorePreview> {
+  const form = new FormData();
+  form.append("backup", file);
+  form.append("passphrase", passphrase);
+  return upload<RestorePreview>("preview", form, "Unable to read the backup");
+}
+
+export interface StartRestoreInput {
+  file: File; passphrase: string; fileSha256: string; tables: string[]; confirmPhrase: string; sensitivePhrase: string; authenticatorCode: string;
+}
+
+export function startRestore(input: StartRestoreInput): Promise<{ job: RestoreJob }> {
+  const form = new FormData();
+  form.append("backup", input.file);
+  form.append("passphrase", input.passphrase);
+  form.append("file_sha256", input.fileSha256);
+  form.append("tables", JSON.stringify(input.tables));
+  form.append("confirm_phrase", input.confirmPhrase);
+  form.append("sensitive_phrase", input.sensitivePhrase);
+  form.append("authenticator_code", input.authenticatorCode);
+  form.append("acknowledge", "yes");
+  return upload<{ job: RestoreJob }>("execute", form, "Unable to start the restore");
+}
+
+export const fetchRestoreStatus = () => read<{ job: RestoreJob | null; running: boolean }>("restore/status", "Unable to check the restore");
