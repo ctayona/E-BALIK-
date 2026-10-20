@@ -1,7 +1,7 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useEffect, useState } from "react";
 import { AlertTriangle, ChevronRight, Clock3, Gavel, PhilippinePeso, Sparkles } from "lucide-react";
-import { fetchIncomeSummary, peso, type IncomeSummary } from "../../utils/incomeApi";
+import { IncomeSetupError, fetchIncomeSummary, peso, type IncomeSummary } from "../../utils/incomeApi";
 import { fetchAdminDashboard, getStoredAdmin, type AdminDashboardSummary } from "../../utils/api";
 import { RolePill } from "../../components/ui/primitives";
 import { fetchAdminAuctions, fetchAuctionReadySummary } from "../../utils/auctionApi";
@@ -47,10 +47,11 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
   const [readyToAuction, setReadyToAuction] = useState<number | null>(null);
   // Income joins the dashboard once the ledger exists (migration 20261022); until then the strip stays hidden.
   const [income, setIncome] = useState<IncomeSummary | null>(null);
+  const [incomeSetup, setIncomeSetup] = useState(false);
 
   useEffect(() => {
     let active = true;
-    fetchIncomeSummary().then((value) => { if (active) setIncome(value); }).catch(() => { /* no ledger yet, or no access: hide the strip */ });
+    fetchIncomeSummary().then((value) => { if (active) setIncome(value); }).catch((error) => { if (active && error instanceof IncomeSetupError) setIncomeSetup(true); /* no access: the section stays hidden */ });
     return () => { active = false; };
   }, []);
 
@@ -270,16 +271,36 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
         </dl>
       </section>
 
-      {income && (
-        <section className="admin-card flex flex-wrap items-center gap-x-8 gap-y-3 px-5 py-4 sm:px-6" aria-label={tr("Income")}>
-          <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950" aria-hidden="true"><PhilippinePeso size={20} /></span>
-          <dl className="flex min-w-0 flex-1 flex-wrap gap-x-8 gap-y-2">
-            <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Income this month")}</dt><dd className="font-[family-name:var(--font-heading)] text-[22px] font-semibold tabular-nums text-ink">{peso(income.this_month)}</dd></div>
-            <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Auction Hall (12 months)")}</dt><dd className="text-[16px] font-semibold tabular-nums text-ink">{peso(income.by_source.auction)}</dd></div>
-            <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Smart Tags (12 months)")}</dt><dd className="text-[16px] font-semibold tabular-nums text-ink">{peso(income.by_source.smart_tag)}</dd></div>
-            <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Waiting to be paid")}</dt><dd className="text-[16px] font-semibold tabular-nums text-gold-800 dark:text-gold-300">{peso(income.pending.auction + income.pending.smart_tag)}</dd></div>
-          </dl>
-          <button type="button" onClick={() => onNavigate?.("income")} className="inline-flex min-h-[40px] items-center gap-1 rounded-xl px-3 text-[14px] font-semibold text-iris-700 transition hover:bg-iris-50 dark:text-iris-300 dark:hover:bg-white/[0.06]">{tr("View income")}<ChevronRight size={16} aria-hidden="true" /></button>
+      {(income || incomeSetup) && (
+        <section className="admin-card overflow-hidden" aria-labelledby="income-heading">
+          <div className="flex flex-wrap items-center gap-4 px-5 py-4 sm:px-6">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950" aria-hidden="true"><PhilippinePeso size={20} /></span>
+            <div className="min-w-0 flex-1">
+              <h2 id="income-heading" className="font-[family-name:var(--font-heading)] text-[18px] font-semibold text-ink">{tr("Income")}</h2>
+              <p className="text-[13px] text-ink-muted">{incomeSetup ? tr("Run Server/manual_migrations/20261022_income_ledger.sql in Supabase to start tracking auction and Smart Tag sales.") : tr("Auction Hall and Smart Tag sales, last 12 months")}</p>
+            </div>
+            <button type="button" onClick={() => onNavigate?.("income")} className="inline-flex min-h-[40px] items-center gap-1 rounded-xl px-3 text-[14px] font-semibold text-iris-700 transition hover:bg-iris-50 dark:text-iris-300 dark:hover:bg-white/[0.06]">{tr("Open income")}<ChevronRight size={16} aria-hidden="true" /></button>
+          </div>
+          {income && (
+            <div className="grid gap-5 border-t border-line px-5 py-4 sm:px-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-center">
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
+                <div><dt className="text-[13px] font-medium text-ink-muted">{tr("This month")}</dt><dd className="font-[family-name:var(--font-heading)] text-[24px] font-semibold leading-tight tabular-nums text-ink">{peso(income.this_month)}</dd></div>
+                <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Auction Hall")}</dt><dd className="text-[16px] font-semibold tabular-nums text-ink">{peso(income.by_source.auction)}</dd></div>
+                <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Smart Tags")}</dt><dd className="text-[16px] font-semibold tabular-nums text-ink">{peso(income.by_source.smart_tag)}</dd></div>
+                <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Waiting to be paid")}</dt><dd className="text-[16px] font-semibold tabular-nums text-gold-800 dark:text-gold-300">{peso(income.pending.auction + income.pending.smart_tag)}</dd></div>
+              </dl>
+              <div className="h-[92px]" role="img" aria-label={tr("Income for the last six months")}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={income.by_month.slice(-6).map((row) => ({ ...row, label: new Date(`${row.month}-01T00:00:00Z`).toLocaleDateString("en-PH", { month: "short", timeZone: "UTC" }) }))} barCategoryGap="28%">
+                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: chart.tick }} />
+                    <Tooltip cursor={{ fill: chart.cursor }} formatter={(value) => peso(Number(value))} labelStyle={{ color: chart.tooltip.color }} contentStyle={{ ...chart.tooltip, borderRadius: 12, fontSize: 12.5 }} />
+                    <Bar dataKey="auction" name={tr("Auction Hall")} stackId="i" fill="#d1a153" />
+                    <Bar dataKey="smart_tag" name={tr("Smart Tags")} stackId="i" fill="#2fae8e" radius={[5, 5, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
         </section>
       )}
 

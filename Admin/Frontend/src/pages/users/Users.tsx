@@ -7,6 +7,7 @@ import { useT } from "../../utils/preferences";
 import { downloadCsv } from "../../utils/csv";
 import UserFormModal from "./UserFormModal";
 import AccountVerificationTab from "./AccountVerificationTab";
+import RoleAccessTab from "./RoleAccessTab";
 import RoleModal from "./RoleModal";
 import AdminModal from "../../components/ui/AdminModal";
 import { BTN, PageHeader, RolePill } from "../../components/ui/primitives";
@@ -57,7 +58,7 @@ export default function Users() {
   const [accessBusy, setAccessBusy] = useState<string | null>(null);
   const [roleTarget, setRoleTarget] = useState<User | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmState | null>(null);
-  const [activeTab, setActiveTab] = useState<"users" | "verification">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "verification" | "rbac">("users");
   const [suspendTarget, setSuspendTarget] = useState<User | null>(null);
   const [userForm, setUserForm] = useState<{ user?: User } | null>(null);
   const [verificationRequests, setVerificationRequests] = useState<AdminAccountVerificationRequest[]>([]);
@@ -206,6 +207,7 @@ export default function Users() {
         options={[
           { value: "users", label: t("users.tab.accounts"), count: users.length },
           { value: "verification", label: t("users.tab.verification"), count: verificationRequests.length },
+          ...(isSuperAdmin ? [{ value: "rbac" as const, label: tr("Role access (RBAC)") }] : []),
         ]}
       />
 
@@ -282,7 +284,7 @@ export default function Users() {
             </tr>
           ))}
         </DataTable>
-      </> : (
+      </> : activeTab === "rbac" && isSuperAdmin ? <RoleAccessTab /> : (
         <AccountVerificationTab
           requests={verificationRequests}
           loading={verificationLoading}

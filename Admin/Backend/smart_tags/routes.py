@@ -180,3 +180,26 @@ def qr(tag_id):
     _, service = _service()
     service._get(clean)  # 404 for a code that was never generated
     return send_file(io.BytesIO(qr_png(clean)), mimetype='image/png', download_name=f'smart-tag-{clean}.png', max_age=0)
+
+
+@smart_tags_bp.route('/smart-tags/<tag_id>', methods=['DELETE'])
+@_handled('delete the Smart Tag')
+def delete_tag(tag_id):
+    """Super admins: delete a blank (never registered) or deactivated tag. Recorded income is kept."""
+    admin = _require_admin(required_level='super_admin')
+    db, service = _service()
+    result = service.delete_tag(tag_id, admin['account_id'])
+    _log_admin_action(db, admin, 'Delete Smart Tag', 'Smart Tags', result['tag_id'], result['tag_id'])
+    return jsonify({'success': True, **result, 'message': f"Smart Tag {result['tag_id']} was deleted."}), 200
+
+
+@smart_tags_bp.route('/smart-tags/batches/<batch_id>', methods=['DELETE'])
+@_handled('delete the batch')
+def delete_batch(batch_id):
+    """Super admins: delete the unused and deactivated tags of a batch. Tags still in use stay."""
+    admin = _require_admin(required_level='super_admin')
+    db, service = _service()
+    result = service.delete_batch(batch_id, admin['account_id'])
+    _log_admin_action(db, admin, 'Delete Smart Tag Batch', 'Smart Tags', f"{result['deleted']} tags deleted, {result['kept']} kept", result['batch_id'])
+    kept = f" {result['kept']} tags still in use were kept." if result['kept'] else ''
+    return jsonify({'success': True, **result, 'message': f"{result['deleted']} unused or deactivated tags were deleted.{kept}"}), 200

@@ -8,7 +8,8 @@ import { notificationsAPI } from "@/app/utils/api";
 import { useTheme } from "@/app/utils/theme";
 import { playNotificationChime } from "@/app/utils/notificationSound";
 import NotificationMenu from "@/app/shared/NotificationMenu";
-import UserSettingsModal from "@/app/shared/settings/UserSettingsModal";
+import UserSettingsModal, { OPEN_SETTINGS_EVENT, type SettingsTab } from "@/app/shared/settings/UserSettingsModal";
+import { usePreferences } from "@/app/utils/preferences";
 
 const NAV_LINKS: { label: string; page: Page; icon: ReactNode }[] = [
   { label: "Dashboard",    page: "dashboard",    icon: <LayoutDashboard size={16} aria-hidden="true" /> },
@@ -54,6 +55,19 @@ export default function UserHeader({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("appearance");
+  const { appBadge } = usePreferences();
+
+  // Any page can open a settings tab (the Profile links to Notifications and Privacy).
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const tab = (event as CustomEvent<{ tab?: SettingsTab }>).detail?.tab;
+      setSettingsTab(tab ?? "appearance");
+      setSettingsOpen(true);
+    };
+    window.addEventListener(OPEN_SETTINGS_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onOpen);
+  }, []);
   const [unreadCount, setUnreadCount] = useState(0);
   const lastCount = useRef<number | null>(null);
   const accountRef = useRef<HTMLDivElement>(null);
@@ -137,6 +151,14 @@ export default function UserHeader({
   const consoleLabel = !CONSOLE_LEVELS.includes(level) ? "" : level === "guard" ? "Release desk" : "Admin console";
   const campusIdLabel = user?.campus_id || "Campus ID not set";
   const badge = unreadCount > 99 ? "99+" : String(unreadCount);
+
+  // Installed app: the unread count on the home-screen icon (Badging API), when the person allows it in Settings.
+  useEffect(() => {
+    const nav = navigator as Navigator & { setAppBadge?: (count?: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
+    if (!nav.setAppBadge || !nav.clearAppBadge) return;
+    if (appBadge && unreadCount > 0) void nav.setAppBadge(unreadCount).catch(() => undefined);
+    else void nav.clearAppBadge().catch(() => undefined);
+  }, [appBadge, unreadCount]);
   const isReporting = REPORT_PAGES.includes(currentPage);
 
   return (
@@ -232,7 +254,7 @@ export default function UserHeader({
                       <button type="button" role="menuitem" onClick={() => navigate("profile")} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] font-medium text-ink-soft hover:bg-navy-50">
                         <UserRound size={16} className="text-navy-500" aria-hidden="true" /> Profile &amp; verification
                       </button>
-                      <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); setSettingsOpen(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] font-medium text-ink-soft hover:bg-navy-50">
+                      <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); setSettingsTab("appearance"); setSettingsOpen(true); }} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] font-medium text-ink-soft hover:bg-navy-50">
                         <Settings2 size={16} className="text-navy-500" aria-hidden="true" /> Settings
                       </button>
                       <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); onLogout(); }} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] font-medium text-rose-700 hover:bg-rose-50">
@@ -381,7 +403,7 @@ export default function UserHeader({
                     <KeyRound size={16} aria-hidden="true" /> {consoleLabel}
                   </button>
                 )}
-                <button type="button" onClick={() => { setSidebarOpen(false); setSettingsOpen(true); }} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-navy-100 hover:bg-white/[0.06]">
+                <button type="button" onClick={() => { setSidebarOpen(false); setSettingsTab("appearance"); setSettingsOpen(true); }} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-navy-100 hover:bg-white/[0.06]">
                   <Settings2 size={16} aria-hidden="true" /> Settings
                 </button>
                 <button type="button" onClick={toggleTheme} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-navy-100 hover:bg-white/[0.06]">
@@ -396,7 +418,7 @@ export default function UserHeader({
           </motion.div>
         )}
       </AnimatePresence>
-      <UserSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} onNavigate={onNavigate} />
+      <UserSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} onNavigate={onNavigate} onLogout={onLogout} initialTab={settingsTab} />
     </>
   );
 }

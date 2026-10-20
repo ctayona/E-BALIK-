@@ -269,7 +269,7 @@ export default function Dashboard({ user, onNavigate }: {
             )}
 
             <ComposerCard user={user} onNavigate={onNavigate} />
-            <StoriesBar stories={stories} loading={loading && stories.length === 0} onOpen={openStory} onCreate={() => onNavigate("report-item")} />
+            {preferences.showStories && <StoriesBar stories={stories} loading={loading && stories.length === 0} onOpen={openStory} onCreate={() => onNavigate("report-item")} />}
 
             <div className={preferences.focusFeed ? "" : "xl:hidden"}><RightRail counts={counts} urgent={stories.length} compact /></div>
 

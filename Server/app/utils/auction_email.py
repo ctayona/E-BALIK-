@@ -37,11 +37,17 @@ def build_winner_email(recipient_name: str, item_title: str, reference: str, amo
     return {'subject': subject, 'body': body}
 
 
+def _email_configured() -> bool:
+    """Brevo or SendGrid is set up (read through Config, so tests never see the machine's real keys)."""
+    from app.utils.email_service import provider_key
+    return bool(provider_key())
+
+
 def _deliver_notice(*, to_email: str, message: Dict[str, str], notice: Dict[str, Any]) -> Dict[str, Any]:
     """Like `_deliver`, for the richer notice layout (a highlighted code). The code is never written to the log in mock mode."""
     mode = (os.getenv('AUCTION_EMAIL_MODE') or 'auto').strip().lower()
     if mode == 'auto':
-        mode = 'sendgrid' if (os.getenv('BREVO_API_KEY') or os.getenv('SENDGRID_API_KEY')) else 'mock'
+        mode = 'sendgrid' if _email_configured() else 'mock'
     if mode == 'sendgrid':
         try:
             from app.utils.email_service import send_notice_email_best_effort, site_url
@@ -58,7 +64,7 @@ def _deliver(*, to_email: str, recipient_name: str, message: Dict[str, str], ema
     """Send through SendGrid or only log, following AUCTION_EMAIL_MODE. Never raises: a failed notice must not undo saved data."""
     mode = (os.getenv('AUCTION_EMAIL_MODE') or 'auto').strip().lower()
     if mode == 'auto':  # real emails whenever an email provider (Brevo or SendGrid) is configured, otherwise a logged mock for local development
-        mode = 'sendgrid' if (os.getenv('BREVO_API_KEY') or os.getenv('SENDGRID_API_KEY')) else 'mock'
+        mode = 'sendgrid' if _email_configured() else 'mock'
     if mode == 'sendgrid':
         try:
             from app.utils.email_service import send_reference_email_best_effort

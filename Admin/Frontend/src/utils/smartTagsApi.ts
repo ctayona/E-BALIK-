@@ -65,7 +65,9 @@ export interface TagBatch {
   revenue: number;
 }
 export interface UrlCheck { url: string; ok: boolean; reason: string }
-export interface SmartTagList { tags: AdminSmartTag[]; stats: SmartTagStats; tag_url_base: string; max_batch: number; url_check: UrlCheck; tag_types: TagTypeOption[] }
+/** Smart Tag money from the income ledger (a tag is sold when staff approve its registration). Null before migration 20261022. */
+export interface SmartTagRevenue { total: number; this_month: number; sold: number; average: number; stock_value: number; stock_count: number }
+export interface SmartTagList { tags: AdminSmartTag[]; stats: SmartTagStats; revenue?: SmartTagRevenue | null; tag_url_base: string; max_batch: number; url_check: UrlCheck; tag_types: TagTypeOption[] }
 export interface GeneratedBatch {
   count: number; batch_label: string; batch_id: string; tag_type: TagType; validity_months: number | null;
   tag_ids: string[]; values: string[]; tag_url_base: string; url_check?: UrlCheck; message?: string;
@@ -99,6 +101,20 @@ async function mutate<T>(path: string, title: string, body?: unknown): Promise<T
   if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : `${title} failed`);
   return payload as T;
 }
+
+async function remove<T>(path: string, title: string): Promise<T> {
+  const response = await adminMutationRequest(`${API_URL}/api/admin/smart-tags/${path}`, { method: "DELETE", headers: getAuthHeaders() }, title);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : `${title} failed`);
+  return payload as T;
+}
+
+/** Super admins: only a blank (never registered) or deactivated tag can be deleted. Recorded income is kept. */
+export const deleteSmartTag = (id: string) => remove<{ success: boolean; tag_id: string }>(encodeURIComponent(id), "Delete Smart Tag");
+/** Super admins: deletes the batch's blank and deactivated tags; tags still in use stay. */
+export const deleteTagBatch = (batchId: string) => remove<{ success: boolean; deleted: number; kept: number }>(`batches/${encodeURIComponent(batchId)}`, "Delete unused tags");
+/** A tag nobody uses: never registered, or switched off by an administrator. */
+export const isDeletableTag = (tag: { status: string; is_disabled?: boolean }) => tag.status === "blank" || Boolean(tag.is_disabled);
 
 export const generateSmartTagBatch = (count: number, label: string, tagType: TagType, validityMonths: number | null, price = 0) =>
   mutate<GeneratedBatch & { success: boolean }>("batch", "Generate Smart Tags", { count, label, tag_type: tagType, validity_months: validityMonths, price });

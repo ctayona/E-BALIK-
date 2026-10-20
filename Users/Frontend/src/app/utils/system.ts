@@ -10,7 +10,7 @@ import { authUtils } from './api';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export const SYSTEM_EVENT = 'ebalik:system';
-export type SystemCode = 'maintenance' | 'suspended' | 'session_revoked' | 'verification_required';
+export type SystemCode = 'maintenance' | 'suspended' | 'session_revoked' | 'verification_required' | 'page_locked';
 export interface SystemEventDetail { code: SystemCode; message?: string; until?: string | null }
 
 export function emitSystemEvent(detail: SystemEventDetail) {
@@ -20,8 +20,9 @@ export function emitSystemEvent(detail: SystemEventDetail) {
 export type AnnouncementTone = 'info' | 'success' | 'warning' | 'critical';
 /** The campus-wide banner. `id` changes whenever an admin edits it, so a visitor who closed it sees the new one. */
 export interface Announcement { id: string; tone: AnnouncementTone; title: string; message: string }
-export interface SystemStatus { maintenance: boolean; message: string; since: string | null; announcement?: Announcement | null }
-const OPEN: SystemStatus = { maintenance: false, message: '', since: null };
+/** `lockedPages`: user pages a super administrator locked while fixing them (page id -> notice). */
+export interface SystemStatus { maintenance: boolean; message: string; since: string | null; announcement?: Announcement | null; lockedPages: Record<string, string> }
+const OPEN: SystemStatus = { maintenance: false, message: '', since: null, lockedPages: {} };
 
 const TONES: AnnouncementTone[] = ['info', 'success', 'warning', 'critical'];
 
@@ -56,7 +57,9 @@ export async function fetchSystemStatus(): Promise<SystemStatus | null> {
     const response = await fetch(`${API_URL}/api/system/status`);
     if (!response.ok) return null;
     const data = await response.json();
-    return { maintenance: Boolean(data.maintenance), message: String(data.message || ''), since: data.since || null };
+    const locked = data.locked_pages && typeof data.locked_pages === 'object' ? data.locked_pages as Record<string, unknown> : {};
+    const lockedPages = Object.fromEntries(Object.entries(locked).map(([page, note]) => [page, String(note || '')]));
+    return { maintenance: Boolean(data.maintenance), message: String(data.message || ''), since: data.since || null, lockedPages };
   } catch {
     return null;
   }
@@ -68,7 +71,7 @@ export function useSystemStatus(): SystemStatus & { refresh: () => Promise<void>
 
   const refresh = async () => {
     const next = await fetchSystemStatus();
-    if (next) setStatus((current) => (current.maintenance === next.maintenance && current.message === next.message ? current : next));
+    if (next) setStatus((current) => (current.maintenance === next.maintenance && current.message === next.message && JSON.stringify(current.lockedPages) === JSON.stringify(next.lockedPages) ? current : next));
   };
 
   useEffect(() => {
@@ -76,7 +79,8 @@ export function useSystemStatus(): SystemStatus & { refresh: () => Promise<void>
     const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 30000);
     const onEvent = (event: Event) => {
       const detail = (event as CustomEvent<SystemEventDetail>).detail;
-      if (detail?.code === 'maintenance') setStatus((current) => (current.maintenance ? current : { maintenance: true, message: detail.message || '', since: current.since }));
+      if (detail?.code === 'maintenance') setStatus((current) => (current.maintenance ? current : { ...current, maintenance: true, message: detail.message || '' }));
+      if (detail?.code === 'page_locked') void refresh();
     };
     window.addEventListener(SYSTEM_EVENT, onEvent);
     return () => { window.clearInterval(timer); window.removeEventListener(SYSTEM_EVENT, onEvent); };

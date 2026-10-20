@@ -23,8 +23,22 @@ def _require_admin(required_level='admin'):
         access_level = 'admin' if legacy_role == 'admin' else 'super_admin' if legacy_role == 'super_admin' else 'user'
     if required_level == 'super_admin' and access_level != 'super_admin':
         raise PermissionError('Super administrator access required')
+    # Role access (Users > Role access) and page locks (System control). A guard may use an admin API only when a super
+    # administrator granted guards a page that owns it; an administrator loses the APIs of pages taken away or locked.
+    from app.utils.access_control import admin_path_problem, guard_may_use
+    from app.utils.system_control import load_settings
+    admin_path = request.path[len('/api/admin'):] if request.path.startswith('/api/admin') else ''
+    try:
+        settings = load_settings(db)
+    except Exception:
+        settings = {}
     if required_level == 'admin' and access_level not in {'admin', 'super_admin'}:
-        raise PermissionError('Admin access required')
+        if not (access_level == 'guard' and admin_path and guard_may_use(settings, admin_path)):
+            raise PermissionError('Admin access required')
+    if access_level in {'admin', 'guard'} and required_level != 'super_admin':
+        problem = admin_path_problem(settings, access_level, admin_path)
+        if problem:
+            raise PermissionError(problem)
     # 'guard' is the lowest staff level: the release desk. It also admits admins, but no admin page admits a guard.
     if required_level == 'guard' and access_level not in {'guard', 'admin', 'super_admin'}:
         raise PermissionError('Guard or administrator access required')

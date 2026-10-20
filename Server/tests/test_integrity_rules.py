@@ -354,9 +354,9 @@ class AuctionPrivacyTests(unittest.TestCase):
 
     def test_the_winner_email_mode_auto_sends_only_when_sendgrid_is_configured(self):
         from app.utils import auction_email
-        with patch.dict('os.environ', {'AUCTION_EMAIL_MODE': 'auto', 'SENDGRID_API_KEY': ''}), patch.object(auction_email.logger, 'info'):
+        with patch.dict('os.environ', {'AUCTION_EMAIL_MODE': 'auto'}), patch('config.Config.SENDGRID_API_KEY', None), patch('config.Config.BREVO_API_KEY', None), patch.object(auction_email.logger, 'info'):
             self.assertEqual(auction_email.send_auction_won_email(to_email='a@b.c', recipient_name='A', item_title='T', reference='R', amount=5)['mode'], 'mock')
-        with patch.dict('os.environ', {'AUCTION_EMAIL_MODE': 'auto', 'SENDGRID_API_KEY': 'SG.x'}), patch('app.utils.email_service.send_reference_email_best_effort', return_value=True) as send:
+        with patch.dict('os.environ', {'AUCTION_EMAIL_MODE': 'auto'}), patch('config.Config.SENDGRID_API_KEY', 'SG.x'), patch('app.utils.email_service.send_reference_email_best_effort', return_value=True) as send:
             result = auction_email.send_auction_won_email(to_email='a@b.c', recipient_name='A', item_title='T', reference='R', amount=5)
         self.assertEqual((result['mode'], result['sent']), ('sendgrid', True))
         send.assert_called_once()

@@ -29,6 +29,8 @@ const SystemControl = lazy(() => import("./pages/system-control/SystemControl"))
 const GuardDesk = lazy(() => import("./pages/guard-desk/GuardDesk"));
 const RecycleBin = lazy(() => import("./pages/recycle-bin/RecycleBin"));
 const Income = lazy(() => import("./pages/income/Income"));
+import { useMyAccess } from "./utils/accessApi";
+import { LockedForOthersBanner, LockedPage, NoAccessPage } from "./components/PageGate";
 
 type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "income" | "admin-profile";
 
@@ -73,6 +75,17 @@ export default function App() {
   // Numbers on the menu: how many items wait for an approval or verification on each page.
   const [badges, setBadges] = useState<Record<string, number>>({});
   const t = useT();
+  // Pages this person may open (Users > Role access) and pages locked while being fixed (System control > Page isolation).
+  const access = useMyAccess(Boolean(user));
+  // A guard granted more than the release desk gets the full console with only those pages.
+  const guardShell = user?.access_level === "guard" && Boolean(access?.pages.some((id) => id !== "release-desk"));
+
+  // Landing on a page this role cannot open (an old bookmark, or access just changed): go to the first page it can.
+  useEffect(() => {
+    if (!access || access.pages.includes(page) || !access.pages.length) return;
+    const first = (access.pages.includes("dashboard") ? "dashboard" : access.pages[0]) as Page;
+    if (PAGE_META[first]) setPage(first);
+  }, [access, page]);
 
   const handleLogout = () => {
     clearAdminSession();
@@ -151,7 +164,7 @@ export default function App() {
   }
 
   // A guard sees one screen, the release desk. The server refuses every other admin request from a guard as well.
-  if (user.access_level === "guard") {
+  if (user.access_level === "guard" && !guardShell) {
     return (
       <>
         <Suspense fallback={<AdminPageSkeleton />}><GuardDesk user={user} onLogout={handleLogout} /></Suspense>
@@ -173,6 +186,12 @@ export default function App() {
   };
 
   const pageTitle = t(PAGE_META[page]);
+  const lock = access?.locked[page];
+  const gatedPage = () => {
+    if (access && !access.pages.includes(page)) return <NoAccessPage label={pageTitle} onHome={() => navigate((access.pages.includes("dashboard") ? "dashboard" : access.pages[0] ?? "admin-profile") as Page)} />;
+    if (lock && !access?.bypass_locks) return <LockedPage label={pageTitle} message={lock.message} since={lock.since} onHome={() => navigate("dashboard")} />;
+    return <>{lock && <LockedForOthersBanner label={pageTitle} />}{renderPage()}</>;
+  };
 
   const renderPage = () => {
     switch (page) {
@@ -204,6 +223,8 @@ export default function App() {
         badges={badges}
         user={user}
         onLogout={handleLogout}
+        allowedPages={access?.pages ?? null}
+        lockedPages={access?.locked ?? {}}
       />
       <div className="min-w-0 flex-1 flex flex-col overflow-hidden">
         <AnnouncementBanner />
@@ -219,7 +240,7 @@ export default function App() {
         <main className="app-main min-w-0 flex-1 overflow-y-auto">
           <PageErrorBoundary resetKey={page}>
             <Suspense fallback={<AdminPageSkeleton />}>
-              {renderPage()}
+              {gatedPage()}
             </Suspense>
           </PageErrorBoundary>
         </main>

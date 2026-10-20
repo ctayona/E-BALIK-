@@ -1,3 +1,4 @@
+import PageIsolation from "./PageIsolation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Database, HeartPulse, Info, Loader2, LockKeyhole, LogOut, RefreshCw, ShieldCheck, Trash2, Wrench, XCircle } from "lucide-react";
 import { SegmentedFilter } from "../../components/ui/management";
@@ -37,9 +38,10 @@ function SetupNotice() {
 }
 
 type Pending = "maintenance" | "logout" | "cleanup" | null;
-type Tab = "controls" | "announcement" | "comms" | "access" | "data";
+type Tab = "controls" | "isolation" | "announcement" | "comms" | "access" | "data";
 const TABS: { value: Tab; label: string }[] = [
   { value: "controls", label: "Controls and health" },
+  { value: "isolation", label: "Page isolation" },
   { value: "announcement", label: "Announcement" },
   { value: "comms", label: "Communications" },
   { value: "access", label: "Admin access" },
@@ -148,6 +150,7 @@ export default function SystemControl() {
 
       {tab === "announcement" && <AnnouncementPanel current={overview?.announcement ?? null} onSaved={() => void loadOverview()} />}
       {tab === "comms" && <CommsHub />}
+      {tab === "isolation" && <PageIsolation />}
       {tab === "access" && <AdminGovernance />}
       {tab === "data" && (
         <div className="space-y-5">

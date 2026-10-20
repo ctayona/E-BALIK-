@@ -243,3 +243,35 @@ def email_test(admin):
     result = mission.send_test_email(db, admin['account_id'])
     _log_admin_action(db, admin, 'Send Test Email', 'System Control', f"{'OK' if result['ok'] else 'Failed'}: {result['to']}", 'email_test', result='success' if result['ok'] else 'failed')
     return jsonify(result), 200
+
+
+# ---------------------------------------------------------------------------------------------- page isolation
+@system_control_bp.route('/system/page-locks', methods=['GET'])
+@_super_admin_only('load the page locks')
+def page_locks(admin):
+    from app.utils import access_control as access
+    settings = control.load_settings(_database(), force=True)
+    return jsonify({'user': access.page_locks(settings, 'user'), 'admin': access.page_locks(settings, 'admin'), **access.catalog()}), 200
+
+
+@system_control_bp.route('/system/page-locks', methods=['PUT'])
+@_super_admin_only('change the page lock')
+def set_page_lock(admin):
+    """{area: 'user'|'admin', page, locked: bool, message}: lock a page while it is being fixed, or open it again."""
+    from app.utils import access_control as access
+    db = _database()
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload.get('locked'), bool):
+        raise ValidationError('Choose whether the page is locked.')
+    settings = control.load_settings(db, force=True)
+    try:
+        value = access.set_lock(settings.get('page_locks') or {}, str(payload.get('area') or ''), str(payload.get('page') or ''), payload['locked'], payload.get('message'), admin['account_id'])
+    except access.AccessError as error:
+        raise ValidationError(error.message)
+    control.save_setting(db, 'page_locks', value, admin['account_id'])
+    area, page = payload['area'], payload['page']
+    label = next((p['label'] for p in (access.USER_PAGES if area == 'user' else access.ADMIN_PAGES) if p['id'] == page), page)
+    where = 'user site' if area == 'user' else 'admin console'
+    _log_admin_action(db, admin, 'Lock Page' if payload['locked'] else 'Unlock Page', 'System Control', f'{label} ({where})', f'{area}:{page}')
+    message = f'{label} is locked on the {where}. Everyone except super administrators sees the notice.' if payload['locked'] else f'{label} is open again on the {where}.'
+    return jsonify({'success': True, 'user': value['user'], 'admin': value['admin'], 'message': message}), 200

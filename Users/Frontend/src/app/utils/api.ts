@@ -120,9 +120,10 @@ async function rawApiCall<T = unknown>(
         : data.maintenance ? 'maintenance'
         : data.suspended ? 'suspended'
         : data.session_revoked ? 'session_revoked'
+        : data.page_locked ? 'page_locked'
         : undefined;
       // Sign-in attempts get their message inline; everything else is handled once by the app shell.
-      if (code && (requiresAuth || code === 'maintenance')) emitSystemEvent({ code, message: data.error, until: data.suspended_until });
+      if (code && (requiresAuth || code === 'maintenance' || code === 'page_locked')) emitSystemEvent({ code, message: data.error, until: data.suspended_until });
       return {
         error: data.error || `Request failed with status ${response.status}`,
         message: data.message,

@@ -453,3 +453,66 @@ def update_user_account(account_id):
     except Exception as error:
         current_app.logger.exception('Admin user edit error for %s: %s', account_id, error)
         return jsonify({'error': 'Unable to update the account'}), 500
+
+
+# ---------------------------------------------------------------------------------------------- role access (RBAC)
+def _access_reply(view):
+    """Shared error mapping for the role access routes."""
+    from functools import wraps
+    from app.utils.access_control import AccessError
+    from app.utils.system_control import SystemSetupRequired
+
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        try:
+            return view(*args, **kwargs)
+        except AccessError as error:
+            return jsonify({'error': error.message}), error.status
+        except SystemSetupRequired as error:
+            return jsonify({'error': str(error), 'setup_required': True}), 503
+        except PermissionError as error:
+            return jsonify({'error': str(error)}), 403
+        except ValueError as error:
+            return jsonify({'error': str(error)}), 401
+        except Exception as error:
+            current_app.logger.exception('Role access failed: %s', error)
+            return jsonify({'error': 'Unable to load role access'}), 500
+    return wrapper
+
+
+@users_bp.route('/access/me', methods=['GET'])
+@_access_reply
+def my_access():
+    """Any staff member (guard, admin, super admin): the console pages they may open and which are locked."""
+    from app.utils.access_control import access_summary
+    from app.utils.system_control import load_settings
+    staff = _require_admin(required_level='guard')
+    db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+    reply = jsonify(access_summary(load_settings(db), staff['access_level']))
+    reply.headers['Cache-Control'] = 'no-store'
+    return reply, 200
+
+
+@users_bp.route('/access', methods=['GET'])
+@_access_reply
+def role_access():
+    from app.utils import access_control as access
+    from app.utils.system_control import load_settings
+    _require_admin(required_level='super_admin')
+    db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+    return jsonify({'matrix': access.rbac_matrix(load_settings(db, force=True)), 'defaults': access.DEFAULT_RBAC, **access.catalog()}), 200
+
+
+@users_bp.route('/access', methods=['PUT'])
+@_access_reply
+def save_role_access():
+    """{admin: [page ids], guard: [page ids]}. Super admins always have every page; super-only pages cannot be granted."""
+    from app.utils import access_control as access
+    from app.utils.system_control import load_settings, save_setting
+    admin = _require_admin(required_level='super_admin')
+    db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+    matrix = access.validate_rbac(request.get_json(silent=True) or {})
+    save_setting(db, 'rbac', matrix, admin['account_id'])
+    summary = '; '.join(f"{role}: {len(pages)} pages" for role, pages in matrix.items())
+    _log_admin_action(db, admin, 'Update Role Access', 'Users', summary, 'rbac')
+    return jsonify({'success': True, 'matrix': access.rbac_matrix(load_settings(db, force=True)), 'message': 'Role access saved. It applies the next time each person opens or refreshes the console.'}), 200

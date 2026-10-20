@@ -34,6 +34,8 @@ DEFAULT_SETTINGS: Dict[str, Dict[str, Any]] = {
     'maintenance_mode': {'enabled': False, 'message': '', 'since': None},
     'sessions_valid_after': {'ts': None},
     'last_cleanup': {},
+    'rbac': {},
+    'page_locks': {},
     'announcement': {'live': False, 'tone': 'info', 'title': '', 'message': '', 'updated_at': None},
 }
 
@@ -147,6 +149,7 @@ def public_announcement(settings: Dict[str, Dict[str, Any]]) -> Optional[Dict[st
 
 
 def public_status(db) -> Dict[str, Any]:
+    from app.utils.access_control import page_locks
     settings = load_settings(db)
     maintenance = settings['maintenance_mode']
     enabled = bool(maintenance.get('enabled'))
@@ -155,6 +158,8 @@ def public_status(db) -> Dict[str, Any]:
         'message': (maintenance.get('message') or '') if enabled else '',
         'since': maintenance.get('since') if enabled else None,
         'announcement': public_announcement(settings),
+        # User pages locked while they are being fixed: the app shows a notice instead of the page (super admins see it anyway).
+        'locked_pages': {page: lock.get('message') or '' for page, lock in page_locks(settings, 'user').items()},
     }
 
 
@@ -286,6 +291,13 @@ def enforce_request():
     administrator = bool(state) and state['level'] in STAFF_LEVELS
     if settings['maintenance_mode'].get('enabled') and not desk:
         return None if request.path in AUTH_OPEN_PATHS else _maintenance_response(settings)
+    if not (state and state['level'] == 'super_admin') and request.path.startswith('/api/') and not request.path.startswith('/api/admin/'):
+        from app.utils.access_control import user_path_lock
+        locked = user_path_lock(settings, request.method, request.path[len('/api'):])
+        if locked:
+            response = jsonify({'error': locked[1], 'page_locked': locked[0]})
+            response.status_code = 423
+            return response
     if not payload or not state or administrator:
         return None
 

@@ -1172,7 +1172,102 @@ class SmartTagService:
             if needle and needle not in f"{item['tag_id']} {item['item_name']} {item['batch_label']} {(item['owner'] or {}).get('name', '')} {(item['owner'] or {}).get('email', '')}".lower():
                 continue
             items.append(item)
-        return {'tags': items, 'stats': stats, 'tag_url_base': public_base_url(), 'url_check': url_check(), 'tag_types': tag_type_options()}
+        return {'tags': items, 'stats': stats, 'revenue': self.revenue_summary(), 'tag_url_base': public_base_url(), 'url_check': url_check(), 'tag_types': tag_type_options()}
+
+    # ------------------------------------------------------------------ revenue and removal
+    def revenue_summary(self) -> Optional[Dict[str, Any]]:
+        """Money from Smart Tags: what the income ledger recorded (a tag is sold the moment staff approve its registration),
+        how many tags were paid for, this month's share, and the value of unsold priced stock. None before migration 20261022."""
+        from decimal import Decimal
+        try:
+            entries = self.client.table('income_ledger').select('amount,kind,received_at').eq('source', 'smart_tag').limit(20000).execute().data or []
+        except Exception as error:
+            logger.info('Smart Tag revenue unavailable (run 20261022): %s', str(error)[:120])
+            return None
+        month = _now().astimezone(timezone(timedelta(hours=8))).strftime('%Y-%m')
+        total = sum((Decimal(str(row.get('amount') or 0)) for row in entries), Decimal('0'))
+        this_month = Decimal('0')
+        for row in entries:
+            moment = _parse(row.get('received_at'))
+            if moment and moment.astimezone(timezone(timedelta(hours=8))).strftime('%Y-%m') == month:
+                this_month += Decimal(str(row.get('amount') or 0))
+        sold = sum(1 for row in entries if row.get('kind') == 'sale')
+        stock_value, stock = Decimal('0'), 0
+        try:
+            for row in self._table().select('price').eq('status', 'blank').eq('is_disabled', False).limit(20000).execute().data or []:
+                price = Decimal(str(row.get('price') or 0))
+                if price > 0:
+                    stock_value += price
+                    stock += 1
+        except Exception:
+            pass
+        return {'total': float(total), 'this_month': float(this_month), 'sold': sold, 'average': float(total / sold) if sold else 0.0,
+                'stock_value': float(stock_value), 'stock_count': stock}
+
+    @staticmethod
+    def deletable(tag: Dict[str, Any]) -> bool:
+        """Only a tag nobody uses can be deleted: never registered (blank), or switched off by an administrator."""
+        return tag.get('status') == 'blank' or bool(tag.get('is_disabled'))
+
+    def _linked_found_item(self, tag_id: str) -> bool:
+        try:
+            return bool(self.client.table('found_items').select('item_id').eq('smart_tag_id', tag_id).limit(1).execute().data)
+        except Exception:
+            return False
+
+    def delete_tag(self, raw_tag_id: Any, admin_id: str) -> Dict[str, Any]:
+        """Remove an unused or deactivated tag and its photos. Money already recorded stays in the income ledger."""
+        tag_id = normalize_tag_id(raw_tag_id)
+        if not tag_id:
+            raise TagError('This Smart Tag was not found.', 404)
+        tag = self._get(tag_id)
+        if not self.deletable(tag):
+            raise TagError('Only a blank tag, or one an administrator deactivated, can be deleted. Deactivate it first.', 409, code='in_use')
+        if tag.get('status') != 'blank' and self._linked_found_item(tag_id):
+            raise TagError('A found item in custody was registered with this tag, so it is kept for the handover record.', 409, code='linked')
+        try:
+            query = self._table().delete().eq('tag_id', tag_id)
+            query = query.eq('status', 'blank') if tag.get('status') == 'blank' and not tag.get('is_disabled') else query.eq('is_disabled', True)
+            removed = query.execute().data or []
+        except Exception as error:
+            self._guard(error)
+        if not removed:
+            raise TagError('The tag changed while you were deleting it. Reload and try again.', 409)
+        self._remove_photo(tag.get('item_image_url'))
+        self._remove_photo(tag.get('pending_image_url'))
+        return {'tag_id': tag_id, 'deleted': True, 'was_registered': tag.get('status') != 'blank'}
+
+    def delete_batch(self, raw_batch_id: Any, admin_id: str) -> Dict[str, Any]:
+        """Delete every unused (blank) and deactivated tag in a batch. Tags people still use are left alone and counted."""
+        try:
+            batch_id = str(uuid.UUID(str(raw_batch_id)))
+        except (TypeError, ValueError):
+            raise TagError('This batch was not found.', 404)
+        try:
+            rows = self._table().select('tag_id,status,is_disabled,item_image_url,pending_image_url').eq('batch_id', batch_id).limit(5000).execute().data or []
+        except Exception as error:
+            self._guard(error)
+        if not rows:
+            raise TagError('This batch was not found.', 404)
+        candidates = [row for row in rows if self.deletable(row) and (row.get('status') == 'blank' or not self._linked_found_item(row['tag_id']))]
+        deleted: List[str] = []
+        for start in range(0, len(candidates), 200):
+            chunk = [row['tag_id'] for row in candidates[start:start + 200]]
+            try:
+                blank = [r['tag_id'] for r in candidates[start:start + 200] if r.get('status') == 'blank' and not r.get('is_disabled')]
+                off = [tag for tag in chunk if tag not in blank]
+                if blank:
+                    deleted += [r['tag_id'] for r in (self._table().delete().in_('tag_id', blank).eq('status', 'blank').execute().data or [])]
+                if off:
+                    deleted += [r['tag_id'] for r in (self._table().delete().in_('tag_id', off).eq('is_disabled', True).execute().data or [])]
+            except Exception as error:
+                self._guard(error)
+        for row in candidates:
+            if row['tag_id'] in deleted:
+                self._remove_photo(row.get('item_image_url'))
+                self._remove_photo(row.get('pending_image_url'))
+        kept = len(rows) - len(deleted)
+        return {'batch_id': batch_id, 'deleted': len(deleted), 'kept': kept}
 
     def set_disabled(self, raw_tag_id: Any, disabled: bool, reason: Any, admin_id: str) -> Dict[str, Any]:
         tag_id = normalize_tag_id(raw_tag_id)

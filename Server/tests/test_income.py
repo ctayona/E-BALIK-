@@ -29,6 +29,10 @@ class Table:
         self.op, self.payload = 'update', payload
         return self
 
+    def delete(self):
+        self.op = 'delete'
+        return self
+
     def eq(self, key, value):
         self.filters.append(lambda r: str(r.get(key)) == str(value))
         return self
@@ -76,6 +80,10 @@ class Table:
         if self.op == 'update':
             for row in matched:
                 row.update(self.payload)
+            return SimpleNamespace(data=[dict(r) for r in matched])
+        if self.op == 'delete':
+            for row in matched:
+                rows.remove(row)
             return SimpleNamespace(data=[dict(r) for r in matched])
         if self.order_key:
             key, desc = self.order_key
@@ -283,3 +291,30 @@ class RouteTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TagRemovalAndRevenueTests(unittest.TestCase):
+    def test_only_blank_or_deactivated_tags_can_be_deleted(self):
+        store = {'smart_tags': [{'tag_id': 'ABCDEFGHJK23', 'status': 'active', 'is_disabled': False, 'owner_account_id': OWNER}], 'found_items': []}
+        with self.assertRaises(TagError) as caught:
+            SmartTagService(make_db(store)).delete_tag('ABCDEFGHJK23', ADMIN)
+        self.assertEqual(caught.exception.status, 409)
+        store['smart_tags'][0]['is_disabled'] = True
+        self.assertTrue(SmartTagService(make_db(store)).delete_tag('ABCDEFGHJK23', ADMIN)['deleted'])
+
+    def test_a_tag_linked_to_a_found_item_is_kept(self):
+        store = {'smart_tags': [{'tag_id': 'ABCDEFGHJK23', 'status': 'active', 'is_disabled': True}], 'found_items': [{'item_id': 'f1', 'smart_tag_id': 'ABCDEFGHJK23'}]}
+        with self.assertRaises(TagError):
+            SmartTagService(make_db(store)).delete_tag('ABCDEFGHJK23', ADMIN)
+
+    def test_revenue_summary_reads_the_ledger(self):
+        now = datetime.now(timezone.utc).isoformat()
+        store = {'income_ledger': [{'source': 'smart_tag', 'kind': 'sale', 'amount': '150.00', 'received_at': now},
+                                   {'source': 'smart_tag', 'kind': 'sale', 'amount': '150.00', 'received_at': now},
+                                   {'source': 'auction', 'kind': 'sale', 'amount': '900.00', 'received_at': now}],
+                 'smart_tags': [{'tag_id': 'T1', 'status': 'blank', 'is_disabled': False, 'price': '150'}]}
+        summary = SmartTagService(make_db(store)).revenue_summary()
+        self.assertEqual((summary['total'], summary['sold'], summary['this_month'], summary['stock_value']), (300.0, 2, 300.0, 150.0))
+
+    def test_revenue_is_none_before_the_migration(self):
+        self.assertIsNone(SmartTagService(make_db({'missing_tables': ('income_ledger',)})).revenue_summary())

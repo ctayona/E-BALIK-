@@ -12,6 +12,16 @@ load_dotenv(BACKEND_ENV_FILE)
 load_dotenv(FRONTEND_ENV_FILE)
 
 
+def _running_tests():
+    """True under `python -m unittest` or pytest. Tests must never reach a real email provider, whatever keys this machine has."""
+    import sys
+    entry = (sys.argv[0] if sys.argv else '').replace(chr(92), '/').lower()
+    return 'unittest' in entry or 'pytest' in entry or os.getenv('EBALIK_TESTING') == '1'
+
+
+UNDER_TEST = _running_tests()
+
+
 def _secret(name):
     """An environment value with stray spaces, line breaks and wrapping quotes removed.
 
@@ -34,11 +44,12 @@ class Config:
     SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_KEY')
     
     # SendGrid
-    SENDGRID_API_KEY = _secret('SENDGRID_API_KEY')
+    SENDGRID_API_KEY = None if UNDER_TEST else _secret('SENDGRID_API_KEY')
     SENDGRID_FROM_EMAIL = _secret('SENDGRID_FROM_EMAIL')
     # Brevo (free: 300 emails a day, works over HTTPS so it is not blocked on Render's free plan). When BREVO_API_KEY is set it is used
     # instead of SendGrid. BREVO_FROM_EMAIL must be a sender verified in Brevo; it falls back to SENDGRID_FROM_EMAIL.
-    BREVO_API_KEY = _secret('BREVO_API_KEY')
+    # Never a real key under tests: a test that forgets to stub the provider must not send real email.
+    BREVO_API_KEY = None if UNDER_TEST else _secret('BREVO_API_KEY')
     BREVO_FROM_EMAIL = _secret('BREVO_FROM_EMAIL') or _secret('SENDGRID_FROM_EMAIL')
     EMAIL_FROM_NAME = _secret('EMAIL_FROM_NAME') or 'E-Balik Lost & Found'
     

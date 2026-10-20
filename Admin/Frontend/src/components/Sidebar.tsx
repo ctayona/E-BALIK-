@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import umakLogo from "../imports/umak-logo.png";
+import umakLogo from "../imports/umak-seal.webp";
 import { AdminUser } from "../utils/api";
 import { useT, tr } from "../utils/preferences";
 import type { StringKey } from "../i18n/strings";
-import { ArchiveRestore, ClipboardList, Gavel, KeyRound, PhilippinePeso, QrCode, SlidersHorizontal } from "lucide-react";
+import { ArchiveRestore, ClipboardList, Gavel, KeyRound, LockKeyhole, PhilippinePeso, QrCode, SlidersHorizontal } from "lucide-react";
 
 type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "income" | "admin-profile";
 
@@ -15,6 +15,10 @@ interface SidebarProps {
   badges?: Record<string, number>;
   user: AdminUser;
   onLogout: () => void;
+  /** Pages this role may open (null while loading: show the usual menu, the server still enforces). */
+  allowedPages?: string[] | null;
+  /** Pages locked while being fixed: shown with a lock. */
+  lockedPages?: Record<string, { message: string }>;
 }
 
 const GROUP_ORDER: { id: string; label: StringKey }[] = [
@@ -55,7 +59,7 @@ const navItems = [
   )},
 ];
 
-export default function Sidebar({ currentPage, onNavigate, notifCount, badges = {}, user, onLogout }: SidebarProps) {
+export default function Sidebar({ currentPage, onNavigate, notifCount, badges = {}, user, onLogout, allowedPages = null, lockedPages = {} }: SidebarProps) {
   const t = useT();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -79,7 +83,7 @@ export default function Sidebar({ currentPage, onNavigate, notifCount, badges = 
         <span className="pointer-events-none absolute inset-x-5 bottom-0 h-px bg-[linear-gradient(90deg,transparent,rgba(209,161,83,0.55),transparent)]" aria-hidden="true" />
         <div className="group flex items-center gap-3">
           <div className="relative shrink-0">
-            <img decoding="async" src={umakLogo} alt={tr("University of Makati logo")} className="h-10 w-10 rounded-xl object-cover ring-1 ring-white/15 transition-[box-shadow,transform] duration-300 group-hover:scale-105 group-hover:shadow-[0_0_18px_-2px_rgba(209,161,83,0.55)]" />
+            <img decoding="async" src={umakLogo} alt={tr("University of Makati logo")} width={40} height={40} className="size-10 rounded-full object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)] transition-[filter,transform] duration-300 group-hover:scale-105 group-hover:drop-shadow-[0_0_12px_rgba(209,161,83,0.6)]" />
             <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-gold-500 ring-2 ring-navy-900" />
           </div>
           <div className="min-w-0">
@@ -91,11 +95,11 @@ export default function Sidebar({ currentPage, onNavigate, notifCount, badges = 
 
       {/* Nav */}
       <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4" aria-label={t("nav.label")}>
-        {GROUP_ORDER.map((group) => (
+        {GROUP_ORDER.filter((group) => navItems.some((item) => item.group === group.id && (!item.superOnly || user.access_level === "super_admin") && (!allowedPages || allowedPages.includes(item.id)))).map((group) => (
           <div key={group.id} className="mb-5 last:mb-0">
             <div className="mb-1.5 flex items-center gap-2 px-3 text-[12.5px] font-medium text-navy-300/90">{t(group.label)}<span className="h-px flex-1 bg-[linear-gradient(90deg,rgba(255,255,255,0.12),transparent)]" aria-hidden="true" /></div>
             <ul className="space-y-1">
-              {navItems.filter((item) => item.group === group.id && (!item.superOnly || user.access_level === "super_admin")).map((item) => {
+              {navItems.filter((item) => item.group === group.id && (!item.superOnly || user.access_level === "super_admin") && (!allowedPages || allowedPages.includes(item.id))).map((item) => {
                 const active = currentPage === item.id;
                 return (
                   <li key={item.id}>
@@ -109,6 +113,7 @@ export default function Sidebar({ currentPage, onNavigate, notifCount, badges = 
                     >
                       <span className={`shrink-0 transition-[color,transform] duration-200 ${active ? "text-navy-950" : "text-navy-300 group-hover:scale-110 group-hover:text-gold-200"}`} aria-hidden="true">{item.icon}</span>
                       <span className="flex-1 truncate text-left">{t(item.label)}</span>
+                      {lockedPages[item.id] && <LockKeyhole size={14} className={active ? "text-navy-950" : "text-gold-300"} aria-label={tr("Locked")} />}
                       {(badges[item.id] ?? 0) > 0 && (
                         <span
                           className={`min-w-[22px] rounded-full px-1.5 py-0.5 text-center text-[12px] font-bold tabular-nums ${active ? "bg-navy-950 text-gold-200" : "bg-gold-500 text-navy-950"}`}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, IdCard, Save, UserRound, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, BellRing, IdCard, Palette, QrCode, Save, Settings2, ShieldCheck, UserRound, CheckCircle2 } from "lucide-react";
 import { motion } from "motion/react";
 import type { Page } from "@/app/types";
 import { useAuth } from "@/app/utils/useAuth";
@@ -14,8 +14,7 @@ import { focusFirstInvalid } from "@/app/shared/forms/FieldHint";
 import NameField from "@/app/shared/forms/NameField";
 import { firstTextProblem } from "@/app/utils/textGuard";
 import VerificationStatusCard, { assignedRole } from "@/app/shared/verification/VerificationStatusCard";
-import EmailPreferencesCard from "@/app/shared/profile/EmailPreferencesCard";
-import { SmartTagContactCard } from "@/app/shared/tags/SmartTagContactModal";
+import { openSettings, type SettingsTab } from "@/app/shared/settings/UserSettingsModal";
 
 export default function Profile({
   user: userProp,
@@ -245,9 +244,30 @@ export default function Profile({
           </form>
         </motion.div>
 
-        <SmartTagContactCard onManageTags={() => onNavigate("my-tags")} />
-
-        <EmailPreferencesCard />
+        {/* Every preference now lives in one place, Settings (also in the account menu). These shortcuts open the right tab. */}
+        <section className={`${CX.card} mt-6 p-6 sm:p-7`} aria-labelledby="profile-settings-heading">
+          <div className="flex items-start gap-3.5">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#2b4282,#1f3160)] text-gold-300" aria-hidden="true"><Settings2 size={20} /></span>
+            <div className="min-w-0">
+              <h2 id="profile-settings-heading" className="font-[family-name:var(--font-heading)] text-[20px] font-semibold text-ink">Settings</h2>
+              <p className="mt-0.5 text-[13.5px] leading-6 text-ink-muted">Email choices, Smart Tag contact details, appearance and security are all in Settings, also in your account menu.</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
+            {([
+              { tab: "notifications", label: "Notifications and email", hint: "Reminders, announcements, sound", icon: <BellRing size={18} aria-hidden="true" /> },
+              { tab: "privacy", label: "Smart Tag contact details", hint: "What finders see on your tags", icon: <QrCode size={18} aria-hidden="true" /> },
+              { tab: "appearance", label: "Appearance", hint: "Theme, text size, contrast", icon: <Palette size={18} aria-hidden="true" /> },
+              { tab: "account", label: "Account and security", hint: "Change your password", icon: <ShieldCheck size={18} aria-hidden="true" /> },
+            ] as Array<{ tab: SettingsTab; label: string; hint: string; icon: React.ReactNode }>).map((item) => (
+              <button key={item.tab} type="button" onClick={() => openSettings(item.tab)} className="group flex items-center gap-3 rounded-2xl border border-line bg-white/80 p-3.5 text-left transition hover:border-gold-300 hover:bg-gold-50">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-frost-100 text-navy-700 transition-colors group-hover:bg-white">{item.icon}</span>
+                <span className="min-w-0 flex-1"><span className="block text-[14.5px] font-semibold text-ink">{item.label}</span><span className="block truncate text-[12.5px] text-ink-muted">{item.hint}</span></span>
+                <ArrowRight size={17} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        </section>
       </div>
 
       {/* Upload type modal */}

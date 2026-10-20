@@ -14,9 +14,17 @@ export interface Preferences {
   homeFeed: FeedTab;
   /** Keep the Home page to the feed (hides the side columns' extras on wide screens). */
   focusFeed: boolean;
+  /** Show the "Urgent this week" row of IDs, wallets and phones on Home. */
+  showStories: boolean;
+  /** Stronger text and border contrast (WCAG AAA-leaning) for bright rooms and low vision. */
+  highContrast: boolean;
+  /** Underline every link, not only on hover. */
+  underlineLinks: boolean;
+  /** Show the unread count on the installed app's icon (PWA badging, where the device supports it). */
+  appBadge: boolean;
 }
 
-export const DEFAULT_PREFERENCES: Preferences = { textSize: "default", reduceMotion: false, homeFeed: "all", focusFeed: false };
+export const DEFAULT_PREFERENCES: Preferences = { textSize: "default", reduceMotion: false, homeFeed: "all", focusFeed: false, showStories: true, highContrast: false, underlineLinks: false, appBadge: true };
 
 export const TEXT_SIZE_PERCENT: Record<TextSize, number> = { small: 93.75, default: 100, large: 112.5, xlarge: 125 };
 
@@ -30,6 +38,10 @@ function sanitize(raw: unknown): Preferences {
     reduceMotion: source.reduceMotion === true,
     homeFeed: ["all", "found", "missing", "auctions"].includes(String(source.homeFeed)) ? (source.homeFeed as FeedTab) : DEFAULT_PREFERENCES.homeFeed,
     focusFeed: source.focusFeed === true,
+    showStories: source.showStories !== false,
+    highContrast: source.highContrast === true,
+    underlineLinks: source.underlineLinks === true,
+    appBadge: source.appBadge !== false,
   };
 }
 
@@ -49,6 +61,10 @@ function apply() {
   root.style.fontSize = current.textSize === "default" ? "" : `${TEXT_SIZE_PERCENT[current.textSize]}%`;
   if (current.reduceMotion) root.dataset.motion = "reduce";
   else delete root.dataset.motion;
+  if (current.highContrast) root.dataset.contrast = "high";
+  else delete root.dataset.contrast;
+  if (current.underlineLinks) root.dataset.links = "underline";
+  else delete root.dataset.links;
 }
 
 /** Call before the first render, next to `initTheme`, so the page never flashes at the wrong size. */
@@ -88,4 +104,15 @@ export function usePreferences(): Preferences {
     (callback) => { window.addEventListener(EVENT, callback); return () => window.removeEventListener(EVENT, callback); },
     () => current,
   );
+}
+
+/** Keys this app keeps on the device besides the sign-in. Cleared by Settings > Privacy > Clear saved choices. */
+const DEVICE_KEYS = [KEY, "ebalik_user_theme", "ebalik_notification_sound", "ebalik_user_last_page", "ebalik_view_mode", "ebalik_dismissed_announcement"];
+
+/** Forget this device's saved choices (theme, sizes, last page, view mode). The sign-in is kept. */
+export function clearDeviceChoices() {
+  for (const key of DEVICE_KEYS) {
+    try { localStorage.removeItem(key); } catch { /* storage blocked: nothing to clear */ }
+  }
+  resetPreferences();
 }

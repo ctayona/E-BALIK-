@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Ban, CalendarClock, Check, ClipboardCheck, Copy, Database, Download, Eye, Hourglass, Layers, Nfc, Package, Pencil, PhilippinePeso, QrCode, Radio, RefreshCw, RotateCw, ShieldCheck, ShieldOff, Tags, TriangleAlert } from "lucide-react";
+import { Banknote, Expand, Trash2, X as CloseIcon, Ban, CalendarClock, Check, ClipboardCheck, Copy, Database, Download, Eye, Hourglass, Layers, Nfc, Package, Pencil, PhilippinePeso, QrCode, Radio, RefreshCw, RotateCw, ShieldCheck, ShieldOff, Tags, TriangleAlert } from "lucide-react";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import AdminModal from "../../components/ui/AdminModal";
 import { BTN, INPUT, PageHeader, RolePill } from "../../components/ui/primitives";
 import { DataTable, DetailGrid, ExportButton, IconAction, RowActions, SearchField, SegmentedFilter, StatusPill, TableFooter, Toolbar, usePagination, type Tone } from "../../components/ui/management";
 import {
-  SmartTagSetupError, deactivateSmartTag, deactivateTagBatch, fetchSmartTagPhoto, fetchSmartTagQr, fetchSmartTags, fetchTagBatches, generateSmartTagBatch, reactivateSmartTag, reactivateTagBatch, renewSmartTag, setTagBatchPrice,
+  SmartTagSetupError, deactivateSmartTag, deactivateTagBatch, fetchSmartTagPhoto, fetchSmartTagQr, fetchSmartTags, fetchTagBatches, generateSmartTagBatch, reactivateSmartTag, reactivateTagBatch, renewSmartTag, setTagBatchPrice, deleteSmartTag, deleteTagBatch, isDeletableTag, type SmartTagRevenue,
   type AdminSmartTag, type GeneratedBatch, type SmartTagList, type TagBatch, type TagFilter, type TagType, type TagTypeOption,
 } from "../../utils/smartTagsApi";
 import AdminTagEditModal from "./AdminTagEditModal";
@@ -57,7 +57,7 @@ function ValidityCell({ tag }: { tag: AdminSmartTag }) {
 }
 
 /** Batches with the soonest-expiring registered tags first, so renewals and reprints are never a surprise. */
-function BatchPanel({ batches, superAdmin, onDeactivate, onReactivate, onPrice }: { batches: TagBatch[]; superAdmin: boolean; onDeactivate: (batch: TagBatch) => void; onReactivate: (batch: TagBatch) => void; onPrice: (batch: TagBatch) => void }) {
+function BatchPanel({ batches, superAdmin, onDeactivate, onReactivate, onPrice, onDelete }: { batches: TagBatch[]; superAdmin: boolean; onDeactivate: (batch: TagBatch) => void; onReactivate: (batch: TagBatch) => void; onPrice: (batch: TagBatch) => void; onDelete: (batch: TagBatch) => void }) {
   const [all, setAll] = useState(false);
   if (!batches.length) return null;
   const shown = all ? batches : batches.slice(0, 4);
@@ -97,6 +97,7 @@ function BatchPanel({ batches, superAdmin, onDeactivate, onReactivate, onPrice }
                   {batch.price !== null && batch.price !== undefined && batch.blank > 0 && <button type="button" onClick={() => onPrice(batch)} className={`${BTN.ghost} !min-h-[38px]`}><PhilippinePeso size={15} aria-hidden="true" />{tr("Set price")}</button>}
                   {batch.disabled < batch.total && <button type="button" onClick={() => onDeactivate(batch)} className={`${BTN.ghost} !min-h-[38px] text-rose-700 dark:text-rose-300`}><Ban size={15} aria-hidden="true" />{tr("Deactivate batch")}</button>}
                   {batch.disabled > 0 && <button type="button" onClick={() => onReactivate(batch)} className={`${BTN.ghost} !min-h-[38px]`}><ShieldCheck size={15} aria-hidden="true" />{tr("Reactivate batch")}</button>}
+                  {batch.blank + batch.disabled > 0 && <button type="button" onClick={() => onDelete(batch)} className={`${BTN.ghost} !min-h-[38px] text-rose-700 dark:text-rose-300`}><Trash2 size={15} aria-hidden="true" />{tr("Delete unused")}</button>}
                 </div>
               )}
             </li>
@@ -310,7 +311,8 @@ function TagFacts({ title, rows }: { title: string; rows: [string, ReactNode][] 
   );
 }
 
-function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew, onEdit }: { tag: AdminSmartTag; canBan: boolean; onClose: () => void; onDeactivate: () => void; onReactivate: () => void; onRenew: () => void; onEdit: () => void }) {
+function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew, onEdit, onDelete }: { tag: AdminSmartTag; canBan: boolean; onClose: () => void; onDeactivate: () => void; onReactivate: () => void; onRenew: () => void; onEdit: () => void; onDelete: () => void }) {
+  const [zoom, setZoom] = useState(false);
   const [qr, setQr] = useState("");
   const [qrError, setQrError] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -353,6 +355,7 @@ function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew, o
         {canBan && registered && (tag.is_disabled
           ? <button type="button" onClick={onReactivate} className={`${BTN.ghost} whitespace-nowrap sm:mr-auto`}><ShieldCheck size={16} aria-hidden="true" />{tr("Reactivate")}</button>
           : <button type="button" onClick={onDeactivate} className="inline-flex min-h-[42px] items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-4 text-[14px] font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 sm:mr-auto dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/20"><Ban size={16} aria-hidden="true" />{tr("Deactivate tag")}</button>)}
+        {canBan && isDeletableTag(tag) && <button type="button" onClick={onDelete} className={`${BTN.ghost} whitespace-nowrap text-rose-700 dark:text-rose-300 ${registered ? "" : "sm:mr-auto"}`}><Trash2 size={16} aria-hidden="true" />{tr("Delete tag")}</button>}
         {owner && registered && <button type="button" onClick={onEdit} className={`${BTN.ghost} whitespace-nowrap`}><Pencil size={16} aria-hidden="true" />{tr("Edit")}</button>}
         {owner && registered && tag.status !== "pending_verification" && <button type="button" onClick={onRenew} className={`${BTN.ghost} whitespace-nowrap`}><RotateCw size={16} aria-hidden="true" />{tr("Renew")}</button>}
         <button type="button" onClick={onClose} className={`${BTN.primary} whitespace-nowrap`}>{tr("Close")}</button>
@@ -380,26 +383,33 @@ function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew, o
           {tag.is_disabled && tag.disabled_reason && <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13.5px] leading-6 text-rose-800 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-200"><TriangleAlert size={15} className="mr-1.5 inline" aria-hidden="true" />{tr("Deactivated: {0}", { "0": tag.disabled_reason })}</p>}
 
           {registered && (
-            <section className="flex flex-col gap-4 sm:flex-row">
-              {photoState !== "none" && (
-                <figure className="w-full shrink-0 overflow-hidden rounded-2xl border border-line bg-navy-950 sm:w-[210px]">
-                  {photoState === "ready" ? <img src={photo} alt={tr("Photo of the item with its sticker, taken by the owner at registration")} className="h-[170px] w-full object-cover" onError={() => setPhotoState("error")} />
-                    : photoState === "loading" ? <SkeletonBlock className="h-[170px] w-full rounded-none" />
-                    : <p className="flex h-[170px] items-center justify-center px-4 text-center text-[13px] text-[#fecdd3]">{tr("The photo could not be loaded.")}</p>}
-                  <figcaption className="bg-[var(--surface)] px-3 py-2 text-[12px] leading-4 text-ink-muted">{tr("Photo taken live by the owner at registration")}</figcaption>
+            <section className="space-y-4">
+              {photoState !== "none" ? (
+                <figure className="group relative overflow-hidden rounded-[22px] border border-line bg-navy-950 shadow-[0_18px_40px_-28px_rgba(14,24,48,0.9)]">
+                  {photoState === "ready" ? (
+                    <button type="button" onClick={() => setZoom(true)} className="relative block aspect-[4/3] max-h-[340px] w-full overflow-hidden" aria-label={tr("Open the photo full size")}>
+                      {/* A soft, blurred copy fills the frame so a tall or wide photo never leaves empty black bars. */}
+                      <img src={photo} alt="" aria-hidden="true" className="absolute inset-0 size-full scale-110 object-cover opacity-45 blur-2xl" />
+                      <img src={photo} alt={tr("Photo of the item with its sticker, taken by the owner at registration")} className="relative mx-auto size-full object-contain transition-transform duration-300 group-hover:scale-[1.02]" onError={() => setPhotoState("error")} />
+                      <span className="absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-navy-950/70 px-3 py-1.5 text-[12px] font-semibold text-white opacity-90 ring-1 ring-white/15 backdrop-blur-md transition-opacity group-hover:opacity-100"><Expand size={13} aria-hidden="true" />{tr("View full size")}</span>
+                    </button>
+                  ) : photoState === "loading" ? <SkeletonBlock className="aspect-[4/3] max-h-[340px] w-full rounded-none" />
+                    : <p className="flex aspect-[4/3] max-h-[340px] items-center justify-center px-4 text-center text-[13px] text-[#fecdd3]">{tr("The photo could not be loaded.")}</p>}
+                  <figcaption className="absolute inset-x-0 bottom-0 bg-[linear-gradient(0deg,rgba(8,14,32,0.82),transparent)] px-4 pb-3 pt-8 text-[12.5px] font-medium text-white/90">{tr("Photo taken live by the owner at registration")}</figcaption>
                 </figure>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="text-[12.5px] font-medium text-ink-muted">{tr("Item")}</p>
-                <p className="mt-0.5 font-[family-name:var(--font-heading)] text-[22px] font-semibold leading-tight text-ink">{tag.item_name || tr("Not registered")}</p>
-                <div className="mt-3 flex items-center gap-3 rounded-2xl border border-line bg-frost-50 p-3">
-                  <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-[14px] font-bold text-navy-950" aria-hidden="true">{(owner?.name || "?").split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span>
+              ) : <p className="rounded-xl border border-dashed border-line-strong px-3.5 py-2.5 text-[12.5px] text-ink-muted">{tr("No registration photo. This tag was registered before photos were required.")}</p>}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12.5px] font-medium text-ink-muted">{tr("Item")}</p>
+                  <p className="mt-0.5 font-[family-name:var(--font-heading)] text-[22px] font-semibold leading-tight text-ink">{tag.item_name || tr("Not registered")}</p>
+                </div>
+                <div className="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-frost-50 p-3 sm:max-w-[320px]">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-[13px] font-bold text-navy-950" aria-hidden="true">{(owner?.name || "?").split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span>
                   <div className="min-w-0">
-                    <p className="truncate text-[14.5px] font-semibold text-ink">{owner?.name || "—"}</p>
-                    <p className="truncate text-[12.5px] text-ink-muted">{[owner?.campus_id, owner?.email].filter(Boolean).join(" · ") || "—"}</p>
+                    <p className="truncate text-[14px] font-semibold text-ink">{owner?.name || "—"}</p>
+                    <p className="truncate text-[12px] text-ink-muted">{[owner?.campus_id, owner?.email].filter(Boolean).join(" · ") || "—"}</p>
                   </div>
                 </div>
-                {tag.status !== "blank" && !tag.has_photo && <p className="mt-3 rounded-xl border border-dashed border-line-strong px-3.5 py-2.5 text-[12.5px] text-ink-muted">{tr("No registration photo. This tag was registered before photos were required.")}</p>}
               </div>
             </section>
           )}
@@ -424,7 +434,47 @@ function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew, o
           ]} />
         </div>
       </div>
+      {zoom && photo && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-[rgba(4,8,20,0.92)] p-4 backdrop-blur-md sm:p-10" role="dialog" aria-modal="true" aria-label={tr("Photo full size")} onClick={() => setZoom(false)} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setZoom(false); } }}>
+          <img src={photo} alt={tr("Photo of the item with its sticker, taken by the owner at registration")} className="max-h-full max-w-full rounded-2xl object-contain shadow-[0_40px_90px_-30px_rgba(0,0,0,0.9)] ring-1 ring-white/10" onClick={(event) => event.stopPropagation()} />
+          <button type="button" onClick={() => setZoom(false)} autoFocus className="absolute right-4 top-4 flex size-11 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/20 backdrop-blur transition hover:bg-white/20" aria-label={tr("Close photo")}><CloseIcon size={20} aria-hidden="true" /></button>
+          <p className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-white/10 px-4 py-1.5 text-[12.5px] font-medium text-white/90 ring-1 ring-white/15">{SPACED(tag.tag_id)} · {tag.item_name}</p>
+        </div>
+      )}
     </AdminModal>
+  );
+}
+
+/** Smart Tag revenue: a tag is sold when staff approve its registration at the office (recorded in the income ledger). */
+function RevenueStrip({ revenue }: { revenue: SmartTagRevenue | null | undefined }) {
+  if (revenue === undefined) return null;
+  if (revenue === null) {
+    return (
+      <p className="flex items-start gap-2.5 rounded-2xl border border-dashed border-line-strong px-4 py-3 text-[13.5px] leading-5 text-ink-muted" role="status">
+        <Banknote size={17} className="mt-0.5 shrink-0 text-gold-600" aria-hidden="true" />
+        {tr("Revenue appears here once Server/manual_migrations/20261022_income_ledger.sql has been run in Supabase.")}
+      </p>
+    );
+  }
+  const cells = [
+    { label: "Revenue from tags", value: PESO(revenue.total), hint: tr("Recorded when staff approve a registration") },
+    { label: "This month", value: PESO(revenue.this_month), hint: tr("Manila time") },
+    { label: "Tags sold", value: String(revenue.sold), hint: revenue.sold ? tr("Average {0} each", { "0": PESO(revenue.average) }) : tr("None yet") },
+    { label: "Unsold stock value", value: PESO(revenue.stock_value), hint: tr("{0} priced blank tags", { "0": revenue.stock_count }) },
+  ];
+  return (
+    <section className="relative overflow-hidden rounded-[24px] bg-[linear-gradient(135deg,#22366a_0%,#162448_62%,#0e1830_100%)] text-white shadow-[0_24px_60px_-36px_rgba(14,24,48,0.9)]" aria-label={tr("Smart Tag revenue")}>
+      <span aria-hidden="true" className="pointer-events-none absolute -right-16 -top-24 size-72 rounded-full bg-[radial-gradient(circle,rgba(209,161,83,0.32),transparent_68%)]" />
+      <dl className="relative grid grid-cols-2 lg:grid-cols-4">
+        {cells.map((cell, index) => (
+          <div key={cell.label} className={`px-5 py-4 sm:px-6 sm:py-5 ${index ? "lg:border-l lg:border-white/10" : ""} ${index < 2 ? "max-lg:border-b max-lg:border-white/10" : ""} ${index % 2 ? "max-lg:border-l max-lg:border-white/10" : ""}`}>
+            <dt className="flex items-center gap-2 text-[13px] font-medium text-navy-100">{index === 0 && <Banknote size={15} className="text-gold-300" aria-hidden="true" />}{tr(cell.label)}</dt>
+            <dd className={`mt-1.5 font-[family-name:var(--font-heading)] font-semibold leading-none tabular-nums ${index === 0 ? "text-[28px] text-gold-200" : "text-[24px]"}`}>{cell.value}</dd>
+            <p className="mt-1.5 text-[12.5px] text-navy-200">{cell.hint}</p>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 
@@ -449,6 +499,8 @@ export default function SmartTags() {
   const [batchReason, setBatchReason] = useState("");
   const [batchRevive, setBatchRevive] = useState<TagBatch | null>(null);
   const [batchPricing, setBatchPricing] = useState<TagBatch | null>(null);
+  const [removingTag, setRemovingTag] = useState<AdminSmartTag | null>(null);
+  const [removingBatch, setRemovingBatch] = useState<TagBatch | null>(null);
   const [busy, setBusy] = useState(false);
   const superAdmin = canDelete();
 
@@ -542,6 +594,8 @@ export default function SmartTags() {
         </dl>
       </section>
 
+      <RevenueStrip revenue={data?.revenue} />
+
       {(stats?.pending ?? 0) > 0 && (
         <section className="flex flex-wrap items-center gap-3 rounded-2xl border border-gold-400/60 bg-gold-50 p-4 dark:border-gold-500/40 dark:bg-gold-500/10" role="status">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950" aria-hidden="true"><ClipboardCheck size={19} /></span>
@@ -564,7 +618,7 @@ export default function SmartTags() {
         </section>
       )}
 
-      <BatchPanel batches={batches} superAdmin={superAdmin} onDeactivate={(b) => { setBatchReason(""); setBatchBan(b); }} onReactivate={setBatchRevive} onPrice={setBatchPricing} />
+      <BatchPanel batches={batches} superAdmin={superAdmin} onDeactivate={(b) => { setBatchReason(""); setBatchBan(b); }} onReactivate={setBatchRevive} onPrice={setBatchPricing} onDelete={setRemovingBatch} />
       {batchPricing && <BatchPriceModal batch={batchPricing} onClose={() => setBatchPricing(null)} onSaved={() => { setBatchPricing(null); void loadBatches(); }} />}
 
       {loadError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] text-rose-800">{loadError}</p>}
@@ -623,6 +677,7 @@ export default function SmartTags() {
                 {superAdmin && tag.status !== "blank" && (tag.is_disabled
                   ? <IconAction label={`${tr("Reactivate")} ${tag.tag_id}`} tone="success" onClick={() => setReviving(tag)} icon={<ShieldCheck size={17} aria-hidden="true" />} />
                   : <IconAction label={`${tr("Deactivate")} ${tag.tag_id}`} tone="danger" onClick={() => { setBanReason(""); setBanning(tag); }} icon={<Ban size={16} aria-hidden="true" />} />)}
+                {superAdmin && isDeletableTag(tag) && <IconAction label={`${tr("Delete")} ${tag.tag_id}`} tone="danger" onClick={() => setRemovingTag(tag)} icon={<Trash2 size={16} aria-hidden="true" />} />}
               </RowActions>
             </tr>
           );
@@ -640,6 +695,7 @@ export default function SmartTags() {
           onReactivate={() => { const t = viewing; setViewing(null); setReviving(t); }}
           onRenew={() => { const t = viewing; setViewing(null); setRenewMonths(String(t.validity_months ?? 12)); setRenewing(t); }}
           onEdit={() => { const t = viewing; setViewing(null); setEditing(t); }}
+          onDelete={() => { const t = viewing; setViewing(null); setRemovingTag(t); }}
         />
       )}
 
@@ -686,6 +742,30 @@ export default function SmartTags() {
             <textarea value={batchReason} onChange={(event) => setBatchReason(event.target.value)} rows={3} maxLength={300} data-autofocus placeholder={tr("This roll of stickers was reported stolen.")} className={`${INPUT} resize-y py-3 leading-6`} />
           </label>
         </AdminModal>
+      )}
+
+      {removingTag && (
+        <ConfirmActionDialog
+          title={tr("delete Smart Tag {0}?", { "0": SPACED(removingTag.tag_id) })}
+          description={removingTag.status === "blank" ? "This blank tag is removed for good. A printed sticker with this code will no longer work." : "This deactivated tag and its photo are removed for good. Money already recorded for it stays in the income ledger."}
+          confirmLabel="Delete tag"
+          danger
+          busy={busy}
+          onCancel={() => { if (!busy) setRemovingTag(null); }}
+          onConfirm={() => void run(() => deleteSmartTag(removingTag.tag_id)).then((ok) => { if (ok) setRemovingTag(null); })}
+        />
+      )}
+
+      {removingBatch && (
+        <ConfirmActionDialog
+          title={tr("delete the unused tags of {0}?", { "0": removingBatch.label })}
+          description={`${removingBatch.blank} blank and ${removingBatch.disabled} deactivated tags are removed for good. Tags people still use stay, and recorded income is kept.`}
+          confirmLabel="Delete unused tags"
+          danger
+          busy={busy}
+          onCancel={() => { if (!busy) setRemovingBatch(null); }}
+          onConfirm={() => void run(() => deleteTagBatch(removingBatch.batch_id as string)).then((ok) => { if (ok) setRemovingBatch(null); })}
+        />
       )}
 
       {batchRevive && (

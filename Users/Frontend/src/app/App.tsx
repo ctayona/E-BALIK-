@@ -24,6 +24,7 @@ import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { useAuth } from "@/app/utils/useAuth";
 import { authUtils } from "@/app/utils/api";
 import MaintenanceScreen from "@/app/shared/system/MaintenanceScreen";
+import PageLockedNotice from "@/app/shared/system/PageLockedNotice";
 import AnnouncementBanner from "@/app/shared/system/AnnouncementBanner";
 import { SYSTEM_EVENT, isDesk, useSystemStatus, type SystemEventDetail } from '@/app/utils/system';
 import { SESSION_MESSAGES, SESSION_NOTICE_KEY, startSessionGuard, watchForExpiredSessions, type SessionEndReason } from "@/app/utils/sessionGuard";
@@ -241,6 +242,10 @@ function MainApp() {
       />
       <div id="main-content" tabIndex={-1} className="flex flex-1 flex-col pb-[calc(76px+env(safe-area-inset-bottom))] outline-none lg:pb-0">
       <Suspense fallback={<AppPageSkeleton />}>
+        {/* A page a super administrator locked while fixing it: everyone else sees the notice (super admins see the page, to test it). */}
+        {page in system.lockedPages && String(currentUser?.access_level || "").toLowerCase() !== "super_admin" ? (
+          <PageLockedNotice page={page} message={system.lockedPages[page]} onNavigate={handleNavigate} />
+        ) : <>
         {page === "dashboard"    && <Dashboard user={currentUser} onNavigate={handleNavigate} />}
         {page === "report-item"  && <ReportItem onNavigate={handleNavigate} />}
         {page === "found-item"   && <FoundItem focused={navigationOptions.mode === "form"} onBack={handleNavigate} />}
@@ -253,6 +258,7 @@ function MainApp() {
         {page === "my-tags"      && <MyTagsPage />}
         {page === "notifications" && <Notifications onNavigate={handleNavigate} />}
         {page === "profile"      && <Profile user={currentUser} onNavigate={handleNavigate} />}
+        </>}
       </Suspense>
       </div>
       <MobileTabBar currentPage={page} onNavigate={handleNavigate} />
