@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, request
 from app.utils import get_db
 from app.utils.claim_status import normalize_claim_status
-from app.utils import housekeeping, rate_limit
+from app.utils import housekeeping, rate_limit, receipts
 from app.utils import custody_log
 from app.utils.auction_db import AuctionService
 from app.utils.email_service import EmailService
@@ -162,10 +162,25 @@ def _send_receipt(db, claim_id):
         context = db.get_claim_email_context(claim_id) or {}
         if not context.get('email'):
             return False
+        receipt = None
+        try:
+            receipt = receipts.receipt_for_claim(db, claim_id)
+        except Exception as error:  # the receipt is built from the claim, so a failure here must not stop the email
+            current_app.logger.warning('Claim %s receipt could not be built: %s', claim_id, error)
+        if receipt:
+            try:
+                db.create_user_notification(
+                    receipt['owner_id'], 'Your handover receipt is ready',
+                    f"{receipt['item']['name']} was released to you. Receipt {receipt['receipt_no']}. Open it to print or save a copy.",
+                    notification_type='receipt', link_label='View receipt', link_page='receipts',
+                )
+            except Exception as error:
+                current_app.logger.warning('Claim %s receipt notice failed: %s', claim_id, error)
         return bool(EmailService().send_handover_receipt_email(
             to_email=context['email'], recipient_name=context.get('name') or 'there', item_name=context.get('item_name') or 'Found item',
             claim_reference=str(context.get('claim_reference') or claim_id), found_item_reference=context.get('found_item_reference') or '',
             released_at=housekeeping.format_datetime(None),
+            receipt_no=receipt['receipt_no'] if receipt else '', receipt_code=receipt['code'] if receipt else '',
         ))
     except Exception as error:
         current_app.logger.warning('Claim %s was released, but the receipt email was not sent: %s', claim_id, error)

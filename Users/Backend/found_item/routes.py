@@ -6,6 +6,7 @@ from werkzeug.utils import secure_filename
 from app.utils import custody_log, get_db
 from app.utils.email_service import send_reference_email_best_effort
 from app.utils.matching import build_found_match_summaries
+from app.utils import image_match, match_alerts
 from app.utils.report_guard import ReportRuleError, begin_submission, check_new_report, end_submission
 from app.utils.profanity import PROFANITY_MESSAGE, find_profanity
 from app.utils.report_dates import check_date
@@ -123,12 +124,14 @@ def create_found_item():
         fpost_id = db.next_fpost_id(found_date, weekday_code)
 
         image_url = None
+        photo_bytes = None
         image = request.files.get('image')
         if image and image.filename:
             bucket_name = 'found-item-images'
             filename = secure_filename(image.filename)
             storage_path = f"{account_id}/{found_date}/{uuid.uuid4().hex}-{filename}"
             file_bytes = image.read()
+            photo_bytes = file_bytes
             db.client.storage.from_(bucket_name).upload(
                 storage_path,
                 file_bytes,
@@ -157,6 +160,9 @@ def create_found_item():
         user_full_name = f"{reporter.get('fname', '')} {reporter.get('lname', '')}".strip()
         custody_log.record(db.client, item.get('item_id'), 'turned_over', account_id, user_full_name,
                            f"Found at {location}; handed to {guard_name_or_id} at {turnover_location}.")
+        if photo_bytes:
+            image_match.store(db, item.get('item_id'), image_match.fingerprint(photo_bytes))   # so a search by photo can find it at once
+        match_alerts.alert_for_new_found_item(db, item)   # owners of matching lost reports hear about it now, not when they next open Matches
         db.log_user_activity(
             account_id=account_id,
             user_name=user_full_name,

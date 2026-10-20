@@ -216,6 +216,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      <a href="#main-content" className="skip-link">{tr("Skip to main content")}</a>
       <Sidebar
         currentPage={page}
         onNavigate={navigate}
@@ -237,7 +238,7 @@ export default function App() {
           user={user}
           onLogout={handleLogout}
         />
-        <main className="app-main min-w-0 flex-1 overflow-y-auto">
+        <main id="main-content" tabIndex={-1} className="app-main min-w-0 flex-1 overflow-y-auto outline-none">
           <PageErrorBoundary resetKey={page}>
             <Suspense fallback={<AdminPageSkeleton />}>
               {gatedPage()}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, Clock3, FileText, ImagePlus, Mail, MapPin, Phone, ShieldCheck, Trash2, Upload, XCircle } from "lucide-react";
+import { CheckCircle2, Clock3, FileText, ImagePlus, Mail, MapPin, Phone, Receipt, ShieldCheck, Trash2, Upload, XCircle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "@/app/utils/useAuth";
 import PhotoSourceButtons from "@/app/shared/PhotoSourceButtons";
@@ -14,6 +14,7 @@ import { FieldHint, INVALID_FIELD, focusFirstInvalid, useFieldHint } from "@/app
 import { textProblem } from "@/app/utils/textGuard";
 import VerificationGate from "@/app/shared/verification/VerificationGate";
 import HandoverQr from "@/app/shared/claims/HandoverQr";
+import ReceiptsModal from "@/app/shared/claims/ReceiptsModal";
 import { isVerified, useCurrentUser } from "@/app/utils/system";
 import { isCompletedReport } from "@/app/utils/reportLifecycle";
 import { useVerificationPrompt } from "@/app/shared/verification/VerificationRequiredModal";
@@ -25,7 +26,7 @@ type ClaimRecord = {
   found_items?: { fpost_id?: string; item_name?: string; category?: string; location?: string; found_date?: string };
 };
 
-export default function Claim({ foundItemId = "", missingReportId = "", onNavigate }: { foundItemId?: string; missingReportId?: string; onNavigate?: (page: Page) => void }) {
+export default function Claim({ foundItemId = "", missingReportId = "", openReceipts = false, onNavigate }: { foundItemId?: string; missingReportId?: string; openReceipts?: boolean; onNavigate?: (page: Page) => void }) {
   // All state & logic preserved exactly
   const { cancelClaim, createClaim, getClaims, getMissingItems, isLoading } = useAuth();
   const verified = isVerified(useCurrentUser());
@@ -51,6 +52,8 @@ export default function Claim({ foundItemId = "", missingReportId = "", onNaviga
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved_for_pickup" | "rejected" | "collected">("all");
   const [error,        setError]        = useState("");
   const [activeTab,    setActiveTab]    = useState<"submit" | "history">(foundItemId ? "submit" : "history");
+  const [receiptsOpen, setReceiptsOpen] = useState(openReceipts);
+  const [receiptFor,   setReceiptFor]   = useState("");
 
   async function loadClaims() {
     setClaimsLoading(true);
@@ -214,7 +217,9 @@ export default function Claim({ foundItemId = "", missingReportId = "", onNaviga
               ? "Submit details and proof so an admin can verify your claim."
               : "Review the status of your submitted claims."}
           </p>
+          <button type="button" onClick={() => { setReceiptFor(""); setReceiptsOpen(true); }} className={`${CX.btnGhost} mt-3`}><Receipt size={16} aria-hidden="true" />My receipts</button>
         </motion.div>
+        <ReceiptsModal open={receiptsOpen} onClose={() => setReceiptsOpen(false)} focusReference={receiptFor} />
 
         <section className={`${CX.cardNavy} mb-6 p-5 md:p-6`}>
           <div className="flex items-start gap-3">
@@ -434,6 +439,11 @@ export default function Claim({ foundItemId = "", missingReportId = "", onNaviga
                         <p className="text-[12px] text-slate-500">
                           Submitted {claim.created_at ? new Date(claim.created_at).toLocaleDateString() : "recently"}
                         </p>
+                        {claim.status === "collected" && claim.claim_reference && (
+                          <button type="button" onClick={() => { setReceiptFor(claim.claim_reference || ""); setReceiptsOpen(true); }} className={`${CX.btnGhost} !min-h-[36px] px-3 text-[12px]`}>
+                            <Receipt size={13} aria-hidden="true" /> View receipt
+                          </button>
+                        )}
                         {claim.status === "pending" && (
                           <button
                             type="button"

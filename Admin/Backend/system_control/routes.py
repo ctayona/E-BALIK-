@@ -275,3 +275,107 @@ def set_page_lock(admin):
     _log_admin_action(db, admin, 'Lock Page' if payload['locked'] else 'Unlock Page', 'System Control', f'{label} ({where})', f'{area}:{page}')
     message = f'{label} is locked on the {where}. Everyone except super administrators sees the notice.' if payload['locked'] else f'{label} is open again on the {where}.'
     return jsonify({'success': True, 'user': value['user'], 'admin': value['admin'], 'message': message}), 200
+
+
+# ---------------------------------------------------------------------------------------------- scheduled maintenance windows
+@system_control_bp.route('/system/maintenance-windows', methods=['GET'])
+@_super_admin_only('load the maintenance windows')
+def list_windows(admin):
+    settings = control.load_settings(_database(), force=True)
+    now_locked, _, _ = control.effective_maintenance(settings)
+    return jsonify({'windows': control.maintenance_windows(settings), 'locked_now': now_locked, 'max_hours': control.MAX_WINDOW_HOURS, 'max_windows': control.MAX_WINDOWS}), 200
+
+
+@system_control_bp.route('/system/maintenance-windows', methods=['POST'])
+@_super_admin_only('schedule the maintenance window')
+def add_window(admin):
+    """{start, end, message}: lock the app for standard users during this time, on its own. Everyone sees a banner 48 hours before."""
+    db = _database()
+    payload = request.get_json(silent=True) or {}
+    try:
+        window = control.add_window(db, payload.get('start'), payload.get('end'), payload.get('message'), admin['account_id'])
+    except ValueError as error:
+        raise ValidationError(str(error))
+    _log_admin_action(db, admin, 'Schedule Maintenance Window', 'System Control', f"{window['start']} to {window['end']}", window['id'])
+    return jsonify({'success': True, 'window': window, 'message': 'Maintenance window scheduled. People will see a notice 48 hours before it starts.'}), 201
+
+
+@system_control_bp.route('/system/maintenance-windows/<window_id>', methods=['DELETE'])
+@_super_admin_only('cancel the maintenance window')
+def remove_window(admin, window_id):
+    db = _database()
+    try:
+        window = control.remove_window(db, window_id, admin['account_id'])
+    except ValueError as error:
+        raise ValidationError(str(error))
+    _log_admin_action(db, admin, 'Cancel Maintenance Window', 'System Control', f"{window['start']} to {window['end']}", window['id'])
+    return jsonify({'success': True, 'message': 'The maintenance window was cancelled.'}), 200
+
+
+# ---------------------------------------------------------------------------------------------- role-based session wipe
+@system_control_bp.route('/system/session-wipe', methods=['GET'])
+@_super_admin_only('load the session wipes')
+def session_wipe_state(admin):
+    db = _database()
+    settings = control.load_settings(db, force=True)
+    return jsonify({'wipes': {role: (settings.get('role_session_wipes') or {}).get(role) for role in control.WIPE_ROLES}, 'counts': control.role_wipe_counts(db)}), 200
+
+
+@system_control_bp.route('/system/session-wipe', methods=['POST'])
+@_super_admin_only('sign out the chosen roles')
+def session_wipe(admin):
+    """{roles: ['user', 'guard', 'admin']}: end every current session of those roles. Super administrators are never signed out."""
+    _limit(admin, 'session-wipe', 10, 3600)
+    db = _database()
+    try:
+        stamp, roles = control.wipe_sessions(db, (request.get_json(silent=True) or {}).get('roles'), admin['account_id'])
+    except ValueError as error:
+        raise ValidationError(str(error))
+    _log_admin_action(db, admin, 'Sign Out Roles', 'System Control', ', '.join(roles), 'role_session_wipes')
+    names = {'user': 'standard users', 'guard': 'guards', 'admin': 'administrators'}
+    return jsonify({'success': True, 'roles': roles, 'at': stamp, 'message': f"Signed out: {', '.join(names[r] for r in roles)}. Each must sign in again. Super administrators were not affected."}), 200
+
+
+# ---------------------------------------------------------------------------------------------- monitoring
+@system_control_bp.route('/system/admin-health', methods=['GET'])
+@_super_admin_only('check the staff accounts')
+def admin_health(admin):
+    from app.utils import system_ops
+    return jsonify(system_ops.admin_health(_database())), 200
+
+
+@system_control_bp.route('/system/email-health', methods=['GET'])
+@_super_admin_only('check the email service')
+def email_health(admin):
+    from app.utils import system_ops
+    _limit(admin, 'email-health', 30, 3600)
+    return jsonify(system_ops.email_health(live=True)), 200
+
+
+@system_control_bp.route('/system/backup-status', methods=['GET'])
+@_super_admin_only('check the backups')
+def backup_status(admin):
+    from app.utils import system_ops
+    return jsonify(system_ops.backup_status(control.load_settings(_database(), force=True))), 200
+
+
+@system_control_bp.route('/system/audit-export', methods=['GET'])
+@_super_admin_only('export the audit log')
+def audit_export(admin):
+    """CSV of the activity log for a date range (Manila days). The export itself is written to the log."""
+    from app.utils import system_ops
+    _limit(admin, 'audit-export', 6, 3600)
+    db = _database()
+    args = request.args
+    try:
+        exported = system_ops.audit_csv(db, args.get('start'), args.get('end'), args.get('module', ''), args.get('result', ''))
+    except ValueError as error:
+        raise ValidationError(str(error))
+    _log_admin_action(db, admin, 'Export Audit Log', 'System Control', f"{exported['rows']} rows, {args.get('start') or 'start'} to {args.get('end') or 'today'}", 'audit_export')
+    reply = Response('﻿' + exported['csv'], mimetype='text/csv')
+    reply.headers['Content-Disposition'] = 'attachment; filename="ebalik-audit-log.csv"'
+    reply.headers['Cache-Control'] = 'no-store'
+    reply.headers['X-Rows'] = str(exported['rows'])
+    reply.headers['X-Truncated'] = 'true' if exported['truncated'] else 'false'
+    reply.headers['Access-Control-Expose-Headers'] = 'X-Rows, X-Truncated'
+    return reply

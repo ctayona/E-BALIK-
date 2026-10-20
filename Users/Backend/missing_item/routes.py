@@ -6,6 +6,7 @@ from werkzeug.utils import secure_filename
 from app.utils import get_db
 from app.utils.email_service import send_reference_email_best_effort
 from app.utils.matching import build_match_summaries
+from app.utils import match_alerts
 from app.utils.report_guard import ReportRuleError, begin_submission, check_new_report, end_submission
 from app.utils.text_guard import TextRejected, clean_field
 from app.utils.report_dates import check_date
@@ -100,6 +101,7 @@ def create_missing_item():
             'image_url': image_url,
             'status': 'missing',
         })
+        match_alerts.alert_for_new_missing_report(db, item)   # items already at the office that look like this report
         user_full_name = f"{reporter.get('fname', '')} {reporter.get('lname', '')}".strip()
         db.log_user_activity(
             account_id=account_id,

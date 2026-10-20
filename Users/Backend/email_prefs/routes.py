@@ -10,6 +10,7 @@ email_prefs_bp = Blueprint('email_prefs', __name__)
 DESCRIPTIONS = {
     'reminders': 'Reminders: pickup reminders for approved claims and Smart Tag expiry reminders.',
     'announcements': 'Announcements: messages the administrators send to everyone.',
+    'matches': 'Match alerts: an email when an item that looks like your lost report is handed in.',
     'admin_digest': 'Daily summary: what is waiting for an administrator (staff only).',
 }
 

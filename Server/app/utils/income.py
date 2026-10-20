@@ -14,6 +14,8 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 
+from app.utils.system_ops import csv_safe
+
 logger = logging.getLogger(__name__)
 
 SOURCES = {'auction': 'Auction Hall', 'smart_tag': 'Smart Tags', 'other': 'Other'}
@@ -291,8 +293,8 @@ class IncomeService:
             moment = _parse_moment(row.get('received_at'))
             writer.writerow([
                 moment.astimezone(CAMPUS_TZ).strftime('%Y-%m-%d %H:%M') if moment else '', SOURCES.get(row.get('source'), row.get('source')),
-                row.get('kind'), row.get('description'), row.get('source_ref') or '', f"{Decimal(str(row.get('amount') or 0)):.2f}",
-                METHODS.get(row.get('method'), row.get('method')), row.get('receipt_no') or '', names.get(str(row.get('payer_account_id')), ''),
-                names.get(str(row.get('recorded_by')), '') or ('System' if not row.get('recorded_by') else ''), row.get('notes') or '',
+                row.get('kind'), csv_safe(row.get('description')), csv_safe(row.get('source_ref')), f"{Decimal(str(row.get('amount') or 0)):.2f}",
+                METHODS.get(row.get('method'), row.get('method')), csv_safe(row.get('receipt_no')), csv_safe(names.get(str(row.get('payer_account_id')), '')),
+                csv_safe(names.get(str(row.get('recorded_by')), '') or ('System' if not row.get('recorded_by') else '')), csv_safe(row.get('notes')),
             ])
         return out.getvalue()

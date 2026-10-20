@@ -7,6 +7,7 @@ cannot be read: a database hiccup must never lock everyone out.
 import logging
 import os
 import re
+import uuid
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -35,6 +36,9 @@ DEFAULT_SETTINGS: Dict[str, Dict[str, Any]] = {
     'sessions_valid_after': {'ts': None},
     'last_cleanup': {},
     'rbac': {},
+    'role_session_wipes': {},
+    'last_backup': {},
+    'maintenance_windows': {'items': []},
     'page_locks': {},
     'announcement': {'live': False, 'tone': 'info', 'title': '', 'message': '', 'updated_at': None},
 }
@@ -151,13 +155,12 @@ def public_announcement(settings: Dict[str, Dict[str, Any]]) -> Optional[Dict[st
 def public_status(db) -> Dict[str, Any]:
     from app.utils.access_control import page_locks
     settings = load_settings(db)
-    maintenance = settings['maintenance_mode']
-    enabled = bool(maintenance.get('enabled'))
+    enabled, message, since = effective_maintenance(settings)
     return {
         'maintenance': enabled,
-        'message': (maintenance.get('message') or '') if enabled else '',
-        'since': maintenance.get('since') if enabled else None,
-        'announcement': public_announcement(settings),
+        'message': message if enabled else '',
+        'since': since if enabled else None,
+        'announcement': public_announcement(settings) or upcoming_notice(settings),
         # User pages locked while they are being fixed: the app shows a notice instead of the page (super admins see it anyway).
         'locked_pages': {page: lock.get('message') or '' for page, lock in page_locks(settings, 'user').items()},
     }
@@ -190,6 +193,111 @@ def force_logout(db, actor_id: str) -> str:
     stamp = _iso(_now().replace(microsecond=0))
     save_setting(db, 'sessions_valid_after', {'ts': stamp, 'by': actor_id}, actor_id)
     return stamp
+
+
+# ---------------------------------------------------------------------------------------------- scheduled maintenance windows
+MAX_WINDOWS = 12
+MAX_WINDOW_HOURS = 72
+WIPE_ROLES = ('user', 'guard', 'admin')
+NOTICE_LEAD_HOURS = 48
+CAMPUS_TZ = timezone(timedelta(hours=8))
+
+
+def maintenance_windows(settings: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The saved windows (valid ones only), soonest first. Each is {id, start, end, message, by, created_at} with UTC ISO times."""
+    items = (settings.get('maintenance_windows') or {}).get('items') or []
+    valid = [item for item in items if isinstance(item, dict) and _parse(item.get('start')) and _parse(item.get('end')) and item.get('id')]
+    return sorted(valid, key=lambda item: _parse(item['start']))
+
+
+def effective_maintenance(settings: Dict[str, Dict[str, Any]], now: Optional[datetime] = None) -> Tuple[bool, str, Optional[str]]:
+    """(locked, message, since): the manual switch, or a scheduled window that is running right now."""
+    manual = settings['maintenance_mode']
+    if manual.get('enabled'):
+        return True, str(manual.get('message') or ''), manual.get('since')
+    moment = now or _now()
+    for window in maintenance_windows(settings):
+        if _parse(window['start']) <= moment < _parse(window['end']):
+            return True, str(window.get('message') or ''), window['start']
+    return False, '', None
+
+
+def _manila(value: Any) -> str:
+    moment = _parse(value)
+    return moment.astimezone(CAMPUS_TZ).strftime('%b %d, %I:%M %p').replace(' 0', ' ') if moment else ''
+
+
+def upcoming_notice(settings: Dict[str, Dict[str, Any]], now: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
+    """A banner for a window that starts within 48 hours, so people can save their work and plan ahead."""
+    moment = now or _now()
+    for window in maintenance_windows(settings):
+        start = _parse(window['start'])
+        if moment < start <= moment + timedelta(hours=NOTICE_LEAD_HOURS):
+            note = f" {window['message']}" if window.get('message') else ''
+            return {'id': f"maintenance:{window['id']}", 'tone': 'warning', 'title': 'Scheduled maintenance',
+                    'message': f"E-Balik will be unavailable from {_manila(window['start'])} to {_manila(window['end'])} (Manila time).{note}"}
+    return None
+
+
+def add_window(db, start: Any, end: Any, message: Any, actor_id: str) -> Dict[str, Any]:
+    first, last = _parse(start), _parse(end)
+    if not first or not last:
+        raise ValueError('Choose when the maintenance starts and ends.')
+    now = _now()
+    if first < now - timedelta(minutes=5):
+        raise ValueError('The start time is in the past. Choose a time from now on.')
+    if last <= first:
+        raise ValueError('The end must be after the start.')
+    if (last - first) > timedelta(hours=MAX_WINDOW_HOURS):
+        raise ValueError(f'A window can last at most {MAX_WINDOW_HOURS} hours. For longer work, turn maintenance mode on by hand.')
+    settings = load_settings(db, force=True)
+    existing = [w for w in maintenance_windows(settings) if _parse(w['end']) > now - timedelta(days=1)]
+    if len(existing) >= MAX_WINDOWS:
+        raise ValueError(f'You can keep up to {MAX_WINDOWS} windows. Remove one first.')
+    if any(first < _parse(w['end']) and last > _parse(w['start']) for w in existing):
+        raise ValueError('This overlaps another maintenance window.')
+    text = re.sub(r'\s+', ' ', re.sub(r'[<>\x00-\x1f\x7f]', '', str(message or ''))).strip()[:MAX_MESSAGE_LENGTH]
+    window = {'id': uuid.uuid4().hex[:12], 'start': _iso(first), 'end': _iso(last), 'message': text, 'by': actor_id, 'created_at': _iso(now)}
+    save_setting(db, 'maintenance_windows', {'items': existing + [window]}, actor_id)
+    return window
+
+
+def remove_window(db, window_id: str, actor_id: str) -> Dict[str, Any]:
+    settings = load_settings(db, force=True)
+    items = maintenance_windows(settings)
+    target = next((w for w in items if w['id'] == str(window_id)), None)
+    if not target:
+        raise ValueError('That maintenance window no longer exists.')
+    save_setting(db, 'maintenance_windows', {'items': [w for w in items if w['id'] != target['id']]}, actor_id)
+    return target
+
+
+# ---------------------------------------------------------------------------------------------- role-based session wipe
+def wipe_sessions(db, roles: Any, actor_id: str) -> Tuple[str, List[str]]:
+    """Revoke every session issued before now for the chosen roles only. A super administrator is never affected."""
+    if not isinstance(roles, list) or not roles or not all(isinstance(role, str) for role in roles):
+        raise ValueError('Choose which roles to sign out.')
+    unknown = [role for role in roles if role not in WIPE_ROLES]
+    if unknown:
+        raise ValueError('Roles that can be signed out: standard users, guards and administrators.')
+    chosen = [role for role in WIPE_ROLES if role in roles]
+    stamp = _iso(_now().replace(microsecond=0))
+    current = {key: value for key, value in (load_settings(db, force=True).get('role_session_wipes') or {}).items() if key in WIPE_ROLES}
+    for role in chosen:
+        current[role] = {'ts': stamp, 'by': actor_id}
+    save_setting(db, 'role_session_wipes', current, actor_id)
+    return stamp, chosen
+
+
+def role_wipe_counts(db) -> Dict[str, int]:
+    """Accounts per role, so the confirmation says how many people a wipe signs out."""
+    counts: Dict[str, int] = {}
+    for role in WIPE_ROLES:
+        try:
+            counts[role] = int(db.client.table('user_profiles').select('account_id', count='exact').eq('access_level', role).limit(1).execute().count or 0)
+        except Exception:
+            counts[role] = 0
+    return counts
 
 
 # ---------------------------------------------------------------------------------------------- accounts
@@ -235,7 +343,7 @@ def _suspension_message(state: Dict[str, Any]) -> str:
 
 
 def _maintenance_response(settings: Dict[str, Dict[str, Any]]):
-    message = (settings['maintenance_mode'].get('message') or '').strip() or 'E-Balik is under maintenance. Please check back soon.'
+    message = effective_maintenance(settings)[1].strip() or 'E-Balik is under maintenance. Please check back soon.'
     response = jsonify({'error': message, 'maintenance': True})
     response.status_code = 503
     response.headers['Retry-After'] = '60'
@@ -246,7 +354,7 @@ def login_block(db, profile: Dict[str, Any]):
     """A JSON response when this account may not sign in right now (maintenance for people who are not on the desk, suspension), else None."""
     level = access_level(profile)
     settings = load_settings(db)
-    if settings['maintenance_mode'].get('enabled') and level not in DESK_LEVELS:
+    if effective_maintenance(settings)[0] and level not in DESK_LEVELS:
         return _maintenance_response(settings)
     if level in STAFF_LEVELS:
         return None
@@ -289,7 +397,7 @@ def enforce_request():
 
     desk = bool(state) and state['level'] in DESK_LEVELS
     administrator = bool(state) and state['level'] in STAFF_LEVELS
-    if settings['maintenance_mode'].get('enabled') and not desk:
+    if effective_maintenance(settings)[0] and not desk:
         return None if request.path in AUTH_OPEN_PATHS else _maintenance_response(settings)
     if not (state and state['level'] == 'super_admin') and request.path.startswith('/api/') and not request.path.startswith('/api/admin/'):
         from app.utils.access_control import user_path_lock
@@ -297,6 +405,14 @@ def enforce_request():
         if locked:
             response = jsonify({'error': locked[1], 'page_locked': locked[0]})
             response.status_code = 423
+            return response
+    if payload and state and state['level'] in WIPE_ROLES:
+        # "Sign out these roles" (System control): a session issued before the role's wipe time is over. Super admins are never in WIPE_ROLES.
+        wipe = _parse(((settings.get('role_session_wipes') or {}).get(state['level']) or {}).get('ts'))
+        stamp = payload.get('iat')
+        if wipe and isinstance(stamp, (int, float)) and stamp < wipe.timestamp():
+            response = jsonify({'error': 'Your session was ended by an administrator. Please sign in again.', 'session_revoked': True})
+            response.status_code = 401
             return response
     if not payload or not state or administrator:
         return None
@@ -542,7 +658,13 @@ def health_scan(db) -> Dict[str, Any]:
         detail = 'Maintenance mode is ON. Standard users are locked out.' if on else 'Maintenance mode is off.'
         return _check('controls', 'System controls', 'warn' if on else 'ok', detail + (f' Last forced logout: {stamp}.' if stamp else ''))
 
+    def backups():
+        from app.utils.system_ops import backup_status
+        result = backup_status(load_settings(db, force=True))
+        return _check('backups', 'Database backups', result['status'], result['detail'])
+
     for check_id, title, func in (
+        ('backups', 'Database backups', backups),
         ('environment', 'Environment variables', environment), ('database', 'Database connection', database), ('schema', 'Database migrations', schema), ('migration_log', 'Migration log', migration_log_check),
         ('unverified_activity', 'Unverified users with high activity', unverified_activity), ('admin_mfa', 'Admin two-factor authentication', admin_mfa),
         ('verification_backlog', 'Verification requests', verification_backlog), ('suspensions', 'Suspended accounts', suspensions),

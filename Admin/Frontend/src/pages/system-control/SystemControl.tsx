@@ -1,4 +1,6 @@
 import PageIsolation from "./PageIsolation";
+import Monitoring from "./Monitoring";
+import { MaintenanceSchedule, RoleSessionWipe } from "./ControlsExtras";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Database, HeartPulse, Info, Loader2, LockKeyhole, LogOut, RefreshCw, ShieldCheck, Trash2, Wrench, XCircle } from "lucide-react";
 import { SegmentedFilter } from "../../components/ui/management";
@@ -38,9 +40,10 @@ function SetupNotice() {
 }
 
 type Pending = "maintenance" | "logout" | "cleanup" | null;
-type Tab = "controls" | "isolation" | "announcement" | "comms" | "access" | "data";
+type Tab = "controls" | "monitoring" | "isolation" | "announcement" | "comms" | "access" | "data";
 const TABS: { value: Tab; label: string }[] = [
   { value: "controls", label: "Controls and health" },
+  { value: "monitoring", label: "Monitoring" },
   { value: "isolation", label: "Page isolation" },
   { value: "announcement", label: "Announcement" },
   { value: "comms", label: "Communications" },
@@ -151,6 +154,7 @@ export default function SystemControl() {
       {tab === "announcement" && <AnnouncementPanel current={overview?.announcement ?? null} onSaved={() => void loadOverview()} />}
       {tab === "comms" && <CommsHub />}
       {tab === "isolation" && <PageIsolation />}
+      {tab === "monitoring" && <Monitoring />}
       {tab === "access" && <AdminGovernance />}
       {tab === "data" && (
         <div className="space-y-5">
@@ -217,6 +221,11 @@ export default function SystemControl() {
             <button type="button" disabled={setupRequired || !overview} onClick={() => setPending("logout")} className={BTN.danger}><LogOut size={16} aria-hidden="true" />{tr("Sign out all users and guards")}</button>
           </div>
         </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <MaintenanceSchedule />
+        <RoleSessionWipe />
       </div>
 
       <Card

@@ -393,3 +393,11 @@ Run `manual_migrations/20261022_income_ledger.sql` after `20261021`. It adds `sm
 SELECT to_regclass('public.income_ledger');
 SELECT source, count(*), sum(amount) FROM public.income_ledger GROUP BY source;
 ```
+
+## 20261023: photo search fingerprints
+
+Run `manual_migrations/20261023_image_features.sql` after `20261022`. It adds one column, `found_items.image_features` (JSONB), where the small visual fingerprint of each found item's photo is kept for "Search by photo" on Browse items. **The app works without it**: fingerprints are then rebuilt from the photos a few at a time and held in memory, so photo search is just slower after every server restart. Verify with:
+
+```sql
+SELECT column_name FROM information_schema.columns WHERE table_name = 'found_items' AND column_name = 'image_features';
+```

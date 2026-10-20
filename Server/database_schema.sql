@@ -732,3 +732,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_income_one_sale ON public.income_ledger (so
 CREATE INDEX IF NOT EXISTS idx_income_received_at ON public.income_ledger (received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_income_source ON public.income_ledger (source, received_at DESC);
 ALTER TABLE public.income_ledger ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================================
+-- COLUMN: found_items.image_features (20261023)
+-- Visual fingerprint of the item photo, used by "Search by photo". Filled in by the backend; never shown to users.
+-- ============================================================================
+ALTER TABLE public.found_items ADD COLUMN IF NOT EXISTS image_features JSONB;

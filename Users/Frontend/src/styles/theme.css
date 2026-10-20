@@ -19,6 +19,10 @@
 
 /* ── E-Balik brand tokens (Tailwind v4 utilities: bg-navy-800, text-gold-700, shadow-card…) ── */
 @theme {
+  /* Our own families everywhere, including Tailwind's font-sans / font-serif / font-mono utilities. Only the bare generic keyword is a fallback. */
+  --font-sans: 'Hanken Grotesk', sans-serif;
+  --font-serif: 'Fraunces', serif;
+  --font-mono: 'DM Mono', monospace;
   /* Tailwind's default slate-400 is 2.6:1 on white. Helper text, table headings and empty states use it, so light mode darkens it to pass 4.5:1. Dark mode sets its own value below. */
   --color-slate-400: #5b6b82;
   --color-navy-50: #f2f5fb;
@@ -79,7 +83,7 @@
   --shadow-glow-gold: 0 10px 30px -10px rgba(209, 161, 83, 0.65);
   --shadow-glow-iris: 0 10px 30px -10px rgba(110, 142, 240, 0.6);
 
-  --font-display: 'Source Serif 4', Georgia, serif;
+  --font-display: 'Fraunces', serif;
 
   --radius-control: 10px;
   --radius-card: 14px;
@@ -88,10 +92,10 @@
 /* ── Root design tokens ──────────────────────────────────────────────── */
 :root {
   --font-size: 16px;
-  /* Headings: a text serif with optical sizes, so it stays crisp from card titles to the landing headline. */
-  --font-heading: 'Source Serif 4', 'Source Serif Pro', Georgia, 'Times New Roman', serif;
-  /* Text: Public Sans, built for public-service interfaces; the admin console uses it too, so both apps read as one system. */
-  --font-body: 'Public Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Headings: Fraunces, a variable serif with optical sizes: delicate at display size, sturdy in card titles. */
+  --font-heading: 'Fraunces', serif;
+  /* Text: Hanken Grotesk, an open humanist sans that stays legible at 12 px on a phone. */
+  --font-body: 'Hanken Grotesk', sans-serif;
   --background: #ffffff;
   --foreground: oklch(0.145 0 0);
   --card: #ffffff;
@@ -236,8 +240,9 @@
 
   h1, h2, h3, h4 {
     font-family: var(--font-heading);
-    letter-spacing: -0.005em;
+    letter-spacing: -0.012em;
     font-optical-sizing: auto;
+    font-variation-settings: "SOFT" 50, "WONK" 0;
   }
 
   h1 {

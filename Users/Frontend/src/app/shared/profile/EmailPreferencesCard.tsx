@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
-import { BellRing, Megaphone } from "lucide-react";
+import { BellRing, Megaphone, SearchCheck } from "lucide-react";
 import { authUtils } from "@/app/utils/api";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { SwitchRow } from "@/app/shared/tags/SmartTagContactModal";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-type Prefs = { reminders: boolean; announcements: boolean };
+type Prefs = { reminders: boolean; announcements: boolean; matches: boolean };
 const OPTIONS: Array<{ key: keyof Prefs; label: string; hint: string; icon: React.ReactNode }> = [
+  { key: "matches", label: "Match alert emails", hint: "An email when an item that looks like your lost report is handed in. The in-app alert is always on.", icon: <SearchCheck size={18} aria-hidden="true" /> },
   { key: "reminders", label: "Reminder emails", hint: "A nudge a week after a claim is approved, and a heads-up 30 days before a Smart Tag expires.", icon: <BellRing size={18} aria-hidden="true" /> },
   { key: "announcements", label: "Announcement emails", hint: "Messages the administrators send to everyone, such as office hours or campus notices.", icon: <Megaphone size={18} aria-hidden="true" /> },
 ];

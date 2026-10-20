@@ -57,7 +57,8 @@ function printReport(data: DashboardAnalytics) {
   const table = (title: string, head: string[], body: Array<Array<string | number>>) => body.length === 0 ? "" :
     `<h2>${escapeHtml(title)}</h2><table><thead><tr>${head.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${body.map((row) => `<tr>${row.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>E-Balik analytics report</title><style>
-    body{font-family:Segoe UI,Helvetica,Arial,sans-serif;color:#0f172a;margin:32px}h1{font-family:Georgia,serif;color:#1f3160;margin:0}
+    @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Geist:wght@400..700&display=swap');
+    body{font-family:'Geist',sans-serif;color:#0f172a;margin:32px}h1{font-family:'Bricolage Grotesque',sans-serif;color:#1f3160;margin:0}
     p.meta{color:#475569;margin:4px 0 20px}h2{font-size:15px;color:#1f3160;border-bottom:2px solid #d1a153;padding-bottom:4px;margin:24px 0 8px}
     table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #e2e8f0}th{background:#f1f5f9}
     @media print{body{margin:12mm}}</style></head><body>

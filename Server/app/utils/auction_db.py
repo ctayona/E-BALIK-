@@ -1282,6 +1282,14 @@ class AuctionService:
                 # Sold and handed over: the found report is finished too (it moves to Completed for the person who turned it in).
                 ReportLifecycle(self.db).complete_for_auction(row['found_item_id'])
                 self._log_item(row['found_item_id'], 'auction_completed', admin_id, f"Paid and collected for {format_peso(row.get('winning_amount'))}.")
+            if action == 'collected' and row.get('winner_account_id'):
+                try:
+                    self.db.create_user_notification(
+                        str(row['winner_account_id']), 'Your auction receipt is ready', f"You collected \"{row.get('title') or 'your item'}\". Open your receipts to print or save a copy.",
+                        notification_type='receipt', link_label='View receipt', link_page='receipts',
+                    )
+                except Exception as error:
+                    logger.warning('Auction receipt notice failed: %s', error)
             if action == 'collected' and row.get('winning_amount'):
                 from app.utils.income import IncomeService
                 IncomeService(self.db).record_sale(

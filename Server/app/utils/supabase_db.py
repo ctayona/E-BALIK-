@@ -2069,8 +2069,17 @@ class SupabaseDB:
                     references = {str(row['item_id']): row.get('fpost_id') or '' for row in rows}
                 except Exception as lookup_error:
                     logger.warning('Notification references unavailable: %s', lookup_error)
+            missing_ids = list({str(n['missing_report_id']) for n in notifications if n.get('missing_report_id')})
+            missing_refs: Dict[str, str] = {}
+            if missing_ids:
+                try:
+                    rows = self.client.table('missing_items').select('item_id,mpost_id').in_('item_id', missing_ids).execute().data or []
+                    missing_refs = {str(row['item_id']): row.get('mpost_id') or '' for row in rows}
+                except Exception as lookup_error:
+                    logger.warning('Notification lost-report references unavailable: %s', lookup_error)
             for notification in notifications:
                 notification['found_item_reference'] = references.get(str(notification.get('found_item_id') or ''), '')
+                notification['missing_report_reference'] = missing_refs.get(str(notification.get('missing_report_id') or ''), '')
             return notifications
         except Exception as e:
             logger.error(f"✗ Error fetching notifications: {e}")

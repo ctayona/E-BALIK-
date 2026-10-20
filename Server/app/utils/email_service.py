@@ -18,6 +18,45 @@ logger = logging.getLogger(__name__)
 
 BREVO_URL = 'https://api.brevo.com/v3/smtp/email'
 
+# Recent delivery results for this server process (Mission Control > Monitoring). Reset when the server restarts.
+STATS: Dict[str, object] = {'sent': 0, 'failed': 0, 'last_ok_at': None, 'last_fail_at': None, 'last_error': ''}
+
+
+def _record(ok: bool, error: str = '') -> None:
+    moment = datetime.now(timezone.utc).isoformat()
+    if ok:
+        STATS['sent'] = int(STATS['sent']) + 1
+        STATS['last_ok_at'] = moment
+    else:
+        STATS['failed'] = int(STATS['failed']) + 1
+        STATS['last_fail_at'] = moment
+        STATS['last_error'] = error[:160]
+
+
+def check_provider() -> Dict[str, object]:
+    """Ask the provider whether our key works, without sending any email. {ok, status_code, detail, plan}."""
+    key = provider_key()
+    if key == 'brevo':
+        url, headers = 'https://api.brevo.com/v3/account', {'api-key': Config.BREVO_API_KEY or '', 'Accept': 'application/json'}
+    elif key == 'sendgrid':
+        url, headers = 'https://api.sendgrid.com/v3/scopes', {'Authorization': f'Bearer {Config.SENDGRID_API_KEY}'}
+    else:
+        return {'ok': False, 'status_code': None, 'detail': 'No email provider is configured.', 'plan': None}
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=10) as response:
+            data = json.loads(response.read().decode('utf-8', 'replace') or '{}')
+    except urllib.error.HTTPError as error:
+        detail = {401: 'The provider rejected the key (401). An expired trial, a revoked key or a typo gives this answer.', 403: 'The provider refused this key (403).'}.get(error.code, f'The provider answered {error.code}.')
+        return {'ok': False, 'status_code': error.code, 'detail': detail, 'plan': None}
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        return {'ok': False, 'status_code': None, 'detail': f'The provider could not be reached: {str(error)[:100]}', 'plan': None}
+    if key == 'brevo':
+        plans = [p for p in (data.get('plan') or []) if isinstance(p, dict)]
+        plan = ', '.join(f"{p.get('type', 'plan')} ({p.get('credits')} {p.get('creditsType', 'credits')} left)" for p in plans if p.get('credits') is not None) or None
+        return {'ok': True, 'status_code': 200, 'detail': 'Brevo accepted the key.' + (f' Plan: {plan}.' if plan else ''), 'plan': plan}
+    allowed = 'mail.send' in (data.get('scopes') or [])
+    return {'ok': allowed, 'status_code': 200, 'detail': 'SendGrid accepted the key.' if allowed else 'The key works but is not allowed to send mail (missing the mail.send permission).', 'plan': None}
+
 
 class EmailDeliveryError(Exception):
     """The provider refused or could not take the message. `status_code` is its HTTP status when it answered."""
@@ -110,10 +149,12 @@ class EmailService:
             html, text = render_email(unsubscribe_url=unsubscribe_url, unsubscribe_label=unsubscribe_label, **layout)
             headers = {'List-Unsubscribe': f'<{unsubscribe_url}>', 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click'} if unsubscribe_url else None
             sent = self._send(to_email, subject, html, text, headers)
+            _record(bool(sent), '' if sent else 'The provider did not accept the message')
             if not sent:
-                logger.error('SendGrid rejected the email "%s"', subject)
+                logger.error('The email provider rejected the email "%s"', subject)
             return sent
         except Exception as error:
+            _record(False, str(error))
             logger.exception('Failed to send email "%s": %s', subject, error)
             return False
 
@@ -238,7 +279,7 @@ class EmailService:
         )
 
     def send_handover_receipt_email(self, to_email: str, recipient_name: str, item_name: str, claim_reference: str,
-                                    found_item_reference: str, released_at: str) -> bool:
+                                    found_item_reference: str, released_at: str, receipt_no: str = '', receipt_code: str = '') -> bool:
         """Sent once the guard has released the item: the owner's proof that it was returned."""
         return self.send_notice_email(
             to_email, "Your item was released: receipt",
@@ -247,10 +288,12 @@ class EmailService:
             greeting=f"Hello {recipient_name or 'there'},",
             paragraphs=[
                 f"This confirms that \"{item_name}\" was handed over to you at the Lost and Found Office. Your claim is now complete, and we are glad it found its way back.",
-                "Keep this email as your receipt. If anything about this handover looks wrong, contact us right away.",
+                "Keep this email as your receipt. You can also open, print or save it as a PDF in E-Balik under Claims, then My receipts. If anything about this handover looks wrong, contact us right away.",
             ],
+            highlight=('RECEIPT NUMBER', receipt_no) if receipt_no else None,
+            highlight_note=f'Verification code: {receipt_code}' if receipt_code else '',
             details={'Item': item_name, 'Claim reference': claim_reference, 'Found item reference': found_item_reference, 'Released': released_at},
-            cta=("View my claims", site_url()),
+            cta=("View my receipt", site_url()),
             notes=["If you did not collect this item yourself, please call 09478685684 or email ebaliksupport@gmail.com immediately."],
             tone='success',
         )

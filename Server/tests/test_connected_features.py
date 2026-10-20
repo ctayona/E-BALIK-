@@ -554,7 +554,7 @@ class StaffPreferenceTests(unittest.TestCase):
 
     def test_saving_a_user_choice_keeps_the_staff_choice(self):
         merged = email_prefs.merged({'email_preferences': {'admin_digest': False}}, {'reminders': False})
-        self.assertEqual(merged, {'admin_digest': False, 'reminders': False, 'announcements': True})
+        self.assertEqual(merged, {'admin_digest': False, 'reminders': False, 'announcements': True, 'matches': True})
         self.assertEqual(email_prefs.clean_update({'admin_digest': True, 'bogus': True, 'reminders': 'yes'}), {'admin_digest': True})
 
     def call(self, method, body=None, row=None):

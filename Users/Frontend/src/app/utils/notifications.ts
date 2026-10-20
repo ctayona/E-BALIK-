@@ -10,6 +10,7 @@ export interface UserNotification {
   found_item_id?: string;
   /** The readable reference (FP2031) of the found item; `found_item_id` is the internal id and means nothing to a person. */
   found_item_reference?: string;
+  missing_report_reference?: string;
   missing_report_id?: string;
   notification_type?: string;
   link_label?: string;
@@ -26,6 +27,8 @@ export function notificationTarget(notification: UserNotification): { page: Page
     // The claim form takes the readable reference. Without it (an older server) the form stays empty rather than showing an internal id.
     return { page: 'claim', options: { foundItemId: notification.found_item_reference || '' } };
   }
+  if (notification.link_page === 'matches') return { page: 'matches', options: notification.missing_report_reference ? { reportId: notification.missing_report_reference } : undefined };
+  if (notification.link_page === 'receipts') return { page: 'claim', options: { openReceipts: true } };
   if (notification.link_page === 'profile') return { page: 'profile' };
   if (notification.link_page === 'auction-hall') return { page: 'auction-hall' };
   if (notification.link_page === 'my-reports') return { page: 'my-reports', options: { reportsTab: 'completed' } };

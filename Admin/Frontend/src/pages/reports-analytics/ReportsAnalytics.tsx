@@ -7,14 +7,15 @@ import {
   type AdminDashboardSummary,
 } from "../../utils/api";
 import { AdminMetricSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
-import { T } from "../../components/ui/management";
+import { SegmentedFilter, T } from "../../components/ui/management";
+import MonthlyReportView from "./MonthlyReport";
 import AnalyticsSection from "../dashboard/AnalyticsSection";
 
 import { tr } from "../../utils/preferences";
 const categoryColors = ["#1f3160", "#d1a153", "#0f8077", "#6a84b8", "#b45309", "#94a3b8"];
 const claimColors = ["#d97706", "#2563eb", "#dc2626", "#059669", "#64748b"];
 
-export default function ReportsAnalytics() {
+function AnalyticsView() {
   const [summary, setSummary] = useState<AdminDashboardSummary | null>(null);
   const [chartData, setChartData] = useState<Array<{ month: string; lost: number; found: number }>>([]);
   const [categoryData, setCategoryData] = useState<Array<{ name: string; value: number; color: string }>>([]);
@@ -269,6 +270,21 @@ export default function ReportsAnalytics() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+type View = "analytics" | "monthly";
+
+/** Two views of the same data: live analytics, and the printable monthly report for the office. */
+export default function ReportsAnalytics() {
+  const [view, setView] = useState<View>("analytics");
+  return (
+    <div>
+      <div className="print-hide px-4 pt-4 sm:px-6 sm:pt-6">
+        <SegmentedFilter label="Report views" value={view} onChange={setView} options={[{ value: "analytics", label: "Live analytics" }, { value: "monthly", label: "Monthly report" }]} />
+      </div>
+      {view === "analytics" ? <AnalyticsView /> : <MonthlyReportView />}
     </div>
   );
 }

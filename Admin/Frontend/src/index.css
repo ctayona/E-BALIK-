@@ -1,5 +1,6 @@
-/* Admin console: Public Sans throughout (shared with the public site's text), tight and bold for headings: a calm working tool. */
-@import url('https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+/* Admin console. Bricolage Grotesque (a confident, slightly quirky grotesque) for headings, Geist (precise, tabular figures) for text and tables, Geist Mono for codes.
+   The public site has its own pairing (Fraunces + Hanken Grotesk); both share the same navy and gold, so the two apps read as one family. */
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap');
 @import 'tailwindcss';
 
 /* `dark:` utilities follow the console's own theme toggle (html[data-theme="dark"]), not the OS setting. */
@@ -7,10 +8,13 @@
 
 /* E-Balik "Campus Utility" tokens — kept in sync with Users/Frontend/src/styles/theme.css */
 @theme {
+  /* Our own families everywhere, including Tailwind's font-sans / font-mono utilities. Only the bare generic keyword is a fallback. */
+  --font-sans: 'Geist', sans-serif;
+  --font-mono: 'Geist Mono', monospace;
   /* Tailwind's default slate-400 is 2.6:1 on white. Helper text, table headings and empty states use it, so light mode darkens it to pass 4.5:1. Dark mode sets its own value below. */
   --color-slate-400: #5b6b82;
-  --font-heading: 'Public Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-body: 'Public Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-heading: 'Bricolage Grotesque', sans-serif;
+  --font-body: 'Geist', sans-serif;
 
   --color-navy-50: #f2f5fb;
   --color-navy-100: #e3e9f4;
@@ -207,16 +211,21 @@ html {
 }
 
 /* ── Management table: horizontal scroll with a pinned actions column ── */
-.mgmt-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+/* Long tables scroll inside their card so the column names stay in view (sticky header). */
+.mgmt-scroll { overflow: auto; overscroll-behavior-x: contain; max-height: min(74vh, 54rem); }
 .mgmt-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.875rem; }
 .mgmt-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   padding: 0.75rem 1rem;
   text-align: left;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--color-ink-muted);
   white-space: nowrap;
-  background: var(--table-head);
+  background-color: var(--sticky-bg);               /* opaque, so rows scroll under the sticky header instead of showing through */
+  background-image: linear-gradient(var(--table-head), var(--table-head));
   border-bottom: 1px solid var(--color-line);
 }
 .mgmt-table tbody td {
@@ -236,7 +245,24 @@ html {
   background: var(--sticky-bg);
   box-shadow: -14px 0 14px -14px rgba(15, 23, 42, 0.28);
 }
-.mgmt-table thead .mgmt-actions { background: var(--sticky-bg); text-align: right; }
+.mgmt-table thead .mgmt-actions { text-align: right; z-index: 3; }
+
+/* Keyboard users: the first Tab stop jumps past the sidebar to the page. */
+.skip-link {
+  position: fixed;
+  left: 12px;
+  top: -64px;
+  z-index: 100;
+  padding: 0.6rem 1rem;
+  border-radius: 0.75rem;
+  background: var(--color-navy-800);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.875rem;
+  box-shadow: 0 10px 30px -10px rgba(17, 27, 66, 0.7);
+  transition: top 0.15s;
+}
+.skip-link:focus { top: 12px; outline: 2px solid var(--color-gold-400); outline-offset: 2px; }
 .mgmt-table tbody tr:hover td.mgmt-actions { background: var(--sticky-hover); }
 /* Status edge on the first cell, like a claim tag. */
 .mgmt-table tbody tr[data-tone] td:first-child { box-shadow: inset 3px 0 0 var(--edge, transparent); }
@@ -302,6 +328,7 @@ body {
 h1, h2, h3, h4 {
   font-family: var(--font-heading);
   letter-spacing: -0.02em;
+  font-optical-sizing: auto;
 }
 
 /* Numbers line up in tables and counters. */

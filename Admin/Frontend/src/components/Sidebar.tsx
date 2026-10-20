@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import umakLogo from "../imports/umak-seal.webp";
+import BrandSeal from "./BrandSeal";
 import { AdminUser } from "../utils/api";
 import { useT, tr } from "../utils/preferences";
 import type { StringKey } from "../i18n/strings";
@@ -83,7 +83,7 @@ export default function Sidebar({ currentPage, onNavigate, notifCount, badges = 
         <span className="pointer-events-none absolute inset-x-5 bottom-0 h-px bg-[linear-gradient(90deg,transparent,rgba(209,161,83,0.55),transparent)]" aria-hidden="true" />
         <div className="group flex items-center gap-3">
           <div className="relative shrink-0">
-            <img decoding="async" src={umakLogo} alt={tr("University of Makati logo")} width={40} height={40} className="size-10 rounded-full object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)] transition-[filter,transform] duration-300 group-hover:scale-105 group-hover:drop-shadow-[0_0_12px_rgba(209,161,83,0.6)]" />
+            <BrandSeal className="size-10 drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)] transition-[filter,transform] duration-300 group-hover:scale-105 group-hover:drop-shadow-[0_0_12px_rgba(209,161,83,0.6)]" />
             <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-gold-500 ring-2 ring-navy-900" />
           </div>
           <div className="min-w-0">

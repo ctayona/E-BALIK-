@@ -1,6 +1,7 @@
 """Email notification preferences and one-click unsubscribe links.
 
-Three optional categories can be switched off:
+Optional categories that can be switched off:
+  * `matches`       an email when an item that looks like your lost report is handed in (the in-app notice is always created);
   * `reminders`     pickup reminders for approved claims and Smart Tag expiry reminders;
   * `announcements` broadcast messages from the administrators;
   * `admin_digest`  the daily summary email sent to administrators (it only exists for staff accounts).
@@ -21,10 +22,10 @@ from app.utils.crypto_service import CryptoService
 
 logger = logging.getLogger(__name__)
 
-CATEGORIES = ('reminders', 'announcements')
+CATEGORIES = ('reminders', 'announcements', 'matches')
 STAFF_CATEGORIES = ('admin_digest',)   # kept out of the ordinary user choices and out of the saved JSON until a staff member changes it
 ALL_CATEGORIES = CATEGORIES + STAFF_CATEGORIES
-LABELS = {'reminders': 'reminders', 'announcements': 'announcements', 'admin_digest': 'the daily summary'}
+LABELS = {'reminders': 'reminders', 'announcements': 'announcements', 'matches': 'match alerts', 'admin_digest': 'the daily summary'}
 
 
 def get_prefs(profile: Optional[Dict[str, Any]]) -> Dict[str, bool]:

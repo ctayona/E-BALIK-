@@ -4,6 +4,7 @@ import umakLogo from "@/imports/umaklogo.webp";
 import OTPModal from "@/app/pages/home/OTPModal";
 import { useAuth } from "@/app/utils/useAuth";
 import { authApi } from "@/app/utils/api";
+import GoogleButton from "@/app/shared/auth/GoogleButton";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import NameField from "@/app/shared/forms/NameField";
 import { focusFirstInvalid } from "@/app/shared/forms/FieldHint";
@@ -89,7 +90,6 @@ export default function Register({
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [googleReady, setGoogleReady] = useState(false);
   const { register, verifyOtp, resendOtp, googleLogin, isLoading, error, clearError } = useAuth();
 
   const pwChecks = checkPassword(password);
@@ -104,30 +104,6 @@ export default function Register({
     }
   }, [email, studentId]);
 
-  useEffect(() => {
-    const scriptId = "google-gsi-script";
-    const existingScript = document.getElementById(scriptId);
-    if (existingScript) {
-      if (window.google && window.google.accounts) {
-        setGoogleReady(true);
-      }
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.id = scriptId;
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.defer = true;
-    script.onload = () => setGoogleReady(true);
-    script.onerror = () => showInfoModal({ variant: "warning", title: "Google sign-in unavailable", message: "The Google sign-in script failed to load. You can still register with your UMak email." });
-    document.body.appendChild(script);
-
-    return () => {
-      const current = document.getElementById(scriptId);
-      if (current) current.remove();
-    };
-  }, []);
 
   useEffect(() => {
     const candidate = email.trim().toLowerCase();
@@ -150,79 +126,59 @@ export default function Register({
     };
   }, [email]);
 
-  useEffect(() => {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId || !googleReady || !window.google || !window.google.accounts) return;
+  async function handleGoogleCredential(credential?: string) {
+    if (!credential) {
+      showInfoModal({ variant: "info", title: "Google registration cancelled", message: "No account was created. Choose a Google account to continue, or fill in the form." });
+      return;
+    }
 
-    const buttonElement = document.getElementById("register-google-signin-button");
-    if (!buttonElement) return;
-
-    buttonElement.innerHTML = "";
-    window.google.accounts.id.initialize({
-      client_id: clientId,
-      callback: async (response: { credential?: string }) => {
-        if (!response.credential) {
-          showInfoModal({ variant: "info", title: "Google registration cancelled", message: "No account was created. Choose a Google account to continue, or fill in the form." });
+    const result = await googleLogin(credential, 'register');
+    if (!result.success) {
+      if (result.code === 'REGISTER_REQUIRED') {
+        const profile = result.google_profile;
+        if (profile?.email) {
+          setEmail(profile.email);
+          setFirstName(profile.fname || "");
+          setLastName(profile.lname || "");
+          const inferred = inferAccountProfile(profile.email, profile.campus_id || "");
+          if (inferred.role === "Student" && inferred.campusId) {
+            setStudentId(inferred.campusId);
+          }
+          setSubmitError("");
+          clearError();
+          showInfoModal({ variant: "info", title: "Google profile loaded", message: "We filled in your details from Google. Set a password below to finish creating your account." });
           return;
         }
+      }
 
-        const result = await googleLogin(response.credential, 'register');
-        if (!result.success) {
-          if (result.code === 'REGISTER_REQUIRED') {
-            const profile = result.google_profile;
-            if (profile?.email) {
-              setEmail(profile.email);
-              setFirstName(profile.fname || "");
-              setLastName(profile.lname || "");
-              const inferred = inferAccountProfile(profile.email, profile.campus_id || "");
-              if (inferred.role === "Student" && inferred.campusId) {
-                setStudentId(inferred.campusId);
-              }
-              setSubmitError("");
-              clearError();
-              showInfoModal({ variant: "info", title: "Google profile loaded", message: "We filled in your details from Google. Set a password below to finish creating your account." });
-              return;
-            }
-          }
+      if (result.code === 'EMAIL_ALREADY_REGISTERED') {
+        const taken = result.google_profile?.email;
+        if (taken) setEmail(taken);
+        setEmailState("taken");
+        showInfoModal({ variant: "warning", title: "This email already has an account", message: `${taken ?? "This email"} is already registered, so there is nothing to sign up for. Log in instead, or use Forgot password if you cannot remember it.` });
+        return;
+      }
 
-          if (result.code === 'EMAIL_ALREADY_REGISTERED') {
-            const taken = result.google_profile?.email;
-            if (taken) setEmail(taken);
-            setEmailState("taken");
-            showInfoModal({ variant: "warning", title: "This email already has an account", message: `${taken ?? "This email"} is already registered, so there is nothing to sign up for. Log in instead, or use Forgot password if you cannot remember it.` });
-            return;
-          }
+      showInfoModal({ variant: "error", title: "Google registration failed", message: result.error || "Google registration failed." });
+      return;
+    }
 
-          showInfoModal({ variant: "error", title: "Google registration failed", message: result.error || "Google registration failed." });
-          return;
-        }
+    const userInfo = result.user;
+    if (userInfo?.email) {
+      setEmail(userInfo.email);
+      const nameParts = [userInfo.fname, userInfo.lname].filter(Boolean);
+      if (nameParts.length > 0) {
+        setFirstName(userInfo.fname || "");
+        setLastName(userInfo.lname || "");
+      }
+      const profile = inferAccountProfile(userInfo.email, userInfo.campus_id || studentId);
+      if (profile.role === "Student" && profile.campusId) {
+        setStudentId(profile.campusId);
+      }
+    }
 
-        const userInfo = result.user;
-        if (userInfo?.email) {
-          setEmail(userInfo.email);
-          const nameParts = [userInfo.fname, userInfo.lname].filter(Boolean);
-          if (nameParts.length > 0) {
-            setFirstName(userInfo.fname || "");
-            setLastName(userInfo.lname || "");
-          }
-          const profile = inferAccountProfile(userInfo.email, userInfo.campus_id || studentId);
-          if (profile.role === "Student" && profile.campusId) {
-            setStudentId(profile.campusId);
-          }
-        }
-
-        showInfoModal({ variant: "success", title: "Google account linked", message: "Complete your password setup below to finish registration." });
-      },
-    });
-
-    window.google.accounts.id.renderButton(buttonElement, {
-      theme: "outline",
-      size: "large",
-      text: "continue_with",
-      shape: "pill",
-      logo_alignment: "left",
-    });
-  }, [googleReady, googleLogin, studentId]);
+    showInfoModal({ variant: "success", title: "Google account linked", message: "Complete your password setup below to finish registration." });
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -451,7 +407,7 @@ export default function Register({
           </div>
         )}
 
-        <div id="register-google-signin-button" className="w-full" />
+        <GoogleButton onCredential={(credential) => void handleGoogleCredential(credential)} failureHint="You can still register with your UMak email." />
 
         <button
           type="submit"

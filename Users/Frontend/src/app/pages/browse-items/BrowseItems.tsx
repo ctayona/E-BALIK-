@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, ChevronLeft, ChevronRight, Search, SearchX, X } from "lucide-react";
+import { ArrowRight, Camera, ChevronLeft, ChevronRight, Search, SearchX, X } from "lucide-react";
 import type { NavigationOptions, Page } from "@/app/types";
 import { useAuth } from "@/app/utils/useAuth";
 import { useVerificationPrompt } from "@/app/shared/verification/VerificationRequiredModal";
@@ -11,6 +11,7 @@ import ViewToggle from "@/app/shared/view/ViewToggle";
 import { useViewMode } from "@/app/shared/view/useViewMode";
 import ItemViewer from "@/app/shared/media/ItemViewer";
 import HeroSlideshow from "@/app/shared/media/HeroSlideshow";
+import PhotoSearchModal from "./PhotoSearchModal";
 
 type Item = {
   mpost_id?: string; fpost_id?: string; item_name: string; category?: string;
@@ -50,6 +51,7 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
   const [sort,     setSort]     = useState<"newest" | "oldest">("newest");
   const [page,     setPage]     = useState(0);
   const [viewIndex, setViewIndex] = useState<number | null>(null);
+  const [photoSearchOpen, setPhotoSearchOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -93,6 +95,7 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
   const galleryItems = useMemo(() => filtered.map((item) => toGallery(item, tab)), [filtered, tab]);
   const currentGallery = useMemo(() => current.map((item) => toGallery(item, tab)), [current, tab]);
   const openGallery = guard((item: GalleryItem) => setViewIndex(galleryItems.findIndex((entry) => entry.id === item.id)));
+  const startClaim = guard((reference: string) => onNavigate?.("claim", { foundItemId: reference }));
   const featured = useMemo(() => galleryItems.filter((item) => item.image).slice(0, 5), [galleryItems]);
 
   function clearFilters() {
@@ -158,6 +161,7 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
               />
             </div>
             <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setPhotoSearchOpen(true)} className={`${CX.btnGhost} shrink-0 !px-3.5`}><Camera size={16} aria-hidden="true" /><span className="hidden sm:inline">Search by photo</span><span className="sm:hidden">Photo</span></button>
               <label htmlFor="browse-sort" className="sr-only">Sort</label>
               <select id="browse-sort" value={sort} onChange={(e) => setSort(e.target.value as "newest" | "oldest")} className={`${CX.input} pr-8`}>
                 <option value="newest">Newest first</option>
@@ -227,6 +231,8 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
             </button>
           </nav>
         )}
+
+        <PhotoSearchModal open={photoSearchOpen} onClose={() => setPhotoSearchOpen(false)} onClaim={(reference) => startClaim(reference)} onReportLost={() => onNavigate?.("missing-item", { mode: "form" })} />
 
         {viewIndex !== null && viewIndex >= 0 && (
           <ItemViewer

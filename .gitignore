@@ -16,3 +16,7 @@ Server/venv/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local database backups (contain personal data)
+backups/
+portable/

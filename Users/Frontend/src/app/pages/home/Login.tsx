@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Eye, EyeOff, X } from "lucide-react";
 import umakLogo from "@/imports/umaklogo.webp";
 import { useAuth } from "@/app/utils/useAuth";
+import GoogleButton from "@/app/shared/auth/GoogleButton";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 
 // Clay design tokens (matching Landing)
@@ -29,7 +30,6 @@ export default function Login({
   const [showPw, setShowPw] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [googleReady, setGoogleReady] = useState(false);
   const [googleRegisterPrompt, setGoogleRegisterPrompt] = useState<{ open: boolean; email: string } | null>(null);
   const [mfaChallengeToken, setMfaChallengeToken] = useState("");
   const [mfaCode, setMfaCode] = useState("");
@@ -50,66 +50,36 @@ export default function Login({
     return false;
   }
 
-  useEffect(() => {
-    const scriptId = "google-gsi-script";
-    const existingScript = document.getElementById(scriptId);
-    if (existingScript) {
-      if (window.google && window.google.accounts) setGoogleReady(true);
+
+  async function handleGoogleCredential(credential?: string) {
+    if (!credential) { showInfoModal({ variant: "info", title: "Google sign-in cancelled", message: "No changes were made. Choose a Google account to continue, or sign in with your email." }); return; }
+    const result = await googleLogin(credential, "login");
+    if ("mfaRequired" in result && result.mfaRequired && result.challengeToken) {
+      setMfaChallengeToken(result.challengeToken);
+      setMfaCode("");
+      setSubmitError("");
       return;
     }
-    const script = document.createElement("script");
-    script.id = scriptId;
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.defer = true;
-    script.onload = () => setGoogleReady(true);
-    script.onerror = () => showInfoModal({ variant: "warning", title: "Google sign-in unavailable", message: "The Google sign-in script failed to load. You can still sign in with your email and password." });
-    document.body.appendChild(script);
-    return () => { const c = document.getElementById(scriptId); if (c) c.remove(); };
-  }, []);
-
-  useEffect(() => {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId || !googleReady || !window.google || !window.google.accounts) return;
-    const buttonElement = document.getElementById("google-signin-button");
-    if (!buttonElement) return;
-    buttonElement.innerHTML = "";
-    window.google.accounts.id.initialize({
-      client_id: clientId,
-      callback: async (response: { credential?: string }) => {
-        if (!response.credential) { showInfoModal({ variant: "info", title: "Google sign-in cancelled", message: "No changes were made. Choose a Google account to continue, or sign in with your email." }); return; }
-        const result = await googleLogin(response.credential, "login");
-        if ("mfaRequired" in result && result.mfaRequired && result.challengeToken) {
-          setMfaChallengeToken(result.challengeToken);
-          setMfaCode("");
-          setSubmitError("");
-          return;
-        }
-        if (!result.success) {
-          const message = result.error || "Google sign-in failed.";
-          if (result.code === "REGISTER_REQUIRED") {
-            const emailToUse = result.google_profile?.email || "your email";
-            setGoogleRegisterPrompt({ open: true, email: emailToUse });
-            setSubmitError("");
-            return;
-          }
-          if (result.code === "EMAIL_ALREADY_REGISTERED") {
-            showInfoModal({ variant: "warning", title: "Use your email and password", message: "This email is already registered. Please log in with your email and password instead." });
-            return;
-          }
-          showInfoModal({ variant: "error", title: "Google sign-in failed", message });
-          return;
-        }
-        if (result.user && redirectAdmin(result.user)) return;
-        showInfoModal({ variant: "success", title: "Signed in", message: `Welcome back${result.user?.fname ? `, ${result.user.fname}` : ""}. Your dashboard is ready.` });
-        onClose();
-        onLoginSuccess();
-      },
-    });
-    window.google.accounts.id.renderButton(buttonElement, {
-      theme: "outline", size: "large", text: "continue_with", shape: "pill", logo_alignment: "left",
-    });
-  }, [googleReady, googleLogin, onClose, onLoginSuccess]);
+    if (!result.success) {
+      const message = result.error || "Google sign-in failed.";
+      if (result.code === "REGISTER_REQUIRED") {
+        const emailToUse = result.google_profile?.email || "your email";
+        setGoogleRegisterPrompt({ open: true, email: emailToUse });
+        setSubmitError("");
+        return;
+      }
+      if (result.code === "EMAIL_ALREADY_REGISTERED") {
+        showInfoModal({ variant: "warning", title: "Use your email and password", message: "This email is already registered. Please log in with your email and password instead." });
+        return;
+      }
+      showInfoModal({ variant: "error", title: "Google sign-in failed", message });
+      return;
+    }
+    if (result.user && redirectAdmin(result.user)) return;
+    showInfoModal({ variant: "success", title: "Signed in", message: `Welcome back${result.user?.fname ? `, ${result.user.fname}` : ""}. Your dashboard is ready.` });
+    onClose();
+    onLoginSuccess();
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -277,7 +247,7 @@ export default function Login({
 
       {/* Google sign-in */}
       <div className="w-full">
-        <div id="google-signin-button" className="w-full" />
+        <GoogleButton onCredential={(credential) => void handleGoogleCredential(credential)} failureHint="You can still sign in with your email and password." />
       </div>
 
       {!staffOnly && (

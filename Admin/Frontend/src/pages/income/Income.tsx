@@ -233,7 +233,7 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
     }
   };
 
-  if (setup) return <div className="space-y-6"><PageHeader title={tr("Income")} /><SetupNotice message={setup} onRetry={() => void load()} /></div>;
+  if (setup) return <div className="space-y-6 p-4 sm:p-6"><PageHeader title={tr("Income")} /><SetupNotice message={setup} onRetry={() => void load()} /></div>;
 
   const change = summary && summary.previous_month > 0 ? ((summary.this_month - summary.previous_month) / summary.previous_month) * 100 : null;
   const split = summary ? (["auction", "smart_tag", "other"] as IncomeSource[]).map((key) => ({ key, value: Math.max(0, summary.by_source[key]) })) : [];
@@ -242,7 +242,7 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
   const owed = summary ? summary.pending.auction + summary.pending.smart_tag : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 p-4 sm:p-6">
       <PageHeader
         title={tr("Income")}
         description={tr("Money from the Auction Hall and Smart Tags. Sales are recorded by themselves when an auction is collected or a priced tag is approved.")}

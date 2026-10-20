@@ -15,6 +15,7 @@ def register_blueprints(app):
     from Users.Backend.notifications.routes import notifications_bp
     from Users.Backend.auctions.routes import auctions_bp
     from Users.Backend.smart_tags.routes import smart_tags_bp
+    from Users.Backend.receipts.routes import receipts_bp
     from Users.Backend.feed.routes import feed_bp
 
     for blueprint in (home_bp, profile_bp, found_item_bp, missing_item_bp, my_reports_bp, matches_bp, browse_items_bp):
@@ -23,6 +24,7 @@ def register_blueprints(app):
     app.register_blueprint(notifications_bp, url_prefix='/api/notifications')
     app.register_blueprint(auctions_bp, url_prefix='/api/auctions')
     app.register_blueprint(smart_tags_bp, url_prefix='/api/tags')
+    app.register_blueprint(receipts_bp, url_prefix='/api/receipts')
     app.register_blueprint(feed_bp, url_prefix='/api/feed')
 
     from app.utils.scheduler import cron_bp

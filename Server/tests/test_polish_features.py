@@ -636,9 +636,9 @@ class RetentionTests(unittest.TestCase):
 # ----------------------------------------------------------------------------------------------------------- email preferences
 class EmailPrefsTests(unittest.TestCase):
     def test_defaults_and_overrides(self):
-        self.assertEqual(email_prefs.get_prefs(None), {'reminders': True, 'announcements': True})
-        self.assertEqual(email_prefs.get_prefs({'email_preferences': {'reminders': False}}), {'reminders': False, 'announcements': True})
-        self.assertEqual(email_prefs.get_prefs({'email_preferences': 'garbage'}), {'reminders': True, 'announcements': True})
+        self.assertEqual(email_prefs.get_prefs(None), {'reminders': True, 'announcements': True, 'matches': True})
+        self.assertEqual(email_prefs.get_prefs({'email_preferences': {'reminders': False}}), {'reminders': False, 'announcements': True, 'matches': True})
+        self.assertEqual(email_prefs.get_prefs({'email_preferences': 'garbage'}), {'reminders': True, 'announcements': True, 'matches': True})
         self.assertFalse(email_prefs.allows({'email_preferences': {'announcements': False}}, 'announcements'))
         self.assertEqual(email_prefs.clean_update({'reminders': False, 'announcements': 'no', 'other': True}), {'reminders': False})
 
@@ -673,12 +673,12 @@ class PrefsRouteTests(unittest.TestCase):
         return next(p for p in self.store['user_profiles'] if p['account_id'] == OWNER)
 
     def test_the_user_reads_and_saves_their_choices(self):
-        self.assertEqual(self.client.get('/api/email/preferences').get_json()['preferences'], {'reminders': True, 'announcements': True})
+        self.assertEqual(self.client.get('/api/email/preferences').get_json()['preferences'], {'reminders': True, 'announcements': True, 'matches': True})
         saved = self.client.put('/api/email/preferences', json={'reminders': False})
-        self.assertEqual((saved.status_code, saved.get_json()['preferences']), (200, {'reminders': False, 'announcements': True}))
-        self.assertEqual(self.owner()['email_preferences'], {'reminders': False, 'announcements': True})
+        self.assertEqual((saved.status_code, saved.get_json()['preferences']), (200, {'reminders': False, 'announcements': True, 'matches': True}))
+        self.assertEqual(self.owner()['email_preferences'], {'reminders': False, 'announcements': True, 'matches': True})
         later = self.client.put('/api/email/preferences', json={'announcements': False})
-        self.assertEqual(later.get_json()['preferences'], {'reminders': False, 'announcements': False})
+        self.assertEqual(later.get_json()['preferences'], {'reminders': False, 'announcements': False, 'matches': True})
 
     def test_bad_input_is_refused(self):
         self.assertEqual(self.client.put('/api/email/preferences', json={'reminders': 'off'}).status_code, 400)
@@ -699,7 +699,7 @@ class PrefsRouteTests(unittest.TestCase):
         self.assertNotIn('email_preferences', self.owner())            # opening the link (or a mail scanner doing so) changes nothing
         done = self.client.post(f'/api/email/unsubscribe?t={token}')
         self.assertEqual(done.status_code, 200)
-        self.assertEqual(self.owner()['email_preferences'], {'reminders': False, 'announcements': True})
+        self.assertEqual(self.owner()['email_preferences'], {'reminders': False, 'announcements': True, 'matches': True})
         self.assertEqual(page.headers['Cache-Control'], 'no-store')
 
     def test_a_mail_apps_one_click_post_works_and_keeps_the_other_choice(self):
@@ -707,7 +707,7 @@ class PrefsRouteTests(unittest.TestCase):
         token = email_prefs.make_token(OWNER, 'reminders')
         response = self.client.post(f'/api/email/unsubscribe?t={token}', data={'List-Unsubscribe': 'One-Click'})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.owner()['email_preferences'], {'reminders': False, 'announcements': False})
+        self.assertEqual(self.owner()['email_preferences'], {'reminders': False, 'announcements': False, 'matches': True})
 
     def test_a_bad_link_is_refused(self):
         self.assertEqual(self.client.get('/api/email/unsubscribe?t=broken').status_code, 400)

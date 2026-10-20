@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, request
 from app.utils.report_dates import date_problem
+from app.utils import match_alerts
 from app.utils.recycle_bin import BinError, retention_days
 from app.utils import get_db
 from app.utils import custody_log
@@ -152,6 +153,7 @@ def create_found_item():
                 tag_notified = True
             except TagError as error:
                 current_app.logger.warning('Smart Tag %s was not linked to %s: %s', tag_id, reference, error.message)
+        match_alerts.alert_for_new_found_item(db, created)
         _log_admin_action(db, admin, 'Create Found Item', 'Found Items', item_name, reference)
         message = f'Found item {reference} was registered.'
         if tag_id:

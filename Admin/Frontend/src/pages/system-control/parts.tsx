@@ -19,13 +19,13 @@ export function Card({ icon, tone = "navy", title, description, children, aside 
   }[tone];
   return (
     <section className="glass-panel flex min-w-0 flex-col p-5 sm:p-6">
-      <header className="mb-4 flex flex-wrap items-start gap-3.5 sm:flex-nowrap">
+      <header className="mb-4 flex flex-wrap items-start gap-x-3.5 gap-y-3 sm:flex-nowrap">
         <span className={`flex size-11 shrink-0 items-center justify-center rounded-2xl ${badge}`} aria-hidden="true">{icon}</span>
         <div className="min-w-0 flex-1">
           <h2 className="font-[family-name:var(--font-heading)] text-[18px] font-semibold leading-tight text-ink">{title}</h2>
           <p className="mt-1 text-[13.5px] leading-5 text-ink-muted">{description}</p>
         </div>
-        {aside}
+        {aside && <div className="w-full sm:w-auto sm:shrink-0">{aside}</div>}
       </header>
       {children}
     </section>

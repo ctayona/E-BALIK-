@@ -17,6 +17,7 @@ interface UserNotification {
   found_item_id?: string;
   /** The readable reference (FP2031) of the found item; found_item_id is the internal id and means nothing to a person. */
   found_item_reference?: string;
+  missing_report_reference?: string;
   missing_report_id?: string;
   notification_type?: string;
   link_label?: string;
@@ -240,6 +241,14 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
                         className={`${CX.btnNavy} mt-3 px-4 py-2 text-[12px]`}
                       >
                         {notification.link_label || 'View Item'}
+                      </button>
+                    )}
+                    {(notification.link_page === 'matches' || notification.link_page === 'receipts') && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleNotificationClick(notification); }}
+                        className={`${CX.btnGold} mt-3 px-4 py-2 text-[12px]`}
+                      >
+                        {notification.link_label || (notification.link_page === 'matches' ? 'Review matches' : 'View receipt')}
                       </button>
                     )}
                     {notification.link_page === 'auction-hall' && (

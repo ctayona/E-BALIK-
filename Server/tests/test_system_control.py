@@ -295,7 +295,8 @@ class HealthScanTests(unittest.TestCase):
         db.get_admin_mfa.return_value = None
         report = control.health_scan(db)
         ids = [c['id'] for c in report['checks']]
-        self.assertEqual(len(ids), 11)
+        self.assertEqual(len(ids), 12)
+        self.assertIn('backups', ids)
         self.assertEqual(next(c for c in report['checks'] if c['id'] == 'unverified_activity')['status'], 'warn')
 
     def test_unverified_users_with_heavy_activity_are_flagged(self):

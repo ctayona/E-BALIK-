@@ -2,6 +2,7 @@
 from datetime import datetime
 from flask import Blueprint, current_app, jsonify, request
 from app.utils.report_dates import date_problem
+from app.utils import match_alerts
 from app.utils.recycle_bin import BinError, retention_days
 from app.utils import get_db
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
@@ -60,6 +61,7 @@ def create_lost_item():
             'last_seen_date': date_lost,
             'status': 'missing',
         })
+        match_alerts.alert_for_new_missing_report(db, created)
         _log_admin_action(db, admin, 'Create Lost Item', 'Lost Items', item_name, reference)
         return jsonify({'success': True, 'reference': reference, 'item': created}), 201
     except BinError as error:

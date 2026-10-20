@@ -1,9 +1,19 @@
 name: Backup Supabase Database
 
+# Nightly: a full pg_dump of the database, encrypted, copied to Google Drive, old copies pruned, and the result reported to the
+# admin console (System Control > Monitoring > Backups). Sundays: a second, portable backup that also includes the photos.
+# Setup, secrets and how to restore: docs/BACKUP_GUIDE.md
+
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 0 * * *'     # 08:00 Manila, every day
+    - cron: '0 1 * * 0'     # 09:00 Manila, Sundays: portable backup with photos
   workflow_dispatch:
+    inputs:
+      portable:
+        description: 'Also run the portable backup with photos'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -14,10 +24,19 @@ jobs:
     timeout-minutes: 30
 
     env:
+      # Use the Supabase POOLER connection string (Project Settings > Database > Connection pooling, "Session" mode).
+      # GitHub runners have no IPv6, and the direct db.<project>.supabase.co host is IPv6-only on the Free plan.
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       RCLONE_CONFIG_DATA: ${{ secrets.RCLONE_CONFIG_DATA }}
       GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
-      BACKUP_FILE: supabase-backup-${{ github.run_id }}.sql
+      # Strongly recommended: the dump contains every user's personal data and password hashes. Without it the file is NOT encrypted.
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      # Optional: lets the job report to the admin console. Without them the backup still runs; the console just cannot show it.
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      KEEP_DAYS: '30'
+      MIN_BYTES: '2048'
+      BACKUP_BASENAME: ebalik-db-${{ github.run_id }}
 
     steps:
       - name: Install PostgreSQL 17 client
@@ -45,7 +64,31 @@ jobs:
         run: |
           set -euo pipefail
           : "${SUPABASE_DB_URL:?SUPABASE_DB_URL repository secret is required}"
-          pg_dump "$SUPABASE_DB_URL" --clean --if-exists -f "$BACKUP_FILE"
+          pg_dump "$SUPABASE_DB_URL" --clean --if-exists --no-owner --no-privileges | gzip -9 > "$BACKUP_BASENAME.sql.gz"
+          size=$(stat -c %s "$BACKUP_BASENAME.sql.gz")
+          echo "Dump is $size bytes"
+          if [ "$size" -lt "$MIN_BYTES" ]; then
+            echo "The dump is suspiciously small: refusing to treat it as a backup." >&2
+            exit 1
+          fi
+          # A dump that cannot be read back is not a backup.
+          gzip --test "$BACKUP_BASENAME.sql.gz"
+
+      - name: Encrypt
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${BACKUP_PASSPHRASE:-}" ]; then
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" \
+                --symmetric --cipher-algo AES256 -o "$BACKUP_BASENAME.sql.gz.gpg" "$BACKUP_BASENAME.sql.gz"
+            rm -f "$BACKUP_BASENAME.sql.gz"
+            echo "FINAL_FILE=$BACKUP_BASENAME.sql.gz.gpg" >> "$GITHUB_ENV"
+            echo "ENCRYPTED=true" >> "$GITHUB_ENV"
+          else
+            echo "::warning::BACKUP_PASSPHRASE is not set, so this backup is NOT encrypted. Add the secret (docs/BACKUP_GUIDE.md)."
+            echo "FINAL_FILE=$BACKUP_BASENAME.sql.gz" >> "$GITHUB_ENV"
+            echo "ENCRYPTED=false" >> "$GITHUB_ENV"
+          fi
 
       - name: Upload backup to Google Drive via Rclone
         shell: bash
@@ -57,8 +100,89 @@ jobs:
           mkdir -p ~/.config/rclone
           printf '%s' "$RCLONE_CONFIG_DATA" > ~/.config/rclone/rclone.conf
 
-          rclone copyto "$BACKUP_FILE" "gdrive,root_folder_id=$GDRIVE_FOLDER_ID:$BACKUP_FILE" --verbose
+          rclone copyto "$FINAL_FILE" "gdrive,root_folder_id=$GDRIVE_FOLDER_ID:$FINAL_FILE" --verbose
+          # Prove it arrived and is the right size, then prune database dumps older than KEEP_DAYS (only files this job makes).
+          want=$(stat -c %s "$FINAL_FILE")
+          got=$(rclone size "gdrive,root_folder_id=$GDRIVE_FOLDER_ID:" --include "$FINAL_FILE" --json | sed -n 's/.*"bytes":\([0-9]*\).*/\1/p')
+          if [ "$want" != "$got" ]; then echo "Uploaded size $got does not match $want" >&2; exit 1; fi
+          rclone delete "gdrive,root_folder_id=$GDRIVE_FOLDER_ID:" --include "ebalik-db-*" --min-age "${KEEP_DAYS}d" --verbose
+          echo "BACKUP_BYTES=$want" >> "$GITHUB_ENV"
+
+      - name: Report success to the admin console
+        if: success()
+        shell: bash
+        run: |
+          set -uo pipefail
+          [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ] || { echo "SUPABASE_URL / SUPABASE_SERVICE_KEY not set: skipping the status report."; exit 0; }
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          body=$(jq -n --arg at "$now" --arg file "$FINAL_FILE" --argjson bytes "${BACKUP_BYTES:-0}" --argjson enc "${ENCRYPTED:-false}" \
+            '[{setting_key:"last_backup", setting_value:{ok:true, at:$at, file:$file, bytes:$bytes, tables:null, encrypted:$enc, kind:"full database dump", where:"Google Drive"}, updated_at:$at}]')
+          curl --silent --show-error --fail -X POST "${SUPABASE_URL%/}/rest/v1/system_settings?on_conflict=setting_key" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" -H "Prefer: resolution=merge-duplicates,return=minimal" -d "$body" || echo "Could not report the status (the backup itself is fine)."
+
+      - name: Report failure to the admin console
+        if: failure()
+        shell: bash
+        run: |
+          set -uo pipefail
+          [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_SERVICE_KEY:-}" ] || exit 0
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          body=$(jq -n --arg at "$now" --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '[{setting_key:"last_backup", setting_value:{ok:false, failed_at:$at, error:("The nightly backup job failed. Open " + $run), kind:"full database dump"}, updated_at:$at}]')
+          curl --silent --show-error -X POST "${SUPABASE_URL%/}/rest/v1/system_settings?on_conflict=setting_key" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" -H "Prefer: resolution=merge-duplicates,return=minimal" -d "$body" || true
 
       - name: Remove local backup
         if: always()
-        run: rm -f -- "$BACKUP_FILE"
+        run: rm -f -- ebalik-db-*
+
+  portable:
+    # Sundays (or when asked): the same data as readable files plus the uploaded photos, restorable into ANY Supabase project.
+    if: github.event.schedule == '0 1 * * 0' || inputs.portable == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      RCLONE_CONFIG_DATA: ${{ secrets.RCLONE_CONFIG_DATA }}
+      GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+      KEEP_DAYS: '60'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tools
+        run: pip install cryptography && sudo apt-get update && sudo apt-get install -y rclone
+
+      - name: Portable backup with photos
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${SUPABASE_URL:?SUPABASE_URL repository secret is required}"
+          : "${SUPABASE_SERVICE_KEY:?SUPABASE_SERVICE_KEY repository secret is required}"
+          : "${BACKUP_PASSPHRASE:?BACKUP_PASSPHRASE repository secret is required: the portable backup is always encrypted}"
+          python Server/scripts/backup_database.py --out portable --with-files --no-record
+
+      - name: Upload to Google Drive
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${RCLONE_CONFIG_DATA:?RCLONE_CONFIG_DATA repository secret is required}"
+          : "${GDRIVE_FOLDER_ID:?GDRIVE_FOLDER_ID repository secret is required}"
+          mkdir -p ~/.config/rclone
+          printf '%s' "$RCLONE_CONFIG_DATA" > ~/.config/rclone/rclone.conf
+          for file in portable/ebalik-backup-*.zip.enc; do
+            rclone copyto "$file" "gdrive,root_folder_id=$GDRIVE_FOLDER_ID:$(basename "$file")" --verbose
+          done
+          rclone delete "gdrive,root_folder_id=$GDRIVE_FOLDER_ID:" --include "ebalik-backup-*" --min-age "${KEEP_DAYS}d" --verbose
+
+      - name: Remove local backup
+        if: always()
+        run: rm -rf -- portable
