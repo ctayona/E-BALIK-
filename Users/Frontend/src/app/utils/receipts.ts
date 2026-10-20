@@ -3,7 +3,7 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export interface Receipt {
-  kind: "claim" | "auction";
+  kind: "claim" | "auction" | "payment";
   receipt_no: string;
   /** Ten characters (XXXXX-XXXXX) that only the server can produce. Anyone with the number and this code can check the receipt. */
   code: string;
@@ -14,9 +14,13 @@ export interface Receipt {
   campus_id: string;
   released_by: string;
   amount: number | null;
+  /** Payment receipts only: how it was paid, the payer's reference number, and whether the office reversed it. */
+  method?: string;
+  payment_reference?: string;
+  reversed?: boolean;
 }
 
-export type ReceiptCheck = { valid: false } | { valid: true; kind: "claim" | "auction"; item_name: string; released_on: string };
+export type ReceiptCheck = { valid: false } | { valid: true; kind: "claim" | "auction" | "payment"; item_name: string; released_on: string; reversed?: boolean };
 
 async function request<T>(path: string, init: RequestInit = {}, auth = true): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -49,13 +53,15 @@ const escapeHtml = (value: string | number) => String(value).replace(/[&<>"']/g,
 export function printReceipt(receipt: Receipt): boolean {
   const rows: Array<[string, string]> = [
     ["Item", receipt.item.name],
-    ...(receipt.item.reference ? [["Item reference", receipt.item.reference] as [string, string]] : []),
+    ...(receipt.item.reference && receipt.kind !== "payment" ? [["Item reference", receipt.item.reference] as [string, string]] : []),
     ...(receipt.item.found_at ? [["Found at", receipt.item.found_at] as [string, string]] : []),
     ["Released to", receipt.released_to || "-"],
     ...(receipt.campus_id ? [["Campus ID", receipt.campus_id] as [string, string]] : []),
     ["Released by", receipt.released_by],
     ["Date and time", manilaDateTime(receipt.released_at)],
     ...(receipt.amount ? [["Amount paid", pesoText(receipt.amount)] as [string, string]] : []),
+    ...(receipt.kind === "payment" && receipt.method ? [["Paid by", { cash: "Cash", gcash: "GCash", maya: "Maya", bank: "Bank transfer", other: "Other" }[receipt.method] ?? receipt.method] as [string, string]] : []),
+    ...(receipt.payment_reference ? [["Payment reference", receipt.payment_reference] as [string, string]] : []),
   ];
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(receipt.receipt_no)}</title><style>
     @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Hanken+Grotesk:wght@400..700&family=DM+Mono:wght@500&display=swap');
@@ -69,12 +75,14 @@ export function printReceipt(receipt: Receipt): boolean {
     .code span{font-size:12.5px;color:#8f6526;font-weight:600}.code strong{font-family:'DM Mono',monospace;font-size:22px;letter-spacing:.12em;color:#1f3160}
     dl{margin:16px 26px;display:grid;grid-template-columns:150px 1fr;gap:9px 14px;font-size:14px}dt{color:#64748b;font-weight:600}dd{margin:0;font-weight:600}
     .foot{margin:0 26px 24px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:12.5px;line-height:1.6;color:#475569}
-    @media print{body{padding:0}}</style></head><body><div class="sheet">
-    <div class="top"><small>University of Makati - Lost and Found Office</small><h1>${receipt.kind === "auction" ? "Auction collection receipt" : "Handover receipt"}</h1></div>
+    .void{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:84px;font-weight:700;color:rgba(225,29,72,.18);transform:rotate(-18deg);pointer-events:none}
+    .sheet{position:relative}
+    @media print{body{padding:0}}</style></head><body><div class="sheet">${receipt.reversed ? '<div class="void">REVERSED</div>' : ""}
+    <div class="top"><small>University of Makati - Lost and Found Office</small><h1>${receipt.kind === "payment" ? "Official payment receipt" : receipt.kind === "auction" ? "Auction collection receipt" : "Handover receipt"}</h1></div>
     <div class="no"><span>Receipt number</span><strong>${escapeHtml(receipt.receipt_no)}</strong></div>
     <div class="code"><span>Verification code</span><strong>${escapeHtml(receipt.code)}</strong></div>
     <dl>${rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>
-    <p class="foot">This receipt proves the item above was released to the person named. To check that it is genuine, open E-Balik, choose Claims, then Check a receipt, and enter the receipt number and verification code. Keep this receipt private.</p>
+    <p class="foot">${receipt.reversed ? "This payment was reversed by the office and this receipt is no longer valid. " : ""}${receipt.kind === "payment" ? "This receipt proves the payment above was received by the Lost and Found Office." : "This receipt proves the item above was released to the person named."} To check that it is genuine, open E-Balik, choose Claims, then Check a receipt, and enter the receipt number and verification code. Keep this receipt private.</p>
     </div></body></html>`;
   const popup = window.open("", "_blank");
   if (!popup) return false;

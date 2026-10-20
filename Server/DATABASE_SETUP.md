@@ -401,3 +401,11 @@ Run `manual_migrations/20261023_image_features.sql` after `20261022`. It adds on
 ```sql
 SELECT column_name FROM information_schema.columns WHERE table_name = 'found_items' AND column_name = 'image_features';
 ```
+
+## 20261024: payment confirmation
+
+Run `manual_migrations/20261024_payment_confirmation.sql` after `20261022`. It adds `income_ledger.payment_reference` (the GCash, Maya or bank reference an administrator records when confirming a payment) and an index on the payer. **Until it is run, administrators cannot confirm payments** (the screen says what to run); everything else keeps working. Verify with:
+
+```sql
+SELECT column_name FROM information_schema.columns WHERE table_name = 'income_ledger' AND column_name = 'payment_reference';
+```

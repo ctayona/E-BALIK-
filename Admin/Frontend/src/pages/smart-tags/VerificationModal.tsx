@@ -7,6 +7,7 @@ import { StatusPill } from "../../components/ui/management";
 import { approveSmartTag, fetchSmartTagPhoto, rejectSmartTag, type AdminSmartTag, type TagPhotos } from "../../utils/smartTagsApi";
 import { formatDateTime } from "../../utils/countdown";
 import { tr } from "../../utils/preferences";
+import { PaymentStatusChip } from "../income/PaymentModals";
 
 const SPACED = (code: string) => code.replace(/(.{4})/g, "$1 ").trim();
 
@@ -115,6 +116,7 @@ export default function VerificationModal({ tag, onClose, onDone }: { tag: Admin
               <div className="rounded-xl border border-line px-3.5 py-2.5"><dt className="text-[12px] text-ink-muted">{tr("Tag code")}</dt><dd className="font-mono font-semibold text-ink">{SPACED(tag.tag_id)}</dd></div>
               <div className="rounded-xl border border-line px-3.5 py-2.5"><dt className="flex items-center gap-1 text-[12px] text-ink-muted"><Clock3 size={12} aria-hidden="true" />{tr("Submitted")}</dt><dd className="font-semibold text-ink">{tag.submitted_at ? formatDateTime(tag.submitted_at) : "—"}</dd></div>
             </dl>
+            <div className="flex flex-wrap items-center gap-2"><PaymentStatusChip source="smart_tag" refId={tag.tag_id} /></div>
             <p className="text-[12.5px] leading-5 text-ink-muted">{shared.length ? tr("Finders will see the owner's {0} once approved.", { "0": shared.join(", ") }) : tr("The owner chose not to show any contact details to finders.")}</p>
 
             {rejecting ? (

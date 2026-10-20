@@ -738,3 +738,10 @@ ALTER TABLE public.income_ledger ENABLE ROW LEVEL SECURITY;
 -- Visual fingerprint of the item photo, used by "Search by photo". Filled in by the backend; never shown to users.
 -- ============================================================================
 ALTER TABLE public.found_items ADD COLUMN IF NOT EXISTS image_features JSONB;
+
+-- ============================================================================
+-- COLUMN: income_ledger.payment_reference (20261024)
+-- The payer's GCash, Maya or bank reference, recorded when an administrator confirms a payment.
+-- ============================================================================
+ALTER TABLE public.income_ledger ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(64);
+CREATE INDEX IF NOT EXISTS idx_income_payer ON public.income_ledger (payer_account_id);

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional
 
 
-_DEFAULT_ID = {'otp_tokens': 'id', 'report_comments': 'comment_id', 'report_reactions': 'reaction_id'}
+_DEFAULT_ID = {'otp_tokens': 'id', 'report_comments': 'comment_id', 'report_reactions': 'reaction_id', 'income_ledger': 'entry_id'}
 
 
 class _Not:

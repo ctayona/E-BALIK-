@@ -11,14 +11,15 @@ import base64
 import hashlib
 import hmac
 import re
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from app.utils.crypto_service import CryptoService
 
 CAMPUS_TZ = timezone(timedelta(hours=8))
-CLAIM_PREFIX, AUCTION_PREFIX = 'HR', 'AR'
-_NUMBER = re.compile(r'^(HR|AR)-(\d{8})-([A-Za-z0-9-]{3,40})$')
+CLAIM_PREFIX, AUCTION_PREFIX, PAYMENT_PREFIX = 'HR', 'AR', 'PR'
+_NUMBER = re.compile(r'^(HR|AR|PR)-(\d{8})-([A-Za-z0-9-]{3,40})$', re.IGNORECASE)
 CODE_LENGTH = 10
 
 
@@ -99,6 +100,7 @@ def list_for_owner(db, account_id: str) -> List[Dict[str, Any]]:
         receipts += [_auction_receipt(db, auction, owner, {}) for auction in auctions]
     except Exception:
         pass  # before the Auction Hall tables exist there are simply no auction receipts
+    receipts += _payment_receipts(db, account_id, owner)
     return sorted(receipts, key=lambda r: r['released_at'], reverse=True)
 
 
@@ -115,7 +117,9 @@ def verify(db, receipt_no: Any, code: Any) -> Dict[str, Any]:
     entered = _normalise_code(code)
     if not match or not entered:
         raise ReceiptError('Enter the receipt number (for example HR-20261020-CL-0007) and its 10 character code.', 400)
-    prefix, day, ref = match.group(1), match.group(2), match.group(3)
+    prefix, day, ref = match.group(1).upper(), match.group(2), match.group(3)
+    if prefix == PAYMENT_PREFIX:
+        return _verify_payment(db, day, ref, entered)
     if prefix == CLAIM_PREFIX:
         rows = db.client.table('claims').select('claim_id,claim_reference,found_item_id,status,collected_at,updated_at').eq('claim_reference', ref).eq('status', 'collected').limit(1).execute().data or []
         record = rows[0] if rows else None
@@ -149,3 +153,86 @@ def receipt_for_claim(db, claim_id: str) -> Optional[Dict[str, Any]]:
     receipt = _claim_receipt(db, claim, item, owner, releaser or {})
     receipt['owner_id'] = str(claim['claimant_account_id'])   # internal: who to notify; never sent to a browser
     return receipt
+
+
+# ---------------------------------------------------------------------------------------------- payment receipts (income_ledger)
+def payment_number(source: str, source_ref: Any, moment: Optional[datetime]) -> str:
+    """PR-<date>-AU-<first 8 characters of the auction id>  or  PR-<date>-TG-<Smart Tag code>. One sale per item, so one number per item."""
+    moment = moment or datetime.now(timezone.utc)
+    ref = str(source_ref or '').upper()
+    return f"{PAYMENT_PREFIX}-{_day(moment)}-AU-{ref[:8]}" if source == 'auction' else f"{PAYMENT_PREFIX}-{_day(moment)}-TG-{ref[:30]}"
+
+
+def _reversed_numbers(db) -> set:
+    try:
+        rows = db.client.table('income_ledger').select('receipt_no').eq('kind', 'refund').limit(5000).execute().data or []
+    except Exception:
+        return set()
+    return {r.get('receipt_no') for r in rows if r.get('receipt_no')}
+
+
+def _entry_number(entry: Dict[str, Any]) -> str:
+    return entry.get('receipt_no') or payment_number(entry.get('source'), entry.get('source_ref'), _parse(entry.get('received_at')))
+
+
+def _payment_receipt(entry: Dict[str, Any], owner: Dict[str, Any], confirmer: Dict[str, Any], reversed_flag: bool) -> Dict[str, Any]:
+    moment = _parse(entry.get('received_at')) or datetime.now(timezone.utc)
+    return {
+        'kind': 'payment', 'receipt_no': _entry_number(entry), 'code': _code('payment', str(entry['entry_id']), moment), 'released_at': moment.isoformat(),
+        'item': {'name': entry.get('description') or 'Payment', 'reference': entry.get('source_ref') or '', 'category': '', 'found_at': ''},
+        'reference': entry.get('source_ref') or '', 'released_to': _name(owner), 'campus_id': owner.get('campus_id') or '',
+        'released_by': _name(confirmer) or 'Lost and Found Office', 'amount': float(Decimal(str(entry.get('amount') or 0))),
+        'method': entry.get('method') or 'cash', 'payment_reference': entry.get('payment_reference') or '', 'reversed': bool(reversed_flag),
+    }
+
+
+def _payment_receipts(db, account_id: str, owner: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The payments an administrator confirmed for this person (auction wins and Smart Tags), newest first."""
+    try:
+        sales = db.client.table('income_ledger').select('*').eq('payer_account_id', str(account_id)).eq('kind', 'sale').order('received_at', desc=True).limit(200).execute().data or []
+    except Exception:
+        return []        # before the income ledger exists there are simply no payment receipts
+    reversed_numbers = _reversed_numbers(db)
+    staff: Dict[str, Dict[str, Any]] = {}
+    result = []
+    for entry in sales:
+        if entry.get('source') not in ('auction', 'smart_tag'):
+            continue
+        by = str(entry.get('recorded_by') or '')
+        if by and by not in staff:
+            staff[by] = db.get_user_by_account_id(by) or {}
+        result.append(_payment_receipt(entry, owner, staff.get(by, {}), _entry_number(entry) in reversed_numbers))
+    return result
+
+
+def receipt_for_payment(db, entry_id: str) -> Optional[Dict[str, Any]]:
+    """The receipt for one confirmed payment (for the confirming administrator and the payer's email). None if it is not a payment sale."""
+    rows = db.client.table('income_ledger').select('*').eq('entry_id', str(entry_id)).limit(1).execute().data or []
+    if not rows or rows[0].get('kind') != 'sale' or rows[0].get('source') not in ('auction', 'smart_tag'):
+        return None
+    entry = rows[0]
+    owner = db.get_user_by_account_id(str(entry['payer_account_id'])) if entry.get('payer_account_id') else {}
+    confirmer = db.get_user_by_account_id(str(entry['recorded_by'])) if entry.get('recorded_by') else {}
+    receipt = _payment_receipt(entry, owner or {}, confirmer or {}, _entry_number(entry) in _reversed_numbers(db))
+    receipt['owner_id'] = str(entry['payer_account_id']) if entry.get('payer_account_id') else ''   # internal; never sent to a browser
+    return receipt
+
+
+def _verify_payment(db, day: str, ref: str, entered: str) -> Dict[str, Any]:
+    kind_code, _, key = ref.partition('-')
+    source = {'AU': 'auction', 'TG': 'smart_tag'}.get(kind_code.upper())
+    if not source or not key:
+        return {'valid': False}
+    try:
+        rows = db.client.table('income_ledger').select('*').eq('source', source).eq('kind', 'sale').limit(2000).execute().data or []
+    except Exception:
+        return {'valid': False}
+    for row in rows:
+        reference = str(row.get('source_ref') or '').upper()
+        if not (reference.startswith(key.upper()) if source == 'auction' else reference == key.upper()):
+            continue
+        moment = _parse(row.get('received_at'))
+        if moment and _day(moment) == day and hmac.compare_digest(_code('payment', str(row['entry_id']), moment), entered):
+            return {'valid': True, 'kind': 'payment', 'item_name': row.get('description') or 'Payment', 'released_on': moment.astimezone(CAMPUS_TZ).strftime('%B %d, %Y').replace(' 0', ' '),
+                    'reversed': _entry_number(row) in _reversed_numbers(db)}
+    return {'valid': False}

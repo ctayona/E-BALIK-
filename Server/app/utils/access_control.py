@@ -27,7 +27,7 @@ ADMIN_PAGES: List[Dict[str, Any]] = [
     {'id': 'release-desk', 'label': 'Release desk', 'api': ['/claims/handover']},
     {'id': 'users', 'label': 'Users', 'api': ['/users', '/account-verifications', '/access']},
     {'id': 'reports', 'label': 'Analytics', 'api': ['/reports', '/dashboard']},
-    {'id': 'income', 'label': 'Income', 'api': ['/income']},
+    {'id': 'income', 'label': 'Revenue and payments', 'api': ['/income']},
     {'id': 'notifications', 'label': 'Notifications', 'api': ['/activity-logs', '/claims']},
     {'id': 'activity-logs', 'label': 'Activity logs', 'api': ['/activity-logs', '/admin-activity-logs']},
     {'id': 'system-control', 'label': 'System control', 'api': ['/system'], 'super': True},

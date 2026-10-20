@@ -866,31 +866,9 @@ class SmartTagService:
         if not rows:
             raise TagError('Someone else just reviewed this tag. Reload the list.', 409, code='not_pending')
         self._remove_photo(replaced)
-        self._record_tag_sale(rows[0], tag, admin_id, moment)
         self._notify(tag.get('owner_account_id'), 'Smart Tag approved',
                      f'Staff verified your Smart Tag for "{tag.get("item_name") or "your item"}". It is active now and finders can see what you chose to share.', 'smart_tag_approved')
         return rows[0]
-
-    def _record_tag_sale(self, row: Dict[str, Any], before: Dict[str, Any], admin_id: str, moment: datetime) -> None:
-        """First approval of a priced tag: the owner paid at the office, so the sale goes into the income ledger (once)."""
-        from decimal import Decimal, InvalidOperation
-        try:
-            price = Decimal(str(before.get('price') or 0))
-        except (InvalidOperation, ValueError):
-            return
-        if price <= 0 or before.get('prior_status') or before.get('paid_at'):
-            return  # free tag, a re-photo of an approved tag, or already paid
-        from app.utils.income import IncomeService
-        entry = IncomeService(self.db).record_sale(
-            'smart_tag', row['tag_id'], price, f"Smart Tag {row['tag_id']} ({row.get('item_name') or 'item'})",
-            payer_account_id=row.get('owner_account_id'), recorded_by=admin_id,
-        )
-        if entry:
-            try:
-                self._table().update({'paid_at': _iso(moment)}).eq('tag_id', row['tag_id']).is_('paid_at', 'null').execute()
-                row['paid_at'] = _iso(moment)
-            except Exception as error:
-                logger.warning('Smart Tag %s paid_at not saved: %s', row.get('tag_id'), error)
 
     def reject(self, raw_tag_id: Any, reason: Any, admin_id: str) -> Dict[str, Any]:
         """A new registration is cleared so the sticker can be registered again; a rejected new photo just returns to the old one."""

@@ -1290,12 +1290,7 @@ class AuctionService:
                     )
                 except Exception as error:
                     logger.warning('Auction receipt notice failed: %s', error)
-            if action == 'collected' and row.get('winning_amount'):
-                from app.utils.income import IncomeService
-                IncomeService(self.db).record_sale(
-                    'auction', str(auction_id), row.get('winning_amount'), f"Auction: {row.get('title') or 'item'}",
-                    payer_account_id=row.get('winner_account_id'), recorded_by=admin_id,
-                )
+            # Income is NOT counted here any more: an administrator confirms the payment (app/utils/payments.py).
             if action == 'forfeited' and row.get('found_item_id'):
                 self._log_item(row['found_item_id'], 'auction_forfeited', admin_id, 'The winner did not collect the item.')
                 self._log_item(row['found_item_id'], 'returned_to_custody', admin_id, 'The item is back in custody and can be claimed or auctioned again.')

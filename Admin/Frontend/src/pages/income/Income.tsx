@@ -1,20 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowDownRight, ArrowUpRight, Database, Download, Gavel, Hourglass, PackageOpen, PhilippinePeso, Plus, QrCode, ReceiptText, RefreshCw, RotateCcw } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Banknote, Calculator, Database, Download, Gavel, Hourglass, PackageOpen, PhilippinePeso, Plus, QrCode, ReceiptText, RefreshCw, RotateCcw } from "lucide-react";
 import AdminModal from "../../components/ui/AdminModal";
 import { BTN, INPUT, PageHeader } from "../../components/ui/primitives";
-import { DataTable, SegmentedFilter, StatusPill, type Tone } from "../../components/ui/management";
+import { DataTable, RowActions, SegmentedFilter, StatusPill, type Tone } from "../../components/ui/management";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import { showInfoModal } from "../../components/info-modal/infoModalStore";
 import { formatDateTime } from "../../utils/countdown";
 import { canDelete } from "../../utils/permissions";
 import { tr } from "../../utils/preferences";
+import ActivityLog from "./ActivityLog";
+import PaymentsQueue from "./PaymentsQueue";
+import { ConfirmPaymentModal, ReceiptModal, ReverseModal, type PayableItem } from "./PaymentModals";
 import {
-  IncomeSetupError, addIncomeEntry, downloadIncomeCsv, fetchIncomeEntries, fetchIncomeSummary, peso,
-  type IncomeEntry, type IncomeKind, type IncomeMethod, type IncomeSource, type IncomeSummary, type ManualEntryInput,
+  IncomeSetupError, addIncomeEntry, downloadIncomeCsv, fetchAwaiting, fetchIncomeEntries, fetchIncomeSummary, peso,
+  type AwaitingData, type IncomeEntry, type IncomeKind, type IncomeMethod, type IncomeSource, type IncomeSummary, type ManualEntryInput,
 } from "../../utils/incomeApi";
 
 type Range = "month" | "quarter" | "year" | "twelve" | "all";
+type Tab = "overview" | "payments" | "ledger" | "activity";
 type SourceFilter = "" | IncomeSource;
 
 const PAGE = 25;
@@ -69,6 +73,7 @@ function SetupNotice({ message, onRetry }: { message: string; onRetry: () => voi
       <ol className="mt-4 space-y-2 text-[14px] leading-6 text-ink-soft">
         <li>{tr("Open the Supabase dashboard and choose SQL Editor.")}</li>
         <li>{tr("Paste and run the contents of Server/manual_migrations/20261022_income_ledger.sql.")}</li>
+        <li>{tr("Then run Server/manual_migrations/20261024_payment_confirmation.sql the same way: it lets administrators confirm payments and store the payment reference.")}</li>
         <li>{tr("Come back here and press Check again. Auctions already collected are added to the ledger automatically.")}</li>
       </ol>
       <p className="mt-4 rounded-xl bg-frost-50 px-4 py-3 text-[13px] text-ink-muted">{message}</p>
@@ -108,7 +113,7 @@ function EntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
   return (
     <AdminModal
       title={tr("Record an income entry")}
-      description={tr("Auction and Smart Tag sales are recorded automatically. Use this for other payments, refunds and corrections. Entries cannot be edited later.")}
+      description={tr("Auction and Smart Tag sales are recorded when you confirm the payment. Use this for other payments, refunds and corrections. Entries cannot be edited later.")}
       icon={<ReceiptText size={19} />}
       tone="gold"
       size="md"
@@ -181,8 +186,8 @@ function EntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
 }
 
 /**
- * Income: what the Auction Hall and Smart Tags brought in, what is still owed, and the ledger behind every figure.
- * Sales are written by the workflows themselves (an auction paid and collected, a priced tag approved at the office).
+ * Revenue and payments: what the Auction Hall and Smart Tags brought in, what still waits for payment confirmation, and the ledger behind every figure.
+ * Money counts only after an administrator confirms the payment (Payments to confirm); each confirmation issues a receipt and is logged.
  */
 export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" | "smart-tags") => void }) {
   const superAdmin = canDelete();
@@ -197,16 +202,26 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [tab, setTab] = useState<Tab>("overview");
+  const [awaiting, setAwaiting] = useState<AwaitingData | null>(null);
+  const [awaitError, setAwaitError] = useState("");
+  const [confirming, setConfirming] = useState<PayableItem | null>(null);
+  const [viewing, setViewing] = useState("");
+  const [reversing, setReversing] = useState<IncomeEntry | null>(null);
+  const [logKey, setLogKey] = useState(0);
   const dates = useMemo(() => rangeDates(range), [range]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [nextSummary, page] = await Promise.all([
+      const [nextSummary, page, queue] = await Promise.all([
         fetchIncomeSummary(dates.start, dates.end),
         fetchIncomeEntries(dates.start, dates.end, source, PAGE, offset),
+        fetchAwaiting().catch((failure) => { setAwaitError(failure instanceof Error ? failure.message : tr("Unable to load the payments.")); return null; }),
       ]);
+      if (queue) setAwaitError("");
+      setAwaiting(queue);
       setSummary(nextSummary);
       setEntries(page.entries);
       setTotal(page.total);
@@ -233,19 +248,21 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
     }
   };
 
-  if (setup) return <div className="space-y-6 p-4 sm:p-6"><PageHeader title={tr("Income")} /><SetupNotice message={setup} onRetry={() => void load()} /></div>;
+  if (setup) return <div className="space-y-6 p-4 sm:p-6"><PageHeader title={tr("Revenue and payments")} /><SetupNotice message={setup} onRetry={() => void load()} /></div>;
 
   const change = summary && summary.previous_month > 0 ? ((summary.this_month - summary.previous_month) / summary.previous_month) * 100 : null;
   const split = summary ? (["auction", "smart_tag", "other"] as IncomeSource[]).map((key) => ({ key, value: Math.max(0, summary.by_source[key]) })) : [];
   const splitTotal = split.reduce((sum, part) => sum + part.value, 0);
   const chart = (summary?.by_month ?? []).map((row) => ({ ...row, label: monthLabel(row.month) }));
   const owed = summary ? summary.pending.auction + summary.pending.smart_tag : 0;
+  const waitingCount = awaiting?.totals.count ?? 0;
+  const refreshAll = () => { setLogKey((key) => key + 1); void load(); };
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
       <PageHeader
-        title={tr("Income")}
-        description={tr("Money from the Auction Hall and Smart Tags. Sales are recorded by themselves when an auction is collected or a priced tag is approved.")}
+        title={tr("Revenue and payments")}
+        description={tr("Money from the Auction Hall and Smart Tags. It counts as revenue only after an administrator confirms the payment, and every confirmation issues a receipt.")}
         actions={(
           <>
             <button type="button" onClick={() => void exportCsv()} disabled={exporting || loading} className={BTN.ghost}><Download size={16} aria-hidden="true" />{exporting ? tr("Exporting…") : tr("Export CSV")}</button>
@@ -255,14 +272,24 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
       />
 
       <SegmentedFilter
-        label="Period"
-        value={range}
-        onChange={setRange}
-        options={[{ value: "month", label: "This month" }, { value: "quarter", label: "3 months" }, { value: "twelve", label: "12 months" }, { value: "year", label: "This year" }, { value: "all", label: "All time" }]}
+        label="Revenue sections"
+        value={tab}
+        onChange={setTab}
+        options={[{ value: "overview", label: "Overview" }, { value: "payments", label: "Payments to confirm", count: waitingCount }, { value: "ledger", label: "Ledger" }, { value: "activity", label: "Activity log" }]}
       />
+
+      {(tab === "overview" || tab === "ledger") && (
+        <SegmentedFilter
+          label="Period"
+          value={range}
+          onChange={setRange}
+          options={[{ value: "month", label: "This month" }, { value: "quarter", label: "3 months" }, { value: "twelve", label: "12 months" }, { value: "year", label: "This year" }, { value: "all", label: "All time" }]}
+        />
+      )}
 
       {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] text-rose-800">{error}</p>}
 
+      {tab === "overview" && (<>
       {/* The headline: the period's income, this month against last, and how it splits between the two sources. */}
       <section className="relative overflow-hidden rounded-[26px] bg-[linear-gradient(135deg,#22366a_0%,#162448_60%,#0e1830_100%)] p-5 text-white shadow-[0_24px_60px_-34px_rgba(14,24,48,0.9)] sm:p-7" aria-label={tr("Income for the period")}>
         <span aria-hidden="true" className="pointer-events-none absolute -right-20 -top-24 size-72 rounded-full bg-[radial-gradient(circle,rgba(209,161,83,0.35),transparent_68%)]" />
@@ -301,12 +328,14 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
 
       {summary && (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Waiting to be paid" value={peso(owed)} tone="gold" icon={<Hourglass size={19} />}
-            note={tr("{0} auction pickups, {1} tags waiting for approval", { "0": summary.pending.auction_count, "1": summary.pending.smart_tag_count })} />
-          <StatCard label="Unsold Smart Tags" value={peso(summary.pending.stock_value)} tone="mint" icon={<PackageOpen size={19} />}
-            note={tr("{0} blank tags at their current price", { "0": summary.pending.stock_count })} />
-          <StatCard label="Refunds and corrections" value={peso(summary.refunds)} tone="rose" icon={<RotateCcw size={19} />} note={tr("Already subtracted from the totals")} />
-          <StatCard label="Ledger entries" value={String(summary.entries)} tone="iris" icon={<ReceiptText size={19} />} note={tr("Every peso, with who recorded it")} />
+          <StatCard label="Waiting for payment confirmation" value={peso(awaiting?.totals.amount ?? owed)} tone="gold" icon={<Hourglass size={19} />}
+            note={awaiting && awaiting.totals.released_unpaid_count > 0
+              ? tr("{0} item(s) handed over without confirmed payment", { "0": awaiting.totals.released_unpaid_count })
+              : tr("{0} auction wins, {1} Smart Tags", { "0": summary.pending.auction_count, "1": summary.pending.smart_tag_count })} />
+          <StatCard label="Average sale" value={peso(summary.average_sale)} tone="mint" icon={<Calculator size={19} />} note={tr("{0} confirmed sales in this period", { "0": summary.sales })} />
+          <StatCard label="Refunds and reversals" value={peso(summary.refunds)} tone="rose" icon={<RotateCcw size={19} />}
+            note={summary.reversals > 0 ? tr("{0} reversed payment(s), already subtracted", { "0": summary.reversals }) : tr("Already subtracted from the totals")} />
+          <StatCard label="Unsold Smart Tags" value={peso(summary.pending.stock_value)} tone="iris" icon={<PackageOpen size={19} />} note={tr("{0} blank tags at their current price", { "0": summary.pending.stock_count })} />
         </div>
       )}
 
@@ -338,6 +367,31 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
         </section>
       )}
 
+      {summary && (
+        <section className="glass-panel p-5 sm:p-6" aria-label={tr("Revenue by payment method")}>
+          <h2 className="font-[family-name:var(--font-heading)] text-[17px] font-semibold text-ink">{tr("By payment method")}</h2>
+          <p className="mb-4 text-[12.5px] text-ink-muted">{tr("How confirmed money was received in this period.")}</p>
+          <ul className="space-y-2.5">
+            {(Object.keys(METHOD_LABEL) as IncomeMethod[]).map((method) => {
+              const value = summary.by_method[method] ?? 0;
+              const top = Math.max(1, ...Object.values(summary.by_method).map((v) => Math.max(0, v)));
+              return (
+                <li key={method} className="grid grid-cols-[7.5rem_1fr_6.5rem] items-center gap-3 text-[13.5px]">
+                  <span className="text-ink-soft">{tr(METHOD_LABEL[method])}</span>
+                  <span className="h-2 overflow-hidden rounded-full bg-frost-100 dark:bg-white/10"><span className="block h-full rounded-full bg-[linear-gradient(90deg,#2b4282,#6a84b8)]" style={{ width: `${Math.max(0, value) / top * 100}%` }} /></span>
+                  <span className="text-right font-semibold tabular-nums text-ink">{peso(value)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+      </>)}
+
+      {tab === "payments" && <PaymentsQueue data={awaiting} loading={loading} error={awaitError} onConfirm={setConfirming} />}
+      {tab === "activity" && <ActivityLog refreshKey={logKey} />}
+
+      {tab === "ledger" && (
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-[family-name:var(--font-heading)] text-[17px] font-semibold text-ink">{tr("Ledger")}</h2>
@@ -352,9 +406,9 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
           <DataTable
             caption={tr("Income ledger")}
             minWidth={900}
-            columns={[{ key: "when", label: "Received" }, { key: "what", label: "Description" }, { key: "source", label: "Source" }, { key: "method", label: "Method" }, { key: "by", label: "Paid by" }, { key: "amount", label: "Amount", className: "text-right" }]}
+            columns={[{ key: "when", label: "Received" }, { key: "what", label: "Description" }, { key: "source", label: "Source" }, { key: "method", label: "Method" }, { key: "by", label: "Paid by" }, { key: "amount", label: "Amount", className: "text-right" }, { key: "actions", label: "" }]}
             isEmpty={!entries.length}
-            empty={tr("No income in this period yet. Sales appear here when an auction is collected or a priced Smart Tag is approved.")}
+            empty={tr("No confirmed income in this period yet. Sales appear here after you confirm a payment under Payments to confirm.")}
             footer={total > PAGE && (
               <div className="flex items-center justify-between gap-3 border-t border-line px-5 py-3 text-[13px] text-ink-muted">
                 <span>{tr("{0}–{1} of {2}", { "0": offset + 1, "1": Math.min(offset + PAGE, total), "2": total })}</span>
@@ -372,22 +426,31 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
                   <span className="block font-semibold text-ink">{entry.description}</span>
                   <span className="block text-[12.5px] text-ink-muted">
                     {entry.kind !== "sale" && <>{tr(KIND_LABEL[entry.kind])}{entry.notes ? `: ${entry.notes}` : ""} · </>}
-                    {entry.receipt_no ? tr("Receipt {0}", { "0": entry.receipt_no }) + " · " : ""}{tr("Recorded by {0}", { "0": entry.recorded_by_name || tr("System") })}
+                    {entry.receipt_no ? tr("Receipt {0}", { "0": entry.receipt_no }) + " · " : ""}{entry.payment_reference ? tr("Ref {0}", { "0": entry.payment_reference }) + " · " : ""}{tr("Recorded by {0}", { "0": entry.recorded_by_name || tr("System") })}
+                    {entry.reversed && <> · <span className="font-semibold text-rose-700 dark:text-rose-300">{tr("Reversed")}</span></>}
                   </span>
                 </td>
                 <td><StatusPill tone={SOURCE_TONE[entry.source] ?? "slate"}>{tr(SOURCE_LABEL[entry.source] ?? entry.source)}</StatusPill></td>
                 <td className="text-[13.5px]">{tr(METHOD_LABEL[entry.method] ?? entry.method)}</td>
                 <td className="text-[13.5px]">{entry.payer_name || "—"}</td>
-                <td className={`mgmt-actions text-right font-semibold tabular-nums ${entry.amount < 0 ? "text-rose-700 dark:text-rose-300" : "text-ink"}`}>
+                <td className={`text-right font-semibold tabular-nums ${entry.amount < 0 ? "text-rose-700 dark:text-rose-300" : "text-ink"} ${entry.reversed ? "line-through opacity-60" : ""}`}>
                   <span className="inline-flex items-center gap-1"><PhilippinePeso size={13} className="opacity-50" aria-hidden="true" />{peso(entry.amount).replace("₱", "")}</span>
                 </td>
+                <RowActions>
+                  {entry.kind === "sale" && entry.source !== "other" && <button type="button" onClick={() => setViewing(entry.entry_id)} className={`${BTN.ghost} !min-h-[34px] !px-2.5 text-[13px]`}><ReceiptText size={14} aria-hidden="true" />{tr("Receipt")}</button>}
+                  {superAdmin && entry.kind === "sale" && entry.source !== "other" && !entry.reversed && <button type="button" onClick={() => setReversing(entry)} className={`${BTN.ghost} !min-h-[34px] !px-2.5 text-[13px]`}><RotateCcw size={14} aria-hidden="true" />{tr("Reverse")}</button>}
+                </RowActions>
               </tr>
             ))}
           </DataTable>
         )}
       </div>
+      )}
 
-      {adding && <EntryModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); void load(); }} />}
+      {confirming && <ConfirmPaymentModal item={confirming} onClose={() => { setConfirming(null); refreshAll(); }} onConfirmed={() => setLogKey((key) => key + 1)} />}
+      {viewing && <ReceiptModal entryId={viewing} onClose={() => setViewing("")} />}
+      {reversing && <ReverseModal entryId={reversing.entry_id} receiptNo={reversing.receipt_no || reversing.source_ref || ""} amount={reversing.amount} onClose={() => setReversing(null)} onDone={() => { setReversing(null); refreshAll(); }} />}
+      {adding && <EntryModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); refreshAll(); }} />}
     </div>
   );
 }

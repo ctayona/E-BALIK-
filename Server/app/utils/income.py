@@ -1,9 +1,10 @@
 """Income: the money the Lost and Found Office receives from the Auction Hall and from Smart Tags, in one ledger.
 
-Every entry comes from a real event, so the books follow the work:
-  * an auction sale when staff record it paid and collected, or the guard releases it with the pickup PIN (`AuctionService.set_fulfillment`);
-  * a Smart Tag sale when staff approve a tag's first registration at the office, at the price set for its batch (`SmartTagService.approve`);
-  * a manual entry by a super administrator (another payment, a refund, a correction).
+Money counts ONLY after an administrator confirms it was received (`app/utils/payments.py`, PaymentDesk.confirm):
+  * an auction sale or a Smart Tag sale is written by that confirmation, at the amount the server reads from the auction or tag, with a
+    payment receipt; collecting an auction or approving a tag no longer counts anything by itself;
+  * a manual entry by a super administrator (another payment, a refund, a correction);
+  * a reversal of a confirmed payment is a refund row linked to its receipt.
 Entries are never edited or deleted: a mistake is fixed with a new adjustment, so the history stays complete.
 The table comes from migration 20261022_income_ledger.sql; before it runs, recording is skipped quietly and the page says setup is needed.
 """
@@ -201,28 +202,28 @@ class IncomeService:
         return {str(r['account_id']): f"{r.get('fname') or ''} {r.get('lname') or ''}".strip() for r in rows}
 
     def _pending(self) -> Dict[str, Any]:
-        """Money that is owed but not received yet: auctions waiting for pickup, tags waiting for approval, unsold tags in stock."""
-        pending = {'auction': Decimal('0'), 'auction_count': 0, 'smart_tag': Decimal('0'), 'smart_tag_count': 0, 'stock_value': Decimal('0'), 'stock_count': 0}
+        """Money that is owed but not confirmed yet (from the payment queue), plus the value of unsold blank tags still in stock."""
+        pending = {'auction': 0.0, 'auction_count': 0, 'smart_tag': 0.0, 'smart_tag_count': 0, 'released_unpaid': 0.0, 'released_unpaid_count': 0,
+                   'stock_value': Decimal('0'), 'stock_count': 0}
         try:
-            for row in self.client.table('auctions').select('winning_amount').eq('fulfillment_status', 'awaiting_pickup').limit(MAX_ROWS).execute().data or []:
-                pending['auction'] += Decimal(str(row.get('winning_amount') or 0))
-                pending['auction_count'] += 1
+            from app.utils.payments import PaymentDesk
+            totals = PaymentDesk(self.db).awaiting()['totals']
+            pending.update({key: totals[key] for key in ('auction', 'auction_count', 'smart_tag', 'smart_tag_count', 'released_unpaid', 'released_unpaid_count')})
         except Exception as error:
-            logger.info('Pending auction income unavailable: %s', str(error)[:120])
+            logger.info('Awaiting payments unavailable: %s', str(error)[:120])
         try:
-            for row in self.client.table('smart_tags').select('status,price,paid_at,is_disabled').in_('status', ['blank', 'pending_verification']).limit(MAX_ROWS).execute().data or []:
+            for row in self.client.table('smart_tags').select('price,is_disabled').eq('status', 'blank').limit(MAX_ROWS).execute().data or []:
                 price = Decimal(str(row.get('price') or 0))
-                if price <= 0 or row.get('is_disabled'):
-                    continue
-                if row.get('status') == 'blank':
+                if price > 0 and not row.get('is_disabled'):
                     pending['stock_value'] += price
                     pending['stock_count'] += 1
-                elif not row.get('paid_at'):
-                    pending['smart_tag'] += price
-                    pending['smart_tag_count'] += 1
         except Exception as error:
-            logger.info('Pending Smart Tag income unavailable (price column needs 20261022): %s', str(error)[:120])
+            logger.info('Smart Tag stock value unavailable (price column needs 20261022): %s', str(error)[:120])
         return {key: (float(value) if isinstance(value, Decimal) else value) for key, value in pending.items()}
+
+    def _reversed(self) -> set:
+        from app.utils.receipts import _reversed_numbers
+        return _reversed_numbers(self.db)
 
     def summary(self, start: Any = None, end: Any = None) -> Dict[str, Any]:
         today = campus_day(datetime.now(timezone.utc))
@@ -239,6 +240,9 @@ class IncomeService:
             cursor = (cursor + timedelta(days=32)).replace(day=1)
         refunds = Decimal('0')
         sales_count = 0
+        sales_total = Decimal('0')
+        methods = {key: Decimal('0') for key in METHODS}
+        reversals = 0
         for row in rows:
             amount = Decimal(str(row.get('amount') or 0))
             source = row.get('source') if row.get('source') in SOURCES else 'other'
@@ -248,8 +252,12 @@ class IncomeService:
                 months.setdefault(campus_day(moment).strftime('%Y-%m'), {key: Decimal('0') for key in SOURCES})[source] += amount
             if amount < 0:
                 refunds += amount
+            methods[row.get('method') if row.get('method') in methods else 'other'] += amount
+            if row.get('kind') == 'refund' and row.get('receipt_no'):
+                reversals += 1
             if row.get('kind') == 'sale':
                 sales_count += 1
+                sales_total += amount
         this_month = today.strftime('%Y-%m')
         previous_month = (today.replace(day=1) - timedelta(days=1)).strftime('%Y-%m')
         month_total = lambda key: float(sum(months.get(key, {}).values(), Decimal('0')))
@@ -260,6 +268,9 @@ class IncomeService:
             'refunds': float(refunds),
             'entries': len(rows),
             'sales': sales_count,
+            'average_sale': float((sales_total / sales_count).quantize(Decimal('0.01'))) if sales_count else 0.0,
+            'by_method': {key: float(value) for key, value in methods.items()},
+            'reversals': reversals,
             'this_month': month_total(this_month),
             'previous_month': month_total(previous_month),
             'by_month': [{'month': key, **{k: float(v) for k, v in value.items()}, 'total': float(sum(value.values(), Decimal('0')))} for key, value in sorted(months.items())],
@@ -277,8 +288,10 @@ class IncomeService:
         rows = self._rows(_day(start, 'start'), _day(end, 'end'), source)
         page = rows[offset:offset + limit]
         names = self._names([r.get('payer_account_id') for r in page] + [r.get('recorded_by') for r in page])
+        from app.utils.receipts import payment_number
+        reversed_numbers = self._reversed()
         return {
-            'entries': [{**row, 'amount': float(Decimal(str(row.get('amount') or 0))), 'payer_name': names.get(str(row.get('payer_account_id')), ''),
+            'entries': [{**row, 'reversed': row.get('kind') == 'sale' and (row.get('receipt_no') or payment_number(row.get('source'), row.get('source_ref'), _parse_moment(row.get('received_at')))) in reversed_numbers, 'amount': float(Decimal(str(row.get('amount') or 0))), 'payer_name': names.get(str(row.get('payer_account_id')), ''),
                          'recorded_by_name': names.get(str(row.get('recorded_by')), '') or ('System' if not row.get('recorded_by') else '')} for row in page],
             'total': len(rows), 'limit': limit, 'offset': offset,
         }

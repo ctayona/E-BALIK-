@@ -276,10 +276,10 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
           <div className="flex flex-wrap items-center gap-4 px-5 py-4 sm:px-6">
             <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950" aria-hidden="true"><PhilippinePeso size={20} /></span>
             <div className="min-w-0 flex-1">
-              <h2 id="income-heading" className="font-[family-name:var(--font-heading)] text-[18px] font-semibold text-ink">{tr("Income")}</h2>
-              <p className="text-[13px] text-ink-muted">{incomeSetup ? tr("Run Server/manual_migrations/20261022_income_ledger.sql in Supabase to start tracking auction and Smart Tag sales.") : tr("Auction Hall and Smart Tag sales, last 12 months")}</p>
+              <h2 id="income-heading" className="font-[family-name:var(--font-heading)] text-[18px] font-semibold text-ink">{tr("Revenue")}</h2>
+              <p className="text-[13px] text-ink-muted">{incomeSetup ? tr("Run Server/manual_migrations/20261022_income_ledger.sql in Supabase to start tracking auction and Smart Tag sales.") : tr("Confirmed Auction Hall and Smart Tag payments, last 12 months")}</p>
             </div>
-            <button type="button" onClick={() => onNavigate?.("income")} className="inline-flex min-h-[40px] items-center gap-1 rounded-xl px-3 text-[14px] font-semibold text-iris-700 transition hover:bg-iris-50 dark:text-iris-300 dark:hover:bg-white/[0.06]">{tr("Open income")}<ChevronRight size={16} aria-hidden="true" /></button>
+            <button type="button" onClick={() => onNavigate?.("income")} className="inline-flex min-h-[40px] items-center gap-1 rounded-xl px-3 text-[14px] font-semibold text-iris-700 transition hover:bg-iris-50 dark:text-iris-300 dark:hover:bg-white/[0.06]">{tr("Open revenue")}<ChevronRight size={16} aria-hidden="true" /></button>
           </div>
           {income && (
             <div className="grid gap-5 border-t border-line px-5 py-4 sm:px-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-center">
@@ -287,7 +287,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
                 <div><dt className="text-[13px] font-medium text-ink-muted">{tr("This month")}</dt><dd className="font-[family-name:var(--font-heading)] text-[24px] font-semibold leading-tight tabular-nums text-ink">{peso(income.this_month)}</dd></div>
                 <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Auction Hall")}</dt><dd className="text-[16px] font-semibold tabular-nums text-ink">{peso(income.by_source.auction)}</dd></div>
                 <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Smart Tags")}</dt><dd className="text-[16px] font-semibold tabular-nums text-ink">{peso(income.by_source.smart_tag)}</dd></div>
-                <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Waiting to be paid")}</dt><dd className="text-[16px] font-semibold tabular-nums text-gold-800 dark:text-gold-300">{peso(income.pending.auction + income.pending.smart_tag)}</dd></div>
+                <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Awaiting confirmation")}</dt><dd className="text-[16px] font-semibold tabular-nums text-gold-800 dark:text-gold-300">{peso(income.pending.auction + income.pending.smart_tag)}</dd></div>
               </dl>
               <div className="h-[92px]" role="img" aria-label={tr("Income for the last six months")}>
                 <ResponsiveContainer width="100%" height="100%">

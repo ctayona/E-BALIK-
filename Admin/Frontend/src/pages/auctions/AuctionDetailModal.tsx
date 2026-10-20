@@ -13,6 +13,7 @@ import {
 import { setArchived } from "../../utils/archive";
 import { formatDateTime, formatRemaining, serverOffset, useNow } from "../../utils/countdown";
 import { tr } from "../../utils/preferences";
+import { PaymentStatusChip } from "../income/PaymentModals";
 
 /** Colour of each stage. A won auction is "Awaiting pickup" until the winner has paid and collected, and only then "Completed". */
 export const STAGE_TONE: Record<AuctionStage, Tone> = {
@@ -249,6 +250,9 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
                 <div className="rounded-2xl border border-gold-300/60 bg-gold-50 p-4">
                   <p className="text-[13px] font-medium text-ink-muted">{tr("Winning bid")}</p>
                   <p className="font-[family-name:var(--font-heading)] text-[30px] font-semibold tabular-nums text-ink">{peso(auction.winning_amount)}</p>
+                  {(auction.fulfillment_status === "awaiting_pickup" || auction.fulfillment_status === "collected") && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2"><PaymentStatusChip source="auction" refId={auction.id} /></div>
+                  )}
                 </div>
                 <DetailGrid items={[
                   ["Winner", auction.winner_detail?.name ?? "—"],

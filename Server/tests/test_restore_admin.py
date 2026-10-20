@@ -145,19 +145,27 @@ class EngineTests(unittest.TestCase):
             archive.close()
 
     def test_the_background_job_finishes_saves_its_result_and_removes_the_temp_files(self):
+        import threading
         folder = Path(tempfile.mkdtemp())
         blob = make_backup(folder, {'claims': rows('c', 5)})
         path = folder / 'up.bin'
         path.write_bytes(blob)
         archive, _ = br.open_backup(path, PASS, folder)
-        saved = []
-        br.start(FakeDb({'claims': 0}), archive, folder, ['claims'], 'a@umak.edu.ph', saved.append)
-        with self.assertRaisesRegex(br.RestoreError, 'already running') if br.is_running() else patch('builtins.id'):
-            br.start(FakeDb({'claims': 0}), archive, folder, ['claims'], 'x', saved.append)
-        for _ in range(100):
-            if saved:
-                break
-            time.sleep(0.05)
+        saved, release = [], threading.Event()
+        real_apply = br.apply
+
+        def slow_apply(*args, **kwargs):
+            release.wait(5)                                   # hold the first job open so the second start is refused deterministically
+            return real_apply(*args, **kwargs)
+        with patch.object(br, 'apply', slow_apply):
+            br.start(FakeDb({'claims': 0}), archive, folder, ['claims'], 'a@umak.edu.ph', saved.append)
+            with self.assertRaisesRegex(br.RestoreError, 'already running'):
+                br.start(FakeDb({'claims': 0}), archive, folder, ['claims'], 'x', saved.append)
+            release.set()
+            for _ in range(100):
+                if saved:
+                    break
+                time.sleep(0.05)
         self.assertEqual((saved[0]['state'], saved[0]['rows'], saved[0]['done_tables']), ('done', 5, ['claims']))
         self.assertFalse(folder.exists())
 

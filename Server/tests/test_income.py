@@ -1,10 +1,15 @@
 """Income ledger: one sale per auction or tag, manual entries by super admins, summaries, and the Smart Tag price flow."""
+import sys
 import unittest
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from flask import Flask
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from memdb import MemClient  # noqa: E402
 
 from app.utils.income import IncomeError, IncomeService, parse_tag_price
 from app.utils.smart_tags import SmartTagService, TagError
@@ -162,15 +167,17 @@ class SummaryTests(unittest.TestCase):
                 {'source': 'auction', 'kind': 'refund', 'amount': '-200.00', 'received_at': now.isoformat()},
                 {'source': 'auction', 'kind': 'sale', 'amount': '999.00', 'received_at': (now - timedelta(days=800)).isoformat()},  # outside the range
             ],
-            'auctions': [{'fulfillment_status': 'awaiting_pickup', 'winning_amount': '700'}],
+            'auctions': [{'auction_id': 'A9', 'status': 'ended', 'fulfillment_status': 'awaiting_pickup', 'winning_amount': '700', 'winner_account_id': OWNER}],
             'smart_tags': [
                 {'status': 'blank', 'price': '150', 'is_disabled': False},
                 {'status': 'blank', 'price': '150', 'is_disabled': False},
-                {'status': 'pending_verification', 'price': '150', 'paid_at': None, 'is_disabled': False},
+                {'tag_id': 'T9', 'status': 'pending_verification', 'price': '150', 'paid_at': None, 'is_disabled': False, 'owner_account_id': OWNER},
                 {'status': 'blank', 'price': '0', 'is_disabled': False},
             ],
         }
-        result = IncomeService(make_db(store)).summary()
+        db = make_db({})
+        db.client = MemClient(store)         # the payment queue uses neq / not_ filters the small Table above does not have
+        result = IncomeService(db).summary()
         self.assertEqual(result['total'], 1450.0)
         self.assertEqual(result['by_source'], {'auction': 1300.0, 'smart_tag': 150.0, 'other': 0.0})
         self.assertEqual(result['refunds'], -200.0)
@@ -215,12 +222,11 @@ class TagPriceTests(unittest.TestCase):
         return {'tag_id': 'ABCDEFGHJK23', 'status': 'pending_verification', 'prior_status': None, 'owner_account_id': OWNER, 'item_name': 'Laptop',
                 'price': '150.00', 'paid_at': None, 'validity_months': None, **extra}
 
-    def test_first_approval_records_the_sale_and_marks_the_tag_paid(self):
+    def test_approval_no_longer_counts_income_the_payment_must_be_confirmed(self):
         store = {'smart_tags': [self.pending_tag()]}
         SmartTagService(make_db(store)).approve('ABCDEFGHJK23', ADMIN)
-        entry = store['income_ledger'][0]
-        self.assertEqual((entry['source'], entry['source_ref'], entry['amount'], entry['payer_account_id']), ('smart_tag', 'ABCDEFGHJK23', '150.00', OWNER))
-        self.assertIsNotNone(store['smart_tags'][0]['paid_at'])
+        self.assertNotIn('income_ledger', store)
+        self.assertIsNone(store['smart_tags'][0]['paid_at'])
 
     def test_a_new_photo_or_a_free_tag_records_nothing(self):
         for tag in (self.pending_tag(prior_status='active'), self.pending_tag(price='0'), self.pending_tag(paid_at='2026-10-01T00:00:00+00:00')):
@@ -237,7 +243,7 @@ class TagPriceTests(unittest.TestCase):
 
 
 class AuctionIncomeTests(unittest.TestCase):
-    """Collecting a sold auction (by staff, or the guard with the pickup PIN) writes the sale; a forfeit writes nothing."""
+    """Collecting a sold auction (by staff, or the guard with the pickup PIN) or forfeiting it writes no income: an administrator confirms the payment."""
 
     def run_fulfillment(self, action):
         from app.utils.auction_db import AuctionService
@@ -249,9 +255,8 @@ class AuctionIncomeTests(unittest.TestCase):
             service.set_fulfillment('A1', action, ADMIN)
         return store
 
-    def test_collected_records_the_winning_amount(self):
-        entry = self.run_fulfillment('collected')['income_ledger'][0]
-        self.assertEqual((entry['source'], entry['source_ref'], entry['amount'], entry['payer_account_id'], entry['recorded_by']), ('auction', 'A1', '2500.00', OWNER, ADMIN))
+    def test_collected_no_longer_counts_income_the_payment_must_be_confirmed(self):
+        self.assertNotIn('income_ledger', self.run_fulfillment('collected'))
 
     def test_forfeited_records_nothing(self):
         self.assertNotIn('income_ledger', self.run_fulfillment('forfeited'))

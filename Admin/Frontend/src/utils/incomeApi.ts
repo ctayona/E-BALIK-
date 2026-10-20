@@ -1,6 +1,6 @@
 import { API_URL, adminMutationRequest, getAuthHeaders } from "./api";
 
-/** Income ledger (Auction Hall and Smart Tag sales). Reads throw `IncomeSetupError` until migration 20261022 has been run. */
+/** Revenue and payments: the income ledger plus payment confirmation (migrations 20261022 and 20261024). Reads throw `IncomeSetupError` until the ledger exists. */
 
 export type IncomeSource = "auction" | "smart_tag" | "other";
 export type IncomeKind = "sale" | "refund" | "adjustment";
@@ -8,10 +8,11 @@ export type IncomeMethod = "cash" | "gcash" | "maya" | "bank" | "other";
 
 export interface IncomeMonth { month: string; auction: number; smart_tag: number; other: number; total: number }
 export interface IncomePending {
-  /** Auctions won but not collected yet, and their winning amounts. */
+  /** Auction wins and registered priced tags whose payment an administrator has not confirmed yet. */
   auction: number; auction_count: number;
-  /** Registered tags waiting for staff approval, where the owner pays. */
   smart_tag: number; smart_tag_count: number;
+  /** Auctions already handed over without a confirmed payment. */
+  released_unpaid: number; released_unpaid_count: number;
   /** Unsold blank tags and what they would bring in at their current price. */
   stock_value: number; stock_count: number;
 }
@@ -22,6 +23,9 @@ export interface IncomeSummary {
   refunds: number;
   entries: number;
   sales: number;
+  average_sale: number;
+  by_method: Record<IncomeMethod, number>;
+  reversals: number;
   this_month: number;
   previous_month: number;
   by_month: IncomeMonth[];
@@ -39,6 +43,8 @@ export interface IncomeEntry {
   method: IncomeMethod;
   receipt_no: string | null;
   notes: string | null;
+  payment_reference?: string | null;
+  reversed?: boolean;
   received_at: string;
   payer_name: string;
   recorded_by_name: string;
@@ -109,3 +115,80 @@ export async function downloadIncomeCsv(start = "", end = "", source = "") {
 }
 
 export const peso = (value: number) => `${value < 0 ? "−" : ""}₱${Math.abs(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** One thing that is owed: an auction win or a registered, priced Smart Tag. */
+export interface AwaitingItem {
+  source: "auction" | "smart_tag"; source_ref: string; title: string; reference: string; payer_account_id: string; payer_name: string; amount: number;
+  /** The item was already handed over but nobody confirmed the payment. */
+  released: boolean; state: "released" | "awaiting_pickup" | "pending_approval" | "registered"; since: string | null;
+}
+export interface AwaitingData {
+  items: AwaitingItem[];
+  totals: { count: number; amount: number; auction: number; auction_count: number; smart_tag: number; smart_tag_count: number; released_unpaid: number; released_unpaid_count: number };
+}
+export type PaymentStatus =
+  | { state: "confirmed"; receipt_no: string; amount: number; method: IncomeMethod; entry_id: string }
+  | { state: "awaiting"; amount: number; title: string; payer_name: string; released: boolean }
+  | { state: "none"; reason: string };
+
+/** The receipt of a confirmed payment, as the administrator sees it (the payer sees the same thing in My receipts). */
+export interface PaymentReceipt {
+  kind: "payment"; receipt_no: string; code: string; released_at: string; item: { name: string; reference: string }; reference: string;
+  released_to: string; campus_id: string; released_by: string; amount: number; method: IncomeMethod; payment_reference: string; reversed: boolean;
+}
+export interface ActivityRow { log_id: string; user_name: string; action: string; target_name: string | null; target_id: string | null; result: string; created_at: string }
+
+async function send<T>(path: string, method: "POST", title: string, body: unknown): Promise<T> {
+  const response = await adminMutationRequest(`${API_URL}/api/admin/income/${path}`, { method, headers: getAuthHeaders(), body: JSON.stringify(body) }, title);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : `${title} failed`);
+  return payload as T;
+}
+
+export const fetchAwaiting = () => read<AwaitingData>("payments/awaiting");
+export const fetchPaymentStatus = (source: string, ref: string) => read<PaymentStatus>(`payments/status${query({ source, ref })}`);
+export const fetchEntryReceipt = async (entryId: string) => (await read<{ receipt: PaymentReceipt }>(`entries/${encodeURIComponent(entryId)}/receipt`)).receipt;
+export const fetchIncomeActivity = async () => (await read<{ activity: ActivityRow[] }>("activity?limit=150")).activity;
+
+export interface ConfirmPaymentInput { source: string; source_ref: string; method: IncomeMethod; reference: string; notes: string; expected_amount: number }
+export const confirmPayment = (input: ConfirmPaymentInput) => send<{ message: string; receipt: PaymentReceipt }>("payments/confirm", "POST", "Confirm payment", input);
+export const reversePayment = (entryId: string, reason: string) => send<{ message: string }>(`entries/${encodeURIComponent(entryId)}/reverse`, "POST", "Reverse payment", { reason });
+
+const escapeHtml = (value: string | number) => String(value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] as string));
+
+/** A clean one-page official receipt in a new window and the print dialog ("Save as PDF" is one of the choices). Returns false if pop-ups are blocked. */
+export function printPaymentReceipt(receipt: PaymentReceipt): boolean {
+  const methods: Record<string, string> = { cash: "Cash", gcash: "GCash", maya: "Maya", bank: "Bank transfer", other: "Other" };
+  const when = new Date(receipt.released_at).toLocaleString("en-PH", { timeZone: "Asia/Manila", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const rows: Array<[string, string]> = [
+    ["Item", receipt.item.name], ["Received from", receipt.released_to || "-"], ...(receipt.campus_id ? [["Campus ID", receipt.campus_id] as [string, string]] : []),
+    ["Amount received", peso(receipt.amount).replace("₱", "PHP ")], ["Paid by", methods[receipt.method] ?? receipt.method],
+    ...(receipt.payment_reference ? [["Payment reference", receipt.payment_reference] as [string, string]] : []), ["Date and time", when], ["Received by", receipt.released_by],
+  ];
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(receipt.receipt_no)}</title><style>
+    @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Geist:wght@400..700&family=Geist+Mono:wght@500&display=swap');
+    body{font-family:'Geist',Arial,sans-serif;color:#0f172a;margin:0;padding:32px;background:#fff}
+    .sheet{max-width:640px;margin:0 auto;border:1.5px solid #1f3160;border-radius:14px;overflow:hidden;position:relative}
+    .top{background:#1f3160;color:#fff;padding:22px 26px;border-bottom:4px solid #d1a153}.top small{color:#ecc787;font-size:13px;font-weight:600}
+    .top h1{font-family:'Bricolage Grotesque',Georgia,serif;font-size:26px;margin:4px 0 0}
+    .no{padding:22px 26px 6px}.no span{display:block;font-size:12.5px;color:#64748b;font-weight:600}.no strong{font-family:'Geist Mono',monospace;font-size:22px;color:#1f3160}
+    .code{margin:10px 26px 4px;padding:12px 16px;border:2px dashed #d1a153;border-radius:10px;background:#fdf8ee;display:flex;justify-content:space-between;align-items:center}
+    .code span{font-size:12.5px;color:#8f6526;font-weight:600}.code strong{font-family:'Geist Mono',monospace;font-size:21px;letter-spacing:.12em;color:#1f3160}
+    dl{margin:16px 26px;display:grid;grid-template-columns:160px 1fr;gap:9px 14px;font-size:14px}dt{color:#64748b;font-weight:600}dd{margin:0;font-weight:600}
+    .foot{margin:0 26px 24px;padding-top:14px;border-top:1px solid #e2e8f0;font-size:12.5px;line-height:1.6;color:#475569}
+    .void{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:84px;font-weight:700;color:rgba(225,29,72,.18);transform:rotate(-18deg);pointer-events:none}
+    @media print{body{padding:0}}</style></head><body><div class="sheet">${receipt.reversed ? '<div class="void">REVERSED</div>' : ""}
+    <div class="top"><small>University of Makati - Lost and Found Office</small><h1>Official payment receipt</h1></div>
+    <div class="no"><span>Receipt number</span><strong>${escapeHtml(receipt.receipt_no)}</strong></div>
+    <div class="code"><span>Verification code</span><strong>${escapeHtml(receipt.code)}</strong></div>
+    <dl>${rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>
+    <p class="foot">${receipt.reversed ? "This payment was reversed by the office. This receipt is no longer valid. " : ""}To check that this receipt is genuine, open E-Balik, choose Claims, then Check a receipt, and enter the receipt number and verification code.</p>
+    </div></body></html>`;
+  const popup = window.open("", "_blank");
+  if (!popup) return false;
+  popup.document.write(html);
+  popup.document.close();
+  popup.focus();
+  window.setTimeout(() => popup.print(), 400);
+  return true;
+}

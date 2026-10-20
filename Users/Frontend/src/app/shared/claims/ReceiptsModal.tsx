@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, BadgeCheck, Check, Copy, Gavel, PackageCheck, Printer, Receipt as ReceiptIcon, SearchX, ShieldCheck } from "lucide-react";
+import { ArrowLeft, BadgeCheck, Banknote, Check, Copy, Gavel, PackageCheck, Printer, Receipt as ReceiptIcon, SearchX, ShieldCheck } from "lucide-react";
 import Modal from "@/app/shared/modal/Modal";
 import { CX } from "@/app/utils/clay";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
@@ -27,9 +27,10 @@ function Sheet({ receipt }: { receipt: Receipt }) {
     <article className="overflow-hidden rounded-2xl border border-navy-800/25 bg-white shadow-card" aria-label={`Receipt ${receipt.receipt_no}`}>
       <header className="border-b-4 border-gold-400 bg-[linear-gradient(135deg,#22366a_0%,#162448_100%)] px-5 py-4 text-white">
         <p className="text-[12.5px] font-semibold text-gold-300">University of Makati - Lost and Found Office</p>
-        <h3 className="mt-0.5 text-[22px] font-semibold" style={{ fontFamily: "var(--font-heading)" }}>{receipt.kind === "auction" ? "Auction collection receipt" : "Handover receipt"}</h3>
+        <h3 className="mt-0.5 text-[22px] font-semibold" style={{ fontFamily: "var(--font-heading)" }}>{receipt.kind === "payment" ? "Official payment receipt" : receipt.kind === "auction" ? "Auction collection receipt" : "Handover receipt"}</h3>
       </header>
       <div className="space-y-4 p-5">
+        {receipt.reversed && <p className="rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-2.5 text-[13.5px] font-semibold text-rose-800">This payment was reversed by the office. The receipt is no longer valid.</p>}
         <div>
           <p className="text-[12.5px] font-medium text-ink-muted">Receipt number</p>
           <p className="select-all break-all font-mono text-[20px] font-medium text-navy-800 sm:text-[22px]">{receipt.receipt_no}</p>
@@ -40,13 +41,15 @@ function Sheet({ receipt }: { receipt: Receipt }) {
         </div>
         <dl className="grid gap-x-6 gap-y-3.5 sm:grid-cols-2">
           <Row label="Item" value={receipt.item.name} />
-          {receipt.item.reference && <Row label="Item reference" value={receipt.item.reference} />}
+          {receipt.item.reference && receipt.kind !== "payment" && <Row label="Item reference" value={receipt.item.reference} />}
           {receipt.item.found_at && <Row label="Found at" value={receipt.item.found_at} />}
-          <Row label="Released to" value={receipt.released_to || "-"} />
+          <Row label={receipt.kind === "payment" ? "Received from" : "Released to"} value={receipt.released_to || "-"} />
           {receipt.campus_id && <Row label="Campus ID" value={receipt.campus_id} />}
-          <Row label="Released by" value={receipt.released_by} />
+          <Row label={receipt.kind === "payment" ? "Received by" : "Released by"} value={receipt.released_by} />
           <Row label="Date and time" value={manilaDateTime(receipt.released_at)} />
           {receipt.amount ? <Row label="Amount paid" value={pesoText(receipt.amount)} /> : null}
+          {receipt.kind === "payment" && receipt.method && <Row label="Paid by" value={{ cash: "Cash", gcash: "GCash", maya: "Maya", bank: "Bank transfer", other: "Other" }[receipt.method] ?? receipt.method} />}
+          {receipt.payment_reference && <Row label="Payment reference" value={receipt.payment_reference} />}
         </dl>
         <div className="flex flex-col gap-2 border-t border-line pt-4 sm:flex-row">
           <button type="button" onClick={() => void copy()} className={`${CX.btnGhost} flex-1`}>{copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}{copied ? "Copied" : "Copy number and code"}</button>
@@ -68,7 +71,8 @@ function Check_({ result }: { result: ReceiptCheck }) {
       <BadgeCheck size={22} className="mt-0.5 shrink-0 text-tide-700" aria-hidden="true" />
       <div>
         <p className="text-[15px] font-semibold text-tide-700">This receipt is genuine</p>
-        <p className="mt-0.5 text-[14px] leading-5 text-ink-soft"><span className="font-semibold text-ink">{result.item_name}</span> was {result.kind === "auction" ? "collected from the Auction Hall" : "released to its owner"} on {result.released_on}.</p>
+        <p className="mt-0.5 text-[14px] leading-5 text-ink-soft"><span className="font-semibold text-ink">{result.item_name}</span> {result.kind === "payment" ? "was paid for and the payment was received" : result.kind === "auction" ? "was collected from the Auction Hall" : "was released to its owner"} on {result.released_on}.</p>
+        {result.reversed && <p className="mt-1 text-[13.5px] font-semibold text-rose-700">Careful: the office reversed this payment, so the receipt is no longer valid.</p>}
       </div>
     </div>
   ) : (
@@ -158,9 +162,9 @@ export default function ReceiptsModal({ open, onClose, focusReference = "" }: { 
               {receipts.map((receipt) => (
                 <li key={receipt.receipt_no}>
                   <button type="button" onClick={() => setSelected(receipt)} className={`${CX.cardHover} flex w-full items-center gap-3 p-3.5 text-left`}>
-                    <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-navy-50 text-navy-700" aria-hidden="true">{receipt.kind === "auction" ? <Gavel size={19} /> : <PackageCheck size={19} />}</span>
+                    <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-navy-50 text-navy-700" aria-hidden="true">{receipt.kind === "payment" ? <Banknote size={19} /> : receipt.kind === "auction" ? <Gavel size={19} /> : <PackageCheck size={19} />}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14.5px] font-semibold text-navy-800">{receipt.item.name}</span>
+                      <span className="block truncate text-[14.5px] font-semibold text-navy-800">{receipt.item.name}{receipt.reversed ? " (reversed)" : ""}</span>
                       <span className="block truncate font-mono text-[12.5px] text-ink-muted">{receipt.receipt_no}</span>
                       <span className="block text-[12.5px] text-ink-muted">{manilaDateTime(receipt.released_at)}</span>
                     </span>
