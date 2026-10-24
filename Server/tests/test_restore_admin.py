@@ -187,6 +187,25 @@ class EngineTests(unittest.TestCase):
         self.assertFalse(folder.exists())
 
 
+    def test_the_job_reads_running_until_cleanup_and_saving_are_finished(self):
+        folder = Path(tempfile.mkdtemp())
+        path = folder / 'up.bin'
+        path.write_bytes(make_backup(folder, {'claims': rows('c', 3)}))
+        archive, _ = br.open_backup(path, PASS, folder)
+        seen = []
+
+        def save(job):                     # runs after the temp files are gone and before the final state is published
+            seen.append((br.status()['state'], br.is_running(), folder.exists(), job['state']))
+        br.start(FakeDb({'claims': 0}), archive, folder, ['claims'], 'a@umak.edu.ph', save)
+        for _ in range(200):
+            if not br.is_running():
+                break
+            time.sleep(0.05)
+        self.assertEqual(seen, [('running', True, False, 'done')])           # still "running" while saving, temp files already removed, saved as done
+        self.assertEqual((br.status()['state'], br.is_running()), ('done', False))
+        self.assertTrue(br.status()['finished_at'])
+
+
 class RouteTests(unittest.TestCase):
     def setUp(self):
         br._job.clear()

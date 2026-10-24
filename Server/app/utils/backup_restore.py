@@ -258,22 +258,26 @@ def start(db, archive: zipfile.ZipFile, workdir: Path, tables: List[str], by: st
             _job['rows'] += rows
 
     def run():
+        # The job stays "running" until EVERYTHING has finished (temp files removed, result saved and logged), and the final state is
+        # published last. Otherwise a status read, or the next restore, could see "done" while the cleanup was still going on.
+        final: Dict[str, Any] = {}
         try:
             outcome = apply(db, archive, tables, progress)
-            _job.update(failed=outcome['failed'], state='done' if not outcome['failed'] else 'partial')
+            final = {'failed': outcome['failed'], 'state': 'done' if not outcome['failed'] else 'partial'}
         except Exception as error:
             logger.exception('Restore failed: %s', error)
-            _job.update(state='failed', error=str(error)[:200])
+            final = {'state': 'failed', 'error': str(error)[:200]}
         finally:
-            _job.update(finished_at=datetime.now(timezone.utc).isoformat(), current='')
             try:
                 archive.close()
             finally:
                 shutil.rmtree(workdir, ignore_errors=True)
+            final = {**final, 'finished_at': datetime.now(timezone.utc).isoformat(), 'current': ''}
             try:
-                save(dict(_job))
+                save({**_job, **final})
             except Exception as error:
                 logger.warning('Could not save the restore result: %s', error)
+            _job.update(final)
 
     threading.Thread(target=run, name='ebalik-restore', daemon=True).start()
     return dict(_job)
