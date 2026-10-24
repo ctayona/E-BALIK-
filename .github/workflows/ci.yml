@@ -54,8 +54,13 @@ jobs:
 
       - name: Run the tests
         run: |
-          set -o pipefail
-          python -m unittest discover -s tests -p "test_*.py" 2>&1 | tee "$RUNNER_TEMP/backend-tests.log"
+          status=0
+          python -m unittest discover -s tests -p "test_*.py" > "$RUNNER_TEMP/backend-tests.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/backend-tests.log"
+          if [ "$status" -ne 0 ]; then
+            python ../scripts/ci_annotate_failures.py "$RUNNER_TEMP/backend-tests.log"   # names each failing test on the run page
+          fi
+          exit "$status"
 
       - name: Show the result on the run page
         if: always()
