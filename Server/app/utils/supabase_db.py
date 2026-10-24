@@ -1054,84 +1054,83 @@ class SupabaseDB:
             raise
 
     def list_admin_ai_matches(self) -> list[Dict[str, Any]]:
-        """Return the best live AI match candidates between missing and found items with persisted status."""
+        """The best live match for each open lost report, with the real score breakdown, the reasons, and two runner-up candidates.
+
+        Only open items are compared (a lost report still missing against found items still unclaimed), except pairs an administrator
+        already decided, which stay visible with their decision. Photos are compared for the shortlisted pairs only.
+        """
+        from app.utils import image_match
+        from app.utils.matching import best_candidates, match_details
+        missing_columns = 'item_id, mpost_id, item_name, category, description, distinctive_marks, last_location, last_seen_date, image_url, status'
+        found_columns = 'item_id, fpost_id, item_name, category, description, location, found_date, image_url, status'
         try:
-            # Fetch all items
-            missing_response = self.client.table('missing_items').select(
-                'item_id, mpost_id, item_name, category, description, distinctive_marks, last_location, last_seen_date, image_url, status'
-            ).order('created_at', desc=True).execute()
-            found_response = self.client.table('found_items').select(
-                'item_id, fpost_id, item_name, category, description, location, found_date, image_url, status'
-            ).order('created_at', desc=True).execute()
+            def fetch(table, columns, order='created_at'):
+                try:
+                    return self.client.table(table).select(columns + ', image_features').order(order, desc=True).limit(1500).execute().data or []
+                except Exception as error:     # the image_features column arrives with migrations 20261023 and 20261025
+                    if 'image_features' not in str(error):
+                        raise
+                    return self.client.table(table).select(columns).order(order, desc=True).limit(1500).execute().data or []
+            missing_items = fetch('missing_items', missing_columns)
+            found_items = fetch('found_items', found_columns)
+            ai_matches_db = self.client.table('ai_matches').select('missing_item_id, found_item_id, status, confirmed_at, rejected_at, created_at').execute().data or []
 
-            # Fetch all AI match records from database
-            ai_matches_response = self.client.table('ai_matches').select(
-                'missing_item_id, found_item_id, status, confirmed_at, rejected_at, created_at'
-            ).execute()
+            decided = {f"{m.get('missing_item_id')}:{m.get('found_item_id')}": m for m in ai_matches_db if m.get('status') in ('confirmed', 'rejected')}
+            decided_missing = {key.split(':')[0] for key in decided}
+            decided_found = {key.split(':')[1] for key in decided}
+            open_found = [f for f in found_items if f.get('status') == 'unclaimed' or str(f.get('item_id')) in decided_found]
+            found_by_id = {str(f.get('item_id')): f for f in found_items}
+            budget = [24]                                                   # photo downloads allowed for this request
 
-            missing_items = missing_response.data or []
-            found_items = found_response.data or []
-            ai_matches_db = ai_matches_response.data or []
-
-            # Create lookup map for database match statuses and timestamps
-            db_match_status = {}
-            db_match_timestamp = {}
-            for match in ai_matches_db:
-                key = f"{match.get('missing_item_id')}:{match.get('found_item_id')}"
-                db_match_status[key] = match.get('status')
-                db_match_timestamp[key] = match.get('confirmed_at') or match.get('rejected_at') or match.get('created_at')
+            def with_features(table, id_column, row):
+                if row.get('image_features') or not row.get('image_url') or budget[0] <= 0:
+                    return
+                before = bool(image_match._cache.get(f"{table}:{row.get(id_column)}"))
+                image_match.ensure_features(self, table, id_column, row)
+                if not before:
+                    budget[0] -= 1
 
             matches = []
-
             for missing in missing_items:
-                best_match = None
-                best_score = -1
-                for found in found_items:
-                    score = match_percentage(missing, found)
-                    if score > best_score:
-                        best_match = found
-                        best_score = score
-
-                if best_match is None or best_score < 55:
+                if missing.get('status') != 'missing' and str(missing.get('item_id')) not in decided_missing:
                     continue
-
-                # Check if this match has a persisted status in ai_matches table
-                match_key = f"{missing.get('item_id')}:{best_match.get('item_id')}"
-                db_status = db_match_status.get(match_key)
-                
-                if db_status:
-                    # Use status from database (confirmed/rejected)
-                    status = 'Confirmed' if db_status == 'confirmed' else 'Rejected'
-                    decision_timestamp = db_match_timestamp.get(match_key) or ''
+                # a pair an administrator already decided is shown with its decision, whatever the score is now
+                pinned = next((found_by_id.get(k.split(':')[1]) for k in decided if k.startswith(f"{missing.get('item_id')}:") and found_by_id.get(k.split(':')[1])), None)
+                shortlist = best_candidates(missing, open_found, top=3)
+                if not pinned and (not shortlist or shortlist[0][1]['score'] < 35):
+                    continue
+                for found in [f for f, _ in shortlist] + ([pinned] if pinned else []):          # compare photos only for the shortlisted pairs
+                    with_features('found_items', 'item_id', found)
+                with_features('missing_items', 'item_id', missing)
+                shortlist = sorted(((found, match_details(missing, found)) for found, _ in shortlist), key=lambda pair: pair[1]['score'], reverse=True)
+                best, details = (pinned, match_details(missing, pinned)) if pinned else shortlist[0]
+                if not pinned and details['score'] < 55:
+                    continue
+                key = f"{missing.get('item_id')}:{best.get('item_id')}"
+                record = decided.get(key)
+                if record:
+                    status = 'Confirmed' if record.get('status') == 'confirmed' else 'Rejected'
+                    timestamp = record.get('confirmed_at') or record.get('rejected_at') or record.get('created_at') or ''
                 else:
-                    # Use calculated status
-                    status = 'High Confidence' if best_score >= 80 else 'Needs Review'
-                    decision_timestamp = ''
-
+                    status = 'High Confidence' if details['score'] >= 80 else 'Needs Review'
+                    timestamp = ''
+                breakdown = [{'key': name, 'label': label, 'percent': (details['components'][name] or {}).get('percent'), 'weight': (details['components'][name] or {}).get('weight', 0)}
+                             for name, label in (('image', 'Photo similarity'), ('text', 'Name and description'), ('category', 'Category'), ('location', 'Location'), ('date', 'Date'))]
                 matches.append({
-                    'id': f"M-{len(matches) + 1:03d}",
-                    'status': status,
-                    'timestamp': decision_timestamp,
-                    'lostId': missing.get('mpost_id') or 'N/A',
-                    'lostItem': missing.get('item_name') or 'Unknown Item',
-                    'lostDesc': missing.get('description') or missing.get('distinctive_marks') or 'No description',
-                    'lostLocation': missing.get('last_location') or 'Unknown',
-                    'lostDate': missing.get('last_seen_date') or '',
-                    'lostImage': missing.get('image_url') or '',
-                    'foundId': best_match.get('fpost_id') or 'N/A',
-                    'foundItem': best_match.get('item_name') or 'Unknown Item',
-                    'foundDesc': best_match.get('description') or 'No description',
-                    'foundLocation': best_match.get('location') or 'Unknown',
-                    'foundDate': best_match.get('found_date') or '',
-                    'foundImage': best_match.get('image_url') or '',
-                    'matchPercent': int(best_score),
-                    'visualSim': min(100, int(best_score + 5)),
-                    'descSim': min(100, max(50, int(best_score))),
-                    'locationSim': min(100, max(60, int(best_score - 5))),
-                    'timeSim': min(100, max(50, int(best_score * 0.9))),
+                    'id': f"M-{len(matches) + 1:03d}", 'status': status, 'timestamp': timestamp,
+                    'lostId': missing.get('mpost_id') or 'N/A', 'lostItem': missing.get('item_name') or 'Unknown Item', 'lostCategory': missing.get('category') or '',
+                    'lostDesc': missing.get('description') or '', 'lostMarks': missing.get('distinctive_marks') or '', 'lostLocation': missing.get('last_location') or 'Unknown',
+                    'lostDate': missing.get('last_seen_date') or '', 'lostImage': missing.get('image_url') or '',
+                    'foundId': best.get('fpost_id') or 'N/A', 'foundItem': best.get('item_name') or 'Unknown Item', 'foundCategory': best.get('category') or '',
+                    'foundDesc': best.get('description') or '', 'foundLocation': best.get('location') or 'Unknown', 'foundDate': best.get('found_date') or '', 'foundImage': best.get('image_url') or '',
+                    'matchPercent': int(round(details['score'])), 'breakdown': breakdown, 'reasons': details['reasons'], 'conflicts': details['conflicts'], 'usedImage': details['used_image'],
+                    'alternatives': [{'foundId': f.get('fpost_id') or 'N/A', 'foundItem': f.get('item_name') or 'Unknown Item', 'foundImage': f.get('image_url') or '', 'matchPercent': int(round(d['score']))}
+                                     for f, d in shortlist if f.get('item_id') != best.get('item_id')][:2],
                 })
-
-            return matches[:10]
+            matches.sort(key=lambda m: (m['status'] in ('Confirmed', 'Rejected'), -m['matchPercent']))
+            for index, match in enumerate(matches[:60], start=1):
+                match['id'] = f'M-{index:03d}'
+            return matches[:60]
         except Exception as e:
             logger.error(f"✗ Error listing admin AI matches: {e}")
             raise

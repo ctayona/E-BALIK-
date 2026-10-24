@@ -119,6 +119,28 @@ def store(db, item_id: Any, features: Optional[Dict[str, Any]]) -> None:
         logger.info('Fingerprint not saved (run migration 20261023): %s', str(error)[:100])
 
 
+def ensure_features(db, table: str, id_column: str, row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The fingerprint of a lost report's or found item's photo: the saved one, the in-memory one, or one made now from the photo.
+
+    A fingerprint made now is remembered, and saved to `<table>.image_features` when that column exists (migrations 20261023 for found
+    items, 20261025 for lost reports). The row dict gets it too, so the caller can compare straight away.
+    """
+    key = f"{table}:{row.get(id_column)}"
+    features = row.get('image_features') or _cache.get(key)
+    if not features and row.get('image_url'):
+        data = download(row['image_url'])
+        features = fingerprint(data) if data else None
+        if features:
+            _cache[key] = features
+            try:
+                db.client.table(table).update({'image_features': features}).eq(id_column, str(row.get(id_column))).execute()
+            except Exception as error:
+                logger.info('Fingerprint not saved for %s (run the image migrations): %s', table, str(error)[:100])
+    if features:
+        row['image_features'] = features
+    return features
+
+
 def search(db, query_bytes: bytes) -> Dict[str, Any]:
     """Rank open found items that have a photo by how much they look like the query photo."""
     query = fingerprint(query_bytes)

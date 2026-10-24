@@ -104,7 +104,12 @@ export default function HandoverPinCard() {
                   <div><dt className="text-[12px] text-ink-muted">{tr("Campus ID (check their ID card)")}</dt><dd className="font-mono font-semibold text-ink">{claim.claimant_campus_id || "—"}</dd></div>
                   <div><dt className="text-[12px] text-ink-muted">{isAuction ? tr("Auction item") : tr("Claim reference")}</dt><dd className="font-mono font-semibold text-ink">{claim.claim_reference}</dd></div>
                   {isAuction && claim.amount_due != null && (
-                    <div className="col-span-2 rounded-xl bg-white/60 px-3 py-2 dark:bg-white/[0.06]"><dt className="text-[12px] text-ink-muted">{tr("Collect payment before handing over")}</dt><dd className="font-[family-name:var(--font-heading)] text-[22px] font-semibold tabular-nums text-ink">{peso(claim.amount_due)}</dd></div>
+                    <div className="col-span-2 rounded-xl bg-white/60 px-3 py-2 dark:bg-white/[0.06]"><dt className="text-[12px] text-ink-muted">{tr("Amount of the winning bid")}</dt><dd className="font-[family-name:var(--font-heading)] text-[22px] font-semibold tabular-nums text-ink">{peso(claim.amount_due)}</dd></div>
+                  )}
+                  {isAuction && claim.payment_confirmed != null && (
+                    <div className={`col-span-2 rounded-xl border px-3 py-2.5 text-[13.5px] font-semibold ${claim.payment_confirmed ? "border-tide-200 bg-tide-50 text-tide-700 dark:border-tide-500/30 dark:bg-tide-500/10 dark:text-tide-300" : "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200"}`} role="status">
+                      {claim.payment_confirmed ? tr("Payment confirmed by the office. You can hand the item over.") : tr("The payment is not confirmed yet. Send the winner to an administrator to pay and get their receipt, then check the PIN again.")}
+                    </div>
                   )}
                   <div className="col-span-2"><dt className="text-[12px] text-ink-muted">{tr("Item")}</dt><dd className="font-semibold text-ink">{claim.item_name}{claim.found_item_reference ? <span className="ml-2 font-mono text-[12.5px] font-normal text-ink-muted">{claim.found_item_reference}</span> : null}</dd></div>
                 </dl>
@@ -112,7 +117,7 @@ export default function HandoverPinCard() {
               {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-[14px] text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-[#fecdd3]">{error}</p>}
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button type="button" onClick={reset} disabled={busy} className={BTN.ghost}><X size={16} aria-hidden="true" />{tr("Not this person")}</button>
-                <button type="button" onClick={() => void release()} disabled={busy} className={`${BTN.success} min-h-[48px] px-6`}><PackageCheck size={18} aria-hidden="true" />{busy ? tr("Releasing…") : isAuction ? tr("Payment received: complete the auction") : tr("Release item to owner")}</button>
+                <button type="button" onClick={() => void release()} disabled={busy || (isAuction && claim.payment_confirmed === false)} className={`${BTN.success} min-h-[48px] px-6`}><PackageCheck size={18} aria-hidden="true" />{busy ? tr("Releasing…") : isAuction ? tr("Hand over the item and complete the auction") : tr("Release item to owner")}</button>
               </div>
             </div>
           )}

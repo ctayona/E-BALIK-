@@ -22,6 +22,8 @@ export default function VerificationModal({ tag, onClose, onDone }: { tag: Admin
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  const [paidNow, setPaidNow] = useState(false);
+  const unpaid = (tag.price ?? 0) > 0 && !tag.paid_at && !tag.is_reregistration && !paidNow;   // a first registration of a priced tag needs its fee confirmed first
 
   useEffect(() => {
     let active = true;
@@ -65,7 +67,7 @@ export default function VerificationModal({ tag, onClose, onDone }: { tag: Admin
           <>
             <button type="button" onClick={onClose} disabled={busy} className={`${BTN.ghost} sm:mr-auto`}>{tr("Decide later")}</button>
             <button type="button" onClick={() => { setReason(""); setRejecting(true); }} disabled={busy} className={BTN.danger}><XCircle size={17} aria-hidden="true" />{tr("Reject")}</button>
-            <button type="button" onClick={() => void decide(() => approveSmartTag(tag.tag_id))} disabled={busy || photoError} className={`${BTN.success} min-h-[46px] px-6`}><CheckCircle2 size={18} aria-hidden="true" />{busy ? tr("Working…") : tr("Approve")}</button>
+            <button type="button" onClick={() => void decide(() => approveSmartTag(tag.tag_id))} disabled={busy || photoError || unpaid} className={`${BTN.success} min-h-[46px] px-6`}><CheckCircle2 size={18} aria-hidden="true" />{busy ? tr("Working…") : tr("Approve")}</button>
           </>
         )}
       >
@@ -116,7 +118,8 @@ export default function VerificationModal({ tag, onClose, onDone }: { tag: Admin
               <div className="rounded-xl border border-line px-3.5 py-2.5"><dt className="text-[12px] text-ink-muted">{tr("Tag code")}</dt><dd className="font-mono font-semibold text-ink">{SPACED(tag.tag_id)}</dd></div>
               <div className="rounded-xl border border-line px-3.5 py-2.5"><dt className="flex items-center gap-1 text-[12px] text-ink-muted"><Clock3 size={12} aria-hidden="true" />{tr("Submitted")}</dt><dd className="font-semibold text-ink">{tag.submitted_at ? formatDateTime(tag.submitted_at) : "—"}</dd></div>
             </dl>
-            <div className="flex flex-wrap items-center gap-2"><PaymentStatusChip source="smart_tag" refId={tag.tag_id} /></div>
+            <div className="flex flex-wrap items-center gap-2"><PaymentStatusChip source="smart_tag" refId={tag.tag_id} onChanged={() => setPaidNow(true)} /></div>
+            {unpaid && <p className="rounded-xl border border-gold-300 bg-gold-50 px-3.5 py-2.5 text-[13px] leading-5 text-gold-900 dark:border-gold-500/30 dark:bg-gold-500/10 dark:text-gold-200" role="status">{tr("This tag costs {0}. Confirm the owner's payment above before you approve it.", { "0": `₱${(tag.price ?? 0).toLocaleString("en-PH", { minimumFractionDigits: 2 })}` })}</p>}
             <p className="text-[12.5px] leading-5 text-ink-muted">{shared.length ? tr("Finders will see the owner's {0} once approved.", { "0": shared.join(", ") }) : tr("The owner chose not to show any contact details to finders.")}</p>
 
             {rejecting ? (

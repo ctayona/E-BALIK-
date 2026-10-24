@@ -212,7 +212,7 @@ export default function Auctions() {
             { label: "Live now", value: String(stats?.live ?? 0), hint: stats?.scheduled ? tr("{0} scheduled", { "0": stats.scheduled }) : tr("Open for bids"), icon: <Gavel size={16} aria-hidden="true" /> },
             { label: "Ready to auction", value: eligible === null ? "—" : String(eligible), hint: tr("Recommended: unclaimed over {0} days", { "0": data?.min_custody_days ?? 30 }), icon: <Timer size={16} aria-hidden="true" /> },
             { label: "Needs your decision", value: String(stats?.awaiting_admin ?? counts.awaiting), hint: stats?.awaiting_pickup ? tr("{0} winners to collect", { "0": stats.awaiting_pickup }) : tr("Closed, not confirmed"), icon: <PackageCheck size={16} aria-hidden="true" /> },
-            { label: "Sales total", value: peso(stats?.sales_total), hint: tr("{0} bids placed", { "0": stats?.total_bids ?? 0 }), icon: <Trophy size={16} aria-hidden="true" /> },
+            { label: "Confirmed sales", value: peso(stats?.sales_total), hint: stats?.payment_tracking === false ? tr("Run the income migrations to count sales") : stats?.awaiting_payment_count ? tr("{0} paid. {1} waiting for payment confirmation ({2})", { "0": stats.sales_count ?? 0, "1": stats.awaiting_payment_count, "2": peso(stats.awaiting_payment_total) }) : tr("{0} paid, {1} bids placed", { "0": stats?.sales_count ?? 0, "1": stats?.total_bids ?? 0 }), icon: <Trophy size={16} aria-hidden="true" /> },
           ].map((stat) => (
             <div key={stat.label} className="px-5 py-4 sm:px-6 sm:py-5">
               <dt className="flex items-center gap-2 text-[13px] font-medium text-ink-muted"><span className="text-gold-600">{stat.icon}</span>{tr(stat.label)}</dt>
@@ -270,6 +270,9 @@ export default function Auctions() {
                 <StatusPill tone={STAGE_TONE[auction.stage] ?? "slate"}>{statusLabel(auction)}</StatusPill>
                 {auction.bought_out && <StatusPill tone="gold">{tr("Bought with Buy Now")}</StatusPill>}
                 {auction.fulfillment_status === "awaiting_pickup" && auction.pickup_warning_sent_at && <StatusPill tone="rose">{tr("Final warning sent")}</StatusPill>}
+                {auction.payment_tracking && (auction.stage === "awaiting_pickup" || auction.stage === "completed") && (auction.payment_confirmed
+                  ? <StatusPill tone="mint">{tr("Payment confirmed")}</StatusPill>
+                  : <StatusPill tone={auction.stage === "completed" ? "rose" : "gold"}>{auction.stage === "completed" ? tr("Paid? not confirmed") : tr("Awaiting payment")}</StatusPill>)}
                 {auction.reauction_ready && <StatusPill tone="rose">{tr("Ready for re-auction")}</StatusPill>}
                 {auction.pending_claim && <StatusPill tone="gold">{tr("Ownership claim pending")}</StatusPill>}
               </div>

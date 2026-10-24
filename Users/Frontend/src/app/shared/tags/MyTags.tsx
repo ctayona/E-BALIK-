@@ -10,6 +10,7 @@ import ScanCodeButton from "@/app/shared/tags/ScanCodeButton";
 import TagDetailsForm from "@/app/shared/tags/TagDetailsForm";
 import { CX } from "@/app/utils/clay";
 import { copyText } from "@/app/utils/shareReport";
+import PaymentCard from "@/app/shared/payments/PaymentCard";
 import { TagRequestError, expiryText, extractTagCode, ownerQrUrl, spacedCode, tagsApi, type OwnerTag, type TagDetailsInput } from "@/app/utils/tags";
 
 const SOON_DAYS = 30;
@@ -375,6 +376,7 @@ export default function MyTags({ onLoaded, onRegister, reloadKey = 0 }: {
                 <span>{m.is_reregistration ? "Your new photo is waiting for staff approval. Your tag is paused until then and finders see nothing." : `Bring this item and its sticker to the Lost and Found Office${m.price && !m.paid ? ` and pay ₱${m.price.toLocaleString("en-PH", { minimumFractionDigits: 2 })} for the tag` : ""}. Staff will check it, then the tag starts working. Finders see nothing until then.`}</span>
               </p>
             )}
+            {m.status !== "blank" && !m.is_disabled && <PaymentCard source="smart_tag" refId={m.tag_id} />}
             {m.status === "expired" && <p className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] leading-5 text-rose-800"><CalendarClock size={15} className="mt-0.5 shrink-0" aria-hidden="true" />Finders can no longer see your details. Ask the Lost and Found Office to renew it.</p>}
             {expiringSoon(m) && <p className="flex items-start gap-2 rounded-xl border border-gold-300 bg-gold-50 px-3 py-2 text-[13px] leading-5 text-gold-800"><CalendarClock size={15} className="mt-0.5 shrink-0" aria-hidden="true" />Ask the Lost and Found Office to renew it before it expires.</p>}
             {m.found_notice_count > 0 && <p className="flex items-center gap-2 text-[13.5px] text-ink-soft"><BellRing size={15} className="text-gold-700" aria-hidden="true" />{m.found_notice_count} {m.found_notice_count === 1 ? "person reported finding it" : "reports of it being found"}</p>}

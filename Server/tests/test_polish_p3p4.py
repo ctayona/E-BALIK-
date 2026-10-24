@@ -435,7 +435,13 @@ class MenuBadgeTests(unittest.TestCase):
         }
 
     def test_only_work_waiting_for_an_administrator_is_counted(self):
-        self.assertEqual(admin_badges.nav_badges(MemClient(self.store())), {'badges': {'claims': 2, 'users': 1, 'smart-tags': 1, 'auctions': 1}, 'total': 5})
+        self.assertEqual(admin_badges.nav_badges(MemClient(self.store())), {'badges': {'claims': 2, 'users': 1, 'smart-tags': 1, 'auctions': 1, 'income': 0}, 'total': 5})
+
+    def test_payment_receipts_waiting_to_be_checked_badge_the_revenue_page(self):
+        store = self.store()
+        store['payment_proofs'] = [{'proof_id': 'p1', 'status': 'pending'}, {'proof_id': 'p2', 'status': 'pending'}, {'proof_id': 'p3', 'status': 'accepted'}, {'proof_id': 'p4', 'status': 'rejected'}]
+        counts = admin_badges.nav_badges(MemClient(store))
+        self.assertEqual((counts['badges']['income'], counts['total']), (2, 7))
 
     def test_a_missing_table_gives_zero_not_an_error(self):
         store = self.store()

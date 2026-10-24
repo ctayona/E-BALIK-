@@ -165,7 +165,7 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
             {awaiting && (
               <div className="rounded-2xl border border-iris-300/70 bg-iris-50 px-4 py-3.5 text-[14px] leading-6 text-ink-soft dark:bg-iris-500/10" role="status">
                 <p className="font-semibold text-ink">{auction.bought_out ? tr("A bidder used Buy Now and the auction ended at once. Confirm the purchase.") : tr("Bidding is closed. The result needs your decision.")}</p>
-                <p className="mt-1">{tr("Confirming only says who won. The winner is told to pay and collect the item, and the auction stays open as Awaiting pickup until you press Complete auction. If they never collect, you can re-auction it.")}</p>
+                <p className="mt-1">{tr("Confirming only says who won. The winner is told to pay and collect the item, and the auction stays open as Awaiting pickup until the payment is confirmed and the item is picked up. If they never collect, you can re-auction it.")}</p>
               </div>
             )}
             {auction.reauctioned_from && <p className="rounded-2xl border border-line bg-frost-50 px-4 py-3 text-[13.5px] leading-6 text-ink-soft">{tr("This is a re-auction of an earlier sale.")}{auction.reauction_reason ? ` ${auction.reauction_reason}` : ""}</p>}
@@ -274,9 +274,12 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
                 {(auction.fulfillment_status === "awaiting_pickup" || auction.fulfillment_status === "collected") && (
                   <button type="button" disabled={busy} onClick={() => void run(() => resendAdminWinnerEmail(auction.id))} className={BTN.ghost}><Mail size={16} aria-hidden="true" />{tr("Resend winner email")}</button>
                 )}
+                {auction.fulfillment_status === "awaiting_pickup" && auction.payment_tracking && !auction.payment_confirmed && (
+                  <p className="rounded-2xl border border-gold-300 bg-gold-50 px-4 py-3 text-[13.5px] leading-6 text-gold-900 dark:border-gold-500/30 dark:bg-gold-500/10 dark:text-gold-200" role="status">{tr("The item cannot be marked as picked up until you confirm the winner's payment above. That also issues their receipt.")}</p>
+                )}
                 {auction.fulfillment_status === "awaiting_pickup" && (
                   <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={() => setPending("collected")} className={BTN.success}><PackageCheck size={16} aria-hidden="true" />{tr("Mark as picked up")}</button>
+                    <button type="button" onClick={() => setPending("collected")} disabled={auction.payment_tracking && !auction.payment_confirmed} title={auction.payment_tracking && !auction.payment_confirmed ? tr("Confirm the payment first") : undefined} className={BTN.success}><PackageCheck size={16} aria-hidden="true" />{tr("Mark as picked up")}</button>
                     <button type="button" disabled={busy} onClick={() => void run(() => reissueAdminAuctionPin(auction.id))} className={BTN.ghost}><KeyRound size={16} aria-hidden="true" />{auction.handover_pin_issued ? tr("Send a new pickup PIN") : tr("Create and send pickup PIN")}</button>
                     <button type="button" onClick={() => setPending("extend")} className={BTN.ghost}><Hourglass size={16} aria-hidden="true" />{tr("Give the winner more time")}</button>
                     <button type="button" onClick={() => setReauctionOpen(true)} className={BTN.ghost}><Repeat2 size={16} aria-hidden="true" />{tr("Winner flaked: re-auction")}</button>
@@ -341,7 +344,7 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
           <ul className="mt-4 space-y-1.5 text-[14px] leading-6 text-ink-soft">
             <li>{tr("The winner is notified to collect and pay at the Lost and Found Office.")}</li>
             <li>{tr("The item is marked as auctioned and the auction becomes Awaiting pickup.")}</li>
-            <li>{tr("After the winner has paid and collected, press Complete auction. If they do not show up, you can edit the listing, give them more time or re-auction it.")}</li>
+            <li>{tr("When the winner pays, confirm the payment first (it issues their receipt). Then mark the item as picked up. If they do not show up, you can give them more time or re-auction it.")}</li>
           </ul>
         </AdminModal>
       )}

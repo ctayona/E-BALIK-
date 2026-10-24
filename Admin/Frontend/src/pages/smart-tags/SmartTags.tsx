@@ -457,7 +457,7 @@ function RevenueStrip({ revenue }: { revenue: SmartTagRevenue | null | undefined
     );
   }
   const cells = [
-    { label: "Revenue from tags", value: PESO(revenue.total), hint: tr("Recorded when staff approve a registration") },
+    { label: "Revenue from tags", value: PESO(revenue.total), hint: tr("Counted when the payment is confirmed") },
     { label: "This month", value: PESO(revenue.this_month), hint: tr("Manila time") },
     { label: "Tags sold", value: String(revenue.sold), hint: revenue.sold ? tr("Average {0} each", { "0": PESO(revenue.average) }) : tr("None yet") },
     { label: "Unsold stock value", value: PESO(revenue.stock_value), hint: tr("{0} priced blank tags", { "0": revenue.stock_count }) },

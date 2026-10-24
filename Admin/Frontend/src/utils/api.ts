@@ -211,27 +211,19 @@ export interface UserActivityLog {
   result: "Success" | "Warning" | "Error";
 }
 
+/** One suggested pair. Every number is measured from the two reports: `breakdown[].percent` is null when there was nothing to compare (for example no photo). */
 export interface AdminAIMatchRow {
   id: string;
   status: "High Confidence" | "Needs Review" | "Confirmed" | "Rejected";
   timestamp?: string;
-  lostId: string;
-  lostItem: string;
-  lostDesc: string;
-  lostLocation: string;
-  lostDate: string;
-  lostImage?: string;
-  foundId: string;
-  foundItem: string;
-  foundDesc: string;
-  foundLocation: string;
-  foundDate: string;
-  foundImage?: string;
+  lostId: string; lostItem: string; lostCategory: string; lostDesc: string; lostMarks: string; lostLocation: string; lostDate: string; lostImage?: string;
+  foundId: string; foundItem: string; foundCategory: string; foundDesc: string; foundLocation: string; foundDate: string; foundImage?: string;
   matchPercent: number;
-  visualSim: number;
-  descSim: number;
-  locationSim: number;
-  timeSim: number;
+  breakdown: Array<{ key: "image" | "text" | "category" | "location" | "date"; label: string; percent: number | null; weight: number }>;
+  reasons: string[];
+  conflicts: string[];
+  usedImage: boolean;
+  alternatives: Array<{ foundId: string; foundItem: string; foundImage?: string; matchPercent: number }>;
 }
 
 interface LoginResponse {
@@ -761,6 +753,8 @@ export interface HandoverClaim {
   /** `claim`: an approved ownership claim. `auction`: an auction winner collecting their purchase (the amount to collect is `amount_due`). */
   kind?: "claim" | "auction";
   amount_due?: number;
+  /** Auctions: has an administrator confirmed the winner's payment? true/false, or null when income tracking is not set up yet. */
+  payment_confirmed?: boolean | null;
   claim_id: string;
   claim_reference: string;
   claimant_name: string;

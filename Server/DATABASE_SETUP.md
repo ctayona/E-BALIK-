@@ -409,3 +409,12 @@ Run `manual_migrations/20261024_payment_confirmation.sql` after `20261022`. It a
 ```sql
 SELECT column_name FROM information_schema.columns WHERE table_name = 'income_ledger' AND column_name = 'payment_reference';
 ```
+
+## 20261025: payment proofs and photo matching
+
+Run `manual_migrations/20261025_payment_proofs_and_matching.sql` after `20261024`. It creates the private storage bucket `payment-proofs` (the payer's GCash, Maya or bank receipt image), the table `payment_proofs` (what a payer sent and what the office decided), `income_ledger.proof_path` (the image kept with a confirmed payment) and `missing_items.image_features` (so AI matching can compare the photos of lost reports). **Until it is run**, GCash, Maya and bank payments cannot be confirmed (the screen says what to run), payers cannot send receipts, and AI matching compares text only. Verify with:
+
+```sql
+SELECT id, public FROM storage.buckets WHERE id = 'payment-proofs';   -- public must be false
+SELECT to_regclass('public.payment_proofs');
+```

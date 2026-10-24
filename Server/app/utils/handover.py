@@ -220,7 +220,19 @@ class HandoverService:
             'found_item_reference': auction.get('item_reference') or '',
             'approved_at': auction.get('winner_notified_at'),
             'amount_due': float(auction.get('winning_amount') or 0),
+            'payment_confirmed': self._auction_paid(auction),
         }
+
+    def _auction_paid(self, auction: Dict[str, Any]) -> Optional[bool]:
+        """Has an administrator confirmed this auction's payment? True when nothing is owed, None when income tracking is not set up yet."""
+        if float(auction.get('winning_amount') or 0) <= 0:
+            return True
+        try:
+            from app.utils.payments import PaymentDesk
+            return PaymentDesk(self.db).is_paid('auction', str(auction.get('auction_id')))
+        except Exception as error:
+            logger.info('Payment check skipped: %s', str(error)[:120])
+            return None
 
     def _summary(self, claim: Dict[str, Any]) -> Dict[str, Any]:
         claimant = self.db.get_user_by_account_id(str(claim.get('claimant_account_id') or '')) or {}

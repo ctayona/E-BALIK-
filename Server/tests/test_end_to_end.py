@@ -117,6 +117,9 @@ class LostAndFoundJourney(unittest.TestCase):
         self.assertEqual(next(r for r in custody.load_overview(db.client)['items'] if r['reference'] == 'FP1002')['state'], 'sold_pickup')
         with self.assertRaises(Exception):
             service.set_archived('A1', ADMIN, True)               # not finished yet
+        with self.assertRaises(Exception):
+            service.set_fulfillment('A1', 'collected')            # refused until an administrator confirms the payment
+        store.setdefault('income_ledger', []).append({'entry_id': 'paid-A1', 'source': 'auction', 'kind': 'sale', 'source_ref': 'A1', 'amount': '500.00', 'receipt_no': 'PR-20261020-AU-TEST', 'received_at': '2026-10-20T01:00:00+00:00'})
         service.set_fulfillment('A1', 'collected')                # the "Complete auction" button
         self.assertEqual(next(f for f in store['found_items'] if f['item_id'] == 'F2')['status'], 'returned')
         self.assertIn((FINDER, 'The item you turned in was sold'), {(n['to'], n['title']) for n in store['user_notifications']})

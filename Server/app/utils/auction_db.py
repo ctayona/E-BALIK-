@@ -1025,6 +1025,15 @@ class AuctionService:
             # Forfeited automatically and not yet listed again: the admin's cue to re-auction.
             card['reauction_ready'] = bool(card.get('auto_forfeited_at')) and card['fulfillment_status'] == 'forfeited' and card['id'] not in relisted
         sold = [c for c in cards if c['sold'] and c['fulfillment_status'] != 'forfeited']
+        # Sales count only when an administrator confirmed the payment (Revenue and payments). Before income tracking exists nothing is confirmed.
+        from app.utils.payments import PaymentDesk
+        paid = PaymentDesk(self.db).paid_map('auction', [c['id'] for c in sold])
+        for card in cards:
+            confirmed = (paid or {}).get(card['id'])
+            card['payment_confirmed'] = bool(confirmed)
+            card['payment_receipt_no'] = confirmed['receipt_no'] if confirmed else None
+            card['payment_tracking'] = paid is not None
+        owed = [c for c in sold if c['id'] not in (paid or {}) and c['fulfillment_status'] in ('awaiting_pickup', 'collected')]
         cards_in_play = [c for c in cards if not c['archived']]
         stats = {
             'live': sum(1 for c in cards if c['status'] == 'live'),
@@ -1036,7 +1045,11 @@ class AuctionService:
             'archived': archived_total,
             'reauction_ready': sum(1 for c in cards_in_play if c.get('reauction_ready')),
             'total_bids': sum(c['bid_count'] for c in cards),
-            'sales_total': round(sum(c['winning_amount'] or 0 for c in sold), 2),
+            'sales_total': round(sum(v['amount'] for v in (paid or {}).values()), 2),
+            'sales_count': len(paid or {}),
+            'awaiting_payment_total': round(sum(c['winning_amount'] or 0 for c in owed), 2),
+            'awaiting_payment_count': len(owed),
+            'payment_tracking': paid is not None,
         }
         return {'auctions': cards, 'stats': stats, 'server_time': _iso(now), 'min_custody_days': MIN_CUSTODY_DAYS}
 
@@ -1268,6 +1281,10 @@ class AuctionService:
             row = self._live_row(auction_id)
             if row.get('fulfillment_status') != 'awaiting_pickup':
                 raise AuctionError('This auction is not waiting for pickup.', 409)
+            if action == 'collected' and float(row.get('winning_amount') or 0) > 0:
+                from app.utils.payments import PaymentDesk
+                if PaymentDesk(self.db).is_paid('auction', str(auction_id)) is False:   # None = income tracking not set up yet: nothing to enforce
+                    raise AuctionError('The payment has not been confirmed yet. An administrator must confirm it first (Revenue and payments, Payments to confirm).', 409)
             updated = self.client.table('auctions').update({'fulfillment_status': action, 'fulfillment_updated_at': _iso(now), 'updated_at': _iso(now)}) \
                 .eq('auction_id', auction_id).eq('fulfillment_status', 'awaiting_pickup').execute().data or []
             if not updated:

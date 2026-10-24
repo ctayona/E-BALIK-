@@ -88,7 +88,7 @@ def send_auction_won_email(*, to_email: str, recipient_name: str, item_title: st
             'preheader': f"Handover PIN {handover_pin}. Bring your ID, pay and collect {item_title}.",
             'greeting': f"Hello {recipient_name or 'there'},",
             'paragraphs': [f"Your bid of {format_peso(amount)} won the auction for {item_title}. {PICKUP_NOTE} Please collect it within 72 hours of this notice.",
-                           'At the desk, pay the amount and show the PIN below to the guard together with your ID. Entering it completes the handover.'],
+                           'Pay at the office, or by GCash, Maya or bank transfer and send your receipt from your win in the E-Balik Auction Hall. Once the office confirms your payment, show the PIN below to the guard together with your ID. Entering it completes the handover.'],
             'highlight': ('YOUR HANDOVER PIN', handover_pin),
             'highlight_note': 'Keep this PIN private. It works once, for this item only, and only together with your ID.',
             'details': {'Item': item_title, 'Auction item': reference or item_title, 'Winning bid': format_peso(amount), 'Collect within': '72 hours'},

@@ -5,6 +5,7 @@ Only work that needs an approval or a verification is counted, so a badge means 
   users       accounts whose ID document waits for verification
   smart-tags  Smart Tags registered by their owner and waiting for staff approval
   auctions    auctions whose timer ended with bids and wait for the administrator to confirm the winner
+  income      payment receipts (GCash, Maya, bank) that payers sent and nobody has checked yet
 Each count is independent: if a table or column is missing (a migration has not been run) that badge is simply 0.
 """
 import logging
@@ -26,7 +27,8 @@ def pending_counts(client) -> Dict[str, int]:
     users = client.table('user_profiles').select('account_id', count='exact').eq('verification_status', 'pending').not_.is_('verification_document_url', 'null').limit(1)
     tags = client.table('smart_tags').select('tag_id', count='exact').eq('status', 'pending_verification').limit(1)
     auctions = client.table('auctions').select('auction_id', count='exact').eq('status', 'awaiting_admin').limit(1)
-    return {'claims': _count(claims), 'users': _count(users), 'smart-tags': _count(tags), 'auctions': _count(auctions)}
+    proofs = client.table('payment_proofs').select('proof_id', count='exact').eq('status', 'pending').limit(1)
+    return {'claims': _count(claims), 'users': _count(users), 'smart-tags': _count(tags), 'auctions': _count(auctions), 'income': _count(proofs)}
 
 
 def nav_badges(client) -> Dict[str, Any]:

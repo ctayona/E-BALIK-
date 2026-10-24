@@ -106,8 +106,18 @@ class AuctionPinTests(unittest.TestCase):
         with patch.object(handover, 'generate_pin', side_effect=[claim_pin, 'ABCDEF']):
             self.assertEqual(HandoverService(db).issue_for_auction(AUCTION), 'ABCDEF')
 
+    def test_releasing_the_pin_needs_a_confirmed_payment_first(self):
+        pin = self.service.issue_for_auction(AUCTION)
+        with self.assertRaises(HandoverError) as unpaid:
+            self.service.release(pin, ADMIN_ID)
+        self.assertIn('payment has not been confirmed', unpaid.exception.message)
+        self.assertEqual(self.store['auctions'][0]['fulfillment_status'], 'awaiting_pickup')
+        self.assertIs(self.service.find(pin)['payment_confirmed'], False)
+
     def test_releasing_the_pin_completes_the_auction_and_the_item_and_clears_the_pin(self):
         pin = self.service.issue_for_auction(AUCTION)
+        self.store.setdefault('income_ledger', []).append({'entry_id': 'paid-AUCTION', 'source': 'auction', 'kind': 'sale', 'source_ref': AUCTION, 'amount': '500.00', 'receipt_no': 'PR-20261020-AU-TEST', 'received_at': '2026-10-20T01:00:00+00:00'})
+        self.assertIs(self.service.find(pin)['payment_confirmed'], True)
         released = self.service.release(pin, ADMIN_ID)
         row = self.store['auctions'][0]
         self.assertEqual(released['kind'], 'auction')
@@ -235,6 +245,7 @@ class PickupRouteTests(unittest.TestCase):
             return client.post(path, json=body), receipt
 
     def test_a_guard_looks_up_and_releases_an_auction_pin_at_the_desk(self):
+        self.store.setdefault('income_ledger', []).append({'entry_id': 'paid-AUCTION', 'source': 'auction', 'kind': 'sale', 'source_ref': AUCTION, 'amount': '500.00', 'receipt_no': 'PR-20261020-AU-TEST', 'received_at': '2026-10-20T01:00:00+00:00'})
         looked, _ = self.desk('guard', '/api/admin/claims/handover/lookup', {'pin': self.pin})
         self.assertEqual((looked.status_code, looked.get_json()['claim']['kind'], looked.get_json()['claim']['amount_due']), (200, 'auction', 500.0))
         released, receipt = self.desk('guard', '/api/admin/claims/handover/release', {'pin': self.pin})
@@ -256,6 +267,10 @@ class PickupRouteTests(unittest.TestCase):
 
     def test_an_administrator_can_complete_the_auction_by_hand_without_a_pin(self):
         self.store['auctions'][0].pop('handover_pin_hash')   # a win that never got a PIN
+        refused = self.auction_call('admin', 'post', f'/api/admin/auctions/{AUCTION}/fulfillment')
+        self.assertEqual(refused.status_code, 409)           # not while the payment is unconfirmed
+        self.assertIn('payment has not been confirmed', refused.get_json()['error'])
+        self.store.setdefault('income_ledger', []).append({'entry_id': 'paid-AUCTION', 'source': 'auction', 'kind': 'sale', 'source_ref': AUCTION, 'amount': '500.00', 'receipt_no': 'PR-20261020-AU-TEST', 'received_at': '2026-10-20T01:00:00+00:00'})
         response = self.auction_call('admin', 'post', f'/api/admin/auctions/{AUCTION}/fulfillment')
         self.assertEqual(response.status_code, 200)
         self.assertIn('without a PIN', response.get_json()['message'])

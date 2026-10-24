@@ -10,6 +10,8 @@ import { formatDateTime } from "../../utils/countdown";
 import { canDelete } from "../../utils/permissions";
 import { tr } from "../../utils/preferences";
 import ActivityLog from "./ActivityLog";
+import InstructionsCard from "./InstructionsCard";
+import ReceiptsRegister from "./ReceiptsRegister";
 import PaymentsQueue from "./PaymentsQueue";
 import { ConfirmPaymentModal, ReceiptModal, ReverseModal, type PayableItem } from "./PaymentModals";
 import {
@@ -18,7 +20,7 @@ import {
 } from "../../utils/incomeApi";
 
 type Range = "month" | "quarter" | "year" | "twelve" | "all";
-type Tab = "overview" | "payments" | "ledger" | "activity";
+type Tab = "overview" | "payments" | "ledger" | "receipts" | "activity";
 type SourceFilter = "" | IncomeSource;
 
 const PAGE = 25;
@@ -275,7 +277,7 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
         label="Revenue sections"
         value={tab}
         onChange={setTab}
-        options={[{ value: "overview", label: "Overview" }, { value: "payments", label: "Payments to confirm", count: waitingCount }, { value: "ledger", label: "Ledger" }, { value: "activity", label: "Activity log" }]}
+        options={[{ value: "overview", label: "Overview" }, { value: "payments", label: "Payments to confirm", count: waitingCount }, { value: "ledger", label: "Ledger" }, { value: "receipts", label: "Receipts" }, { value: "activity", label: "Activity log" }]}
       />
 
       {(tab === "overview" || tab === "ledger") && (
@@ -388,7 +390,8 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
       )}
       </>)}
 
-      {tab === "payments" && <PaymentsQueue data={awaiting} loading={loading} error={awaitError} onConfirm={setConfirming} />}
+      {tab === "payments" && <div className="space-y-4"><InstructionsCard /><PaymentsQueue data={awaiting} loading={loading} error={awaitError} onConfirm={setConfirming} /></div>}
+      {tab === "receipts" && <ReceiptsRegister />}
       {tab === "activity" && <ActivityLog refreshKey={logKey} />}
 
       {tab === "ledger" && (
@@ -448,7 +451,7 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
       )}
 
       {confirming && <ConfirmPaymentModal item={confirming} onClose={() => { setConfirming(null); refreshAll(); }} onConfirmed={() => setLogKey((key) => key + 1)} />}
-      {viewing && <ReceiptModal entryId={viewing} onClose={() => setViewing("")} />}
+      {viewing && <ReceiptModal kind="payment" id={viewing} onClose={() => setViewing("")} onChanged={refreshAll} />}
       {reversing && <ReverseModal entryId={reversing.entry_id} receiptNo={reversing.receipt_no || reversing.source_ref || ""} amount={reversing.amount} onClose={() => setReversing(null)} onDone={() => { setReversing(null); refreshAll(); }} />}
       {adding && <EntryModal onClose={() => setAdding(false)} onSaved={() => { setAdding(false); refreshAll(); }} />}
     </div>

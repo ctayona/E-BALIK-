@@ -745,3 +745,11 @@ ALTER TABLE public.found_items ADD COLUMN IF NOT EXISTS image_features JSONB;
 -- ============================================================================
 ALTER TABLE public.income_ledger ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(64);
 CREATE INDEX IF NOT EXISTS idx_income_payer ON public.income_ledger (payer_account_id);
+
+-- ============================================================================
+-- 20261025: payment proofs and photo matching for lost reports
+-- Bucket `payment-proofs` (private), table payment_proofs, income_ledger.proof_path, missing_items.image_features.
+-- The table and bucket are created by manual_migrations/20261025_payment_proofs_and_matching.sql; the columns are repeated here.
+-- ============================================================================
+ALTER TABLE public.income_ledger ADD COLUMN IF NOT EXISTS proof_path VARCHAR(255);
+ALTER TABLE public.missing_items ADD COLUMN IF NOT EXISTS image_features JSONB;

@@ -215,6 +215,8 @@ def receipt_for_payment(db, entry_id: str) -> Optional[Dict[str, Any]]:
     confirmer = db.get_user_by_account_id(str(entry['recorded_by'])) if entry.get('recorded_by') else {}
     receipt = _payment_receipt(entry, owner or {}, confirmer or {}, _entry_number(entry) in _reversed_numbers(db))
     receipt['owner_id'] = str(entry['payer_account_id']) if entry.get('payer_account_id') else ''   # internal; never sent to a browser
+    receipt['has_proof'] = bool(entry.get('proof_path'))
+    receipt['entry_id'] = str(entry['entry_id'])
     return receipt
 
 
@@ -236,3 +238,91 @@ def _verify_payment(db, day: str, ref: str, entered: str) -> Dict[str, Any]:
             return {'valid': True, 'kind': 'payment', 'item_name': row.get('description') or 'Payment', 'released_on': moment.astimezone(CAMPUS_TZ).strftime('%B %d, %Y').replace(' 0', ' '),
                     'reversed': _entry_number(row) in _reversed_numbers(db)}
     return {'valid': False}
+
+
+# ---------------------------------------------------------------------------------------------- the office's view of every receipt
+def _people(db, ids) -> Dict[str, str]:
+    ids = sorted({str(i) for i in ids if i})
+    if not ids:
+        return {}
+    try:
+        rows = db.client.table('user_profiles').select('account_id,fname,lname').in_('account_id', ids).execute().data or []
+    except Exception:
+        return {}
+    return {str(r['account_id']): _name(r) for r in rows}
+
+
+def receipt_for_auction(db, auction_id: str) -> Optional[Dict[str, Any]]:
+    rows = db.client.table('auctions').select('auction_id,title,item_reference,winning_amount,winner_account_id,fulfillment_status,fulfillment_updated_at').eq('auction_id', str(auction_id)).limit(1).execute().data or []
+    if not rows or rows[0].get('fulfillment_status') != 'collected':
+        return None
+    owner = db.get_user_by_account_id(str(rows[0]['winner_account_id'])) if rows[0].get('winner_account_id') else {}
+    return _auction_receipt(db, rows[0], owner or {}, {})
+
+
+def admin_list(db, kind: str = '', q: str = '', status: str = '', start: str = '', end: str = '', limit: int = 25, offset: int = 0) -> Dict[str, Any]:
+    """Every receipt the office has issued: payment receipts, item handover receipts and auction collection receipts, newest first.
+
+    Filter by kind (payment, claim, auction), status (valid, reversed), a day range (Manila days, YYYY-MM-DD) and a search word
+    (receipt number, item or person). The list never includes the verification code: open one receipt to see it.
+    """
+    rows: List[Dict[str, Any]] = []
+    reversed_numbers = _reversed_numbers(db)
+    try:
+        sales = db.client.table('income_ledger').select('*').eq('kind', 'sale').order('received_at', desc=True).limit(1000).execute().data or []
+    except Exception:
+        sales = []
+    claims = db.client.table('claims').select('claim_id,claim_reference,found_item_id,claimant_account_id,collected_at,updated_at').eq('status', 'collected').order('collected_at', desc=True).limit(500).execute().data or []
+    try:
+        auctions = db.client.table('auctions').select('auction_id,title,winning_amount,winner_account_id,fulfillment_updated_at').eq('fulfillment_status', 'collected').order('fulfillment_updated_at', desc=True).limit(500).execute().data or []
+    except Exception:
+        auctions = []
+    item_ids = sorted({str(c['found_item_id']) for c in claims if c.get('found_item_id')})
+    items = {}
+    if item_ids:
+        items = {str(r['item_id']): r.get('item_name') for r in db.client.table('found_items').select('item_id,item_name').in_('item_id', item_ids).execute().data or []}
+    people = _people(db, [s.get('payer_account_id') for s in sales] + [s.get('recorded_by') for s in sales] + [c.get('claimant_account_id') for c in claims] + [a.get('winner_account_id') for a in auctions])
+    for entry in sales:
+        if entry.get('source') not in ('auction', 'smart_tag'):
+            continue
+        number, moment = _entry_number(entry), _parse(entry.get('received_at'))
+        rows.append({'kind': 'payment', 'id': str(entry['entry_id']), 'receipt_no': number, 'item': entry.get('description') or 'Payment', 'person': people.get(str(entry.get('payer_account_id')), ''),
+                     'amount': float(Decimal(str(entry.get('amount') or 0))), 'method': entry.get('method'), 'has_proof': bool(entry.get('proof_path')), 'issued_by': people.get(str(entry.get('recorded_by')), ''),
+                     'released_at': moment.isoformat() if moment else None, 'status': 'reversed' if number in reversed_numbers else 'valid'})
+    for claim in claims:
+        moment = _parse(claim.get('collected_at')) or _parse(claim.get('updated_at')) or datetime.now(timezone.utc)
+        rows.append({'kind': 'claim', 'id': str(claim['claim_id']), 'receipt_no': f"{CLAIM_PREFIX}-{_day(moment)}-{claim.get('claim_reference') or str(claim['claim_id'])[:8]}",
+                     'item': items.get(str(claim.get('found_item_id'))) or 'Item', 'person': people.get(str(claim.get('claimant_account_id')), ''), 'amount': None, 'method': None,
+                     'has_proof': False, 'issued_by': '', 'released_at': moment.isoformat(), 'status': 'valid'})
+    for auction in auctions:
+        moment = _parse(auction.get('fulfillment_updated_at')) or datetime.now(timezone.utc)
+        rows.append({'kind': 'auction', 'id': str(auction['auction_id']), 'receipt_no': f"{AUCTION_PREFIX}-{_day(moment)}-{str(auction['auction_id'])[:8].upper()}",
+                     'item': auction.get('title') or 'Auction item', 'person': people.get(str(auction.get('winner_account_id')), ''), 'amount': float(auction.get('winning_amount') or 0) or None,
+                     'method': None, 'has_proof': False, 'issued_by': '', 'released_at': moment.isoformat(), 'status': 'valid'})
+    word = (q or '').strip().lower()
+
+    def keep(row: Dict[str, Any], with_kind: bool = True) -> bool:
+        day = _day(_parse(row['released_at'])) if row.get('released_at') else ''
+        if with_kind and kind and row['kind'] != kind:
+            return False
+        if status and row['status'] != status:
+            return False
+        if start and day < start.replace('-', ''):
+            return False
+        if end and day > end.replace('-', ''):
+            return False
+        return not word or word in f"{row['receipt_no']} {row['item']} {row['person']}".lower()
+    counts = {k: sum(1 for r in rows if r['kind'] == k and keep(r, with_kind=False)) for k in ('payment', 'claim', 'auction')}
+    chosen = sorted((r for r in rows if keep(r)), key=lambda r: r['released_at'] or '', reverse=True)
+    limit = max(1, min(int(limit or 25), 100))
+    offset = max(0, int(offset or 0))
+    return {'receipts': chosen[offset:offset + limit], 'total': len(chosen), 'counts': counts, 'limit': limit, 'offset': offset}
+
+
+def history(db, receipt_no: str) -> List[Dict[str, Any]]:
+    """What the office did with this receipt: issued, reversed, emailed again. From the activity log (the number is the log's reference)."""
+    try:
+        rows = db.client.table('user_activity_logs').select('user_name,action,target_name,created_at,result').eq('target_id', str(receipt_no)).order('created_at', desc=True).limit(50).execute().data or []
+    except Exception:
+        return []
+    return [{'who': r.get('user_name'), 'action': r.get('action'), 'details': r.get('target_name'), 'at': r.get('created_at'), 'result': r.get('result')} for r in rows]

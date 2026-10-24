@@ -222,11 +222,16 @@ class TagPriceTests(unittest.TestCase):
         return {'tag_id': 'ABCDEFGHJK23', 'status': 'pending_verification', 'prior_status': None, 'owner_account_id': OWNER, 'item_name': 'Laptop',
                 'price': '150.00', 'paid_at': None, 'validity_months': None, **extra}
 
-    def test_approval_no_longer_counts_income_the_payment_must_be_confirmed(self):
+    def test_a_priced_tag_cannot_be_approved_until_its_fee_is_confirmed_and_approval_counts_nothing(self):
         store = {'smart_tags': [self.pending_tag()]}
+        with self.assertRaises(TagError) as refused:
+            SmartTagService(make_db(store)).approve('ABCDEFGHJK23', ADMIN)
+        self.assertEqual(refused.exception.extra['code'], 'payment_required')
+        self.assertEqual(store['smart_tags'][0]['status'], 'pending_verification')
+        store['income_ledger'] = [{'entry_id': 'e1', 'source': 'smart_tag', 'kind': 'sale', 'source_ref': 'ABCDEFGHJK23', 'amount': '150.00', 'receipt_no': 'PR-20261020-TG-ABCDEFGHJK23'}]
         SmartTagService(make_db(store)).approve('ABCDEFGHJK23', ADMIN)
-        self.assertNotIn('income_ledger', store)
-        self.assertIsNone(store['smart_tags'][0]['paid_at'])
+        self.assertEqual(store['smart_tags'][0]['status'], 'active')
+        self.assertEqual(len(store['income_ledger']), 1)                      # approving added nothing: only the confirmation counts
 
     def test_a_new_photo_or_a_free_tag_records_nothing(self):
         for tag in (self.pending_tag(prior_status='active'), self.pending_tag(price='0'), self.pending_tag(paid_at='2026-10-01T00:00:00+00:00')):
@@ -255,8 +260,10 @@ class AuctionIncomeTests(unittest.TestCase):
             service.set_fulfillment('A1', action, ADMIN)
         return store
 
-    def test_collected_no_longer_counts_income_the_payment_must_be_confirmed(self):
-        self.assertNotIn('income_ledger', self.run_fulfillment('collected'))
+    def test_collected_is_refused_until_the_payment_is_confirmed_and_never_counts_income_itself(self):
+        from app.utils.auction_db import AuctionError
+        with self.assertRaises(AuctionError):
+            self.run_fulfillment('collected')
 
     def test_forfeited_records_nothing(self):
         self.assertNotIn('income_ledger', self.run_fulfillment('forfeited'))

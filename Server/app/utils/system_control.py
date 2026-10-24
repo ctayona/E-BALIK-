@@ -39,6 +39,7 @@ DEFAULT_SETTINGS: Dict[str, Dict[str, Any]] = {
     'role_session_wipes': {},
     'last_backup': {},
     'last_restore': {},
+    'payment_instructions': {'text': ''},
     'maintenance_windows': {'items': []},
     'page_locks': {},
     'announcement': {'live': False, 'tone': 'info', 'title': '', 'message': '', 'updated_at': None},

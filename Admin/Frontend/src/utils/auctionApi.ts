@@ -42,6 +42,10 @@ export interface AdminAuction {
   sold: boolean;
   cancel_reason: string | null;
   fulfillment_status: "awaiting_pickup" | "collected" | "forfeited" | null;
+  /** An administrator confirmed the winner's payment (Revenue and payments). `payment_tracking` is false until the income migrations are run. */
+  payment_confirmed?: boolean;
+  payment_receipt_no?: string | null;
+  payment_tracking?: boolean;
   winner_notified_at: string | null;
   ended_at?: string | null;
   winner_email_mode: string | null;
@@ -63,7 +67,9 @@ export interface AdminAuction {
   archived_at?: string | null;
 }
 
-export interface AuctionStats { live: number; scheduled: number; ended: number; awaiting_admin?: number; awaiting_pickup: number; completed?: number; archived?: number; reauction_ready?: number; total_bids: number; sales_total: number }
+export interface AuctionStats { live: number; scheduled: number; ended: number; awaiting_admin?: number; awaiting_pickup: number; completed?: number; archived?: number; reauction_ready?: number; total_bids: number;
+  /** Only payments an administrator confirmed count as sales. */
+  sales_total: number; sales_count?: number; awaiting_payment_total?: number; awaiting_payment_count?: number; payment_tracking?: boolean }
 export interface AuctionList { auctions: AdminAuction[]; stats: AuctionStats; server_time: string; min_custody_days: number }
 
 export interface EligibleItem {

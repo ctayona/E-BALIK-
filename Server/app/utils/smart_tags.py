@@ -848,6 +848,10 @@ class SmartTagService:
         tag = self._get(tag_id)
         if tag.get('status') != PENDING:
             raise TagError('This tag is not waiting for approval.', 409, code='not_pending')
+        if not tag.get('prior_status') and not tag.get('paid_at') and float(tag.get('price') or 0) > 0:
+            from app.utils.payments import PaymentDesk
+            if PaymentDesk(self.db).is_paid('smart_tag', tag_id) is False:      # None = income tracking not set up yet: nothing to enforce
+                raise TagError('The tag fee has not been confirmed yet. Confirm the payment first (Revenue and payments), then approve the tag.', 409, code='payment_required')
         moment = _now()
         now = _iso(moment)
         changes: Dict[str, Any] = {'status': tag.get('prior_status') or 'active', 'prior_status': None, 'review_requested_at': None,

@@ -14,6 +14,7 @@ import {
 import { CX } from "@/app/utils/clay";
 import { FieldHint, INVALID_FIELD, useFieldHint } from "@/app/shared/forms/FieldHint";
 import { textProblem } from "@/app/utils/textGuard";
+import PaymentCard from "@/app/shared/payments/PaymentCard";
 
 const POLL_MS = 5000;
 const MAX_COMMENT = 500;
@@ -342,13 +343,14 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
             {viewer?.is_winner && (
               <div className="rounded-2xl border border-tide-200 bg-tide-50 px-4 py-4 text-tide-700" role="status">
                 <p className="flex items-center gap-2 font-semibold"><Trophy size={17} aria-hidden="true" /> You won this auction at {peso(a.winning_amount)}.</p>
-                <p className="mt-1 text-[14px] leading-6">Bring your original ID to the Lost and Found Office to pay and collect the item. We also sent you a notice.</p>
+                <p className="mt-1 text-[14px] leading-6">Pay for the item below, then bring your original ID to the Lost and Found Office to collect it. We also sent you a notice.</p>
+                <div className="mt-3"><PaymentCard source="auction" refId={a.id} /></div>
                 {viewer.handover_pin && (
                   <div className="mt-3 rounded-[12px] border-2 border-dashed border-[#d1a153] bg-[#1f3160] px-3 py-3 text-center" aria-label="Your Handover PIN">
                     <p className="text-[11px] font-bold tracking-[0.14em] text-[#ecc787]">YOUR HANDOVER PIN</p>
                     <p className="mt-1 select-all font-mono text-[30px] font-bold leading-none tracking-[0.28em] text-[#ffffff]">{viewer.handover_pin}</p>
                     <HandoverQr path={`/api/auctions/${encodeURIComponent(a.id)}/handover-qr`} />
-                    <p className="mt-2 text-[11.5px] leading-4 text-[#b9c3dc]">Pay at the desk, then show this PIN and your original ID to the guard. It works once, and only for this item. Keep it private.</p>
+                    <p className="mt-2 text-[11.5px] leading-4 text-[#b9c3dc]">Once the office confirms your payment, show this PIN and your original ID to the guard. It works once, and only for this item. Keep it private.</p>
                   </div>
                 )}
               </div>
