@@ -1,0 +1,103 @@
+name: CI
+
+# Runs on every push to main and on every pull request: the backend tests, both site builds, the type checks and the text-rule parity check.
+# It only READS the code and uses no secrets, so it can never change production. Render and Vercel deploy on their own; to make a red CI
+# block a merge, turn on branch protection and require the "Backend tests" and "Builds and type checks" checks.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'Audits/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'Audits/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Tests must never reach a real email provider or database, whatever the environment has (Server/config.py reads this).
+  EBALIK_TESTING: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: Server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'      # the version Render runs (render.yaml)
+          cache: pip
+          cache-dependency-path: Server/requirements.txt
+
+      - name: Install the backend packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run the tests
+        run: |
+          set -o pipefail
+          python -m unittest discover -s tests -p "test_*.py" 2>&1 | tee "$RUNNER_TEMP/backend-tests.log"
+
+      - name: Show the result on the run page
+        if: always()
+        run: |
+          {
+            echo '### Backend tests'
+            echo '```'
+            grep -E '^(Ran |OK|FAILED)' "$RUNNER_TEMP/backend-tests.log" || echo 'The tests did not finish. Open the "Run the tests" step.'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  frontend:
+    name: Builds and type checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22            # package.json "engines": the version Vercel runs
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            Admin/Frontend/package-lock.json
+
+      - name: Install the packages (exactly as locked)
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --no-audit --no-fund --prefix Admin/Frontend
+
+      - name: Build the user app
+        run: npm run build
+
+      - name: Build the admin app
+        run: npm run build:admin
+
+      - name: Type-check the admin app (no errors allowed)
+        run: npm run typecheck:admin
+
+      - name: Type-check the user app (the known errors may shrink but never grow)
+        run: npm run typecheck:user
+
+      - name: Check the browser and server text rules still agree
+        run: node scripts/check-text-guard-parity.mjs

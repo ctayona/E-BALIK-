@@ -51,8 +51,8 @@ class FakeTable:
     def limit(self, *a):
         return self
 
-    def upsert(self, batch):
-        self.pending = batch
+    def upsert(self, batch, **options):
+        self.pending, self.options = batch, options
         return self
 
     def execute(self):
@@ -63,13 +63,14 @@ class FakeTable:
                 self.db.fail[self.name] -= 1
                 raise Exception('foreign key violation')
             self.db.upserts.append((self.name, len(self.pending)))
+            self.db.options.setdefault(self.name, []).append(self.options)
             return SimpleNamespace(data=[])
         return SimpleNamespace(data=[], count=self.db.tables[self.name])
 
 
 class FakeDb:
     def __init__(self, tables=None, fail=None):
-        self.tables, self.fail, self.upserts = tables if tables is not None else {}, fail or {}, []
+        self.tables, self.fail, self.upserts, self.options = tables if tables is not None else {}, fail or {}, [], {}
         self.client = SimpleNamespace(table=lambda name: FakeTable(self, name))
 
     def get_admin_mfa(self, account_id):
@@ -118,6 +119,22 @@ class EngineTests(unittest.TestCase):
         self.assertEqual((result['same_project'], result['includes_photos'], result['total_rows']), (True, True, 4))
         self.assertFalse(br.preview(db, {**manifest, 'project': 'zzzz'}, 'abc', URL)['same_project'])
         self.assertEqual(br.confirm_phrase(URL), PHRASE)
+
+    def test_the_income_ledger_is_append_only_in_a_restore(self):
+        manifest = {'created_at': '2026-10-20T00:00:00+00:00', 'project': 'abcdefgh', 'files': {}, 'tables': {'income_ledger': {'rows': 3}, 'claims': {'rows': 2}}}
+        planned = {t['name']: t for t in br.preview(FakeDb({'income_ledger': 5, 'claims': 5}), manifest, 'abc', URL)['tables']}
+        self.assertIn('never changed', planned['income_ledger']['note'])
+        self.assertEqual((planned['income_ledger']['restorable'], planned['claims']['note']), (True, ''))
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'up.bin'
+            path.write_bytes(make_backup(folder, {'income_ledger': rows('i', 3), 'claims': rows('c', 2)}))
+            archive, _ = br.open_backup(path, PASS, Path(folder))
+            db = FakeDb({'income_ledger': 0, 'claims': 0})
+            result = br.apply(db, archive, ['claims', 'income_ledger'], lambda **k: None)
+            archive.close()
+        self.assertEqual(result['failed'], {})
+        self.assertEqual(db.options['income_ledger'], [{'ignore_duplicates': True}])         # existing money records are skipped, never overwritten
+        self.assertEqual(db.options['claims'], [{}])                                          # every other table merges as before
 
     def test_the_table_choice_is_checked_and_ordered_parents_first(self):
         manifest = {'tables': {n: {} for n in ('claims', 'found_items', 'user_profiles', 'admin_mfa', 'otp_tokens', 'income_ledger')}}

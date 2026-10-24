@@ -33,6 +33,8 @@ PROTECTED = frozenset({'admin_mfa', 'admin_mfa_challenges', 'admin_mfa_recovery_
 SENSITIVE = frozenset({'user_profiles', 'system_settings'})
 FIRST = ['user_profiles', 'system_settings', 'migration_log', 'found_items', 'missing_items', 'auctions', 'smart_tags', 'claims']
 SENSITIVE_PHRASE = 'RESTORE ACCOUNTS AND SETTINGS'
+# Tables the database itself refuses to change (migration 20261026): a restore only adds the entries that are missing and skips the rest.
+APPEND_ONLY = frozenset({'income_ledger'})
 
 _tool: Dict[str, Any] = {}
 
@@ -158,7 +160,8 @@ def preview(db, manifest: Dict[str, Any], sha256: str, supabase_url: str) -> Dic
         restorable = kind != 'protected' and current is not None
         note = ('Never restored here: it holds sign-in secrets.' if kind == 'protected'
                 else 'This table does not exist in this database yet. Run the SQL migrations first.' if current is None
-                else 'Accounts, roles and settings. Restoring can undo recent role or access changes.' if kind == 'sensitive' else '')
+                else 'Accounts, roles and settings. Restoring can undo recent role or access changes.' if kind == 'sensitive'
+                else 'Money records are never changed: only entries that are missing from the database are added.' if name in APPEND_ONLY else '')
         tables.append({'name': name, 'rows': int(manifest['tables'][name].get('rows') or 0), 'current': current, 'kind': kind, 'restorable': restorable, 'note': note})
     return {
         'created_at': created, 'age_days': age_days, 'project': manifest.get('project'), 'same_project': manifest.get('project') == project_name(supabase_url),
@@ -189,6 +192,13 @@ def apply(db, archive: zipfile.ZipFile, tables: List[str], progress: Callable[..
     done: Dict[str, int] = {}
     errors: Dict[str, str] = {}
     pending = list(tables)
+
+    def save(table: str, batch: List[Dict[str, Any]]) -> None:
+        if table in APPEND_ONLY:
+            db.client.table(table).upsert(batch, ignore_duplicates=True).execute()     # ON CONFLICT DO NOTHING: existing money records stay exactly as they are
+        else:
+            db.client.table(table).upsert(batch).execute()
+
     for attempt in range(PASSES):
         retry = []
         for table in pending:
@@ -201,11 +211,11 @@ def apply(db, archive: zipfile.ZipFile, tables: List[str], progress: Callable[..
                         if line.strip():
                             batch.append(json.loads(line))
                         if len(batch) >= BATCH:
-                            db.client.table(table).upsert(batch).execute()
+                            save(table, batch)
                             count += len(batch)
                             batch = []
                     if batch:
-                        db.client.table(table).upsert(batch).execute()
+                        save(table, batch)
                         count += len(batch)
                 done[table] = count
                 errors.pop(table, None)

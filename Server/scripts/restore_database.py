@@ -42,8 +42,12 @@ def ordered(tables: List[str]) -> List[str]:
     return [t for t in FIRST if t in tables] + sorted(t for t in tables if t not in FIRST)
 
 
+APPEND_ONLY = {'income_ledger'}   # the database refuses to change money records (migration 20261026): only missing entries are added
+
+
 def upsert(env: Dict[str, str], table: str, rows: List[Dict[str, Any]]) -> None:
-    http(f"{env['SUPABASE_URL']}/rest/v1/{urllib.parse.quote(table)}", env['SUPABASE_SERVICE_KEY'], 'POST', rows, {'Prefer': 'resolution=merge-duplicates,return=minimal'}, timeout=120)
+    resolution = 'ignore-duplicates' if table in APPEND_ONLY else 'merge-duplicates'
+    http(f"{env['SUPABASE_URL']}/rest/v1/{urllib.parse.quote(table)}", env['SUPABASE_SERVICE_KEY'], 'POST', rows, {'Prefer': f'resolution={resolution},return=minimal'}, timeout=120)
 
 
 def restore(archive: zipfile.ZipFile, env: Dict[str, str], only: Optional[List[str]], apply: bool, with_files: bool, log=print) -> Dict[str, Any]:

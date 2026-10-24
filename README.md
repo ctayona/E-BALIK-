@@ -1,5 +1,7 @@
 # E-Balik Lost & Found App
 
+[![CI](https://github.com/ctayona/E-BALIK-/actions/workflows/ci.yml/badge.svg)](https://github.com/ctayona/E-BALIK-/actions/workflows/ci.yml)
+
 > **Want to run E-Balik on your computer? Start here: [Quick Start - Run Locally](Quick%20Start%20-%20Run%20Locally.md).**
 > It is a short, step-by-step guide (install Node.js and Python, then run two commands). Setting up a brand-new database instead? See [Step-by-Step Setup](Step-by-Step%20Setup.md).
 

@@ -1,0 +1,4 @@
+{
+  "errors": 108,
+  "note": "Known older type errors in the user app. The CI type check fails if the count goes UP. When it goes down, lower this number (see scripts/check-user-types.mjs)."
+}

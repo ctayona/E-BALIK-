@@ -189,7 +189,8 @@ export async function saveInstructions(text: string): Promise<string> {
   if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Unable to save the instructions");
   return String(payload.text ?? "");
 }
-export const reversePayment = (entryId: string, reason: string) => send<{ message: string }>(`entries/${encodeURIComponent(entryId)}/reverse`, "POST", "Reverse payment", { reason });
+/** Needs the 6-digit Google Authenticator code of the super administrator. */
+export const reversePayment = (entryId: string, reason: string, authenticatorCode: string) => send<{ message: string }>(`entries/${encodeURIComponent(entryId)}/reverse`, "POST", "Reverse payment", { reason, authenticator_code: authenticatorCode });
 
 const escapeHtml = (value: string | number) => String(value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] as string));
 

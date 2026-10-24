@@ -225,6 +225,7 @@ class RouteTests(unittest.TestCase):
         app.register_blueprint(routes.income_bp, url_prefix='/api/admin')
         self.db, self.store = make()
         self.logged = []
+        self.spent = []
 
         def require(required_level='admin'):
             if required_level == 'super_admin' and level != 'super_admin':
@@ -232,7 +233,8 @@ class RouteTests(unittest.TestCase):
             return {'account_id': ADMIN, 'email': 'ana@umak.edu.ph', 'access_level': level}
         patchers = (patch.object(routes, '_require_admin', side_effect=require), patch.object(routes, '_service', return_value=(self.db, IncomeService(self.db))),
                     patch.object(routes, '_log_admin_action', side_effect=lambda *a, **k: self.logged.append(a[2])),
-                    patch.object(routes.rate_limit, 'allow', return_value=not limited))
+                    patch.object(routes.rate_limit, 'allow', return_value=not limited),
+                    patch.object(routes, 'consume_authenticator_code', side_effect=lambda db, account, code, action: self.spent.append((code, action)) or 1))
         for p in patchers:
             p.start()
             self.addCleanup(p.stop)          # stop only these: patch.stopall() would also stop the file-wide email patch
@@ -271,7 +273,7 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(client.post(f"/api/admin/income/entries/{entry['entry_id']}/reverse", json={'reason': 'A long enough reason'}).status_code, 403)
         boss = self.client('super_admin')
         entry = self.confirm(boss).get_json()['entry']
-        reply = boss.post(f"/api/admin/income/entries/{entry['entry_id']}/reverse", json={'reason': 'A long enough reason'})
+        reply = boss.post(f"/api/admin/income/entries/{entry['entry_id']}/reverse", json={'reason': 'A long enough reason', 'authenticator_code': '123456'})
         self.assertEqual(reply.status_code, 200)
         self.assertIn('Reverse Payment', self.logged)
         limited = self.client(limited=True)
@@ -483,6 +485,75 @@ class ProofRouteTests(unittest.TestCase):
             self.assertEqual(boss.get('/api/admin/income/instructions').get_json()['text'], 'GCash 0917')
         self.assertEqual(reply.get_json()['text'], 'GCash 0917 000 0000\n\nOffice hours 8 to 5')
         self.assertEqual(save.call_args.args[1], 'payment_instructions')
+
+
+class ReverseCodeTests(unittest.TestCase):
+    """Reversing money needs the super administrator's Google Authenticator code, and the code is only spent on a reversal that really happens."""
+    client = RouteTests.client
+
+    def setUp(self):
+        self.boss = self.client('super_admin')
+        self.entry = self.boss.post('/api/admin/income/payments/confirm', json={'source': 'auction', 'source_ref': 'a2', 'method': 'cash', 'reference': '', 'notes': '', 'expected_amount': '300'}).get_json()['entry']
+        self.path = f"/api/admin/income/entries/{self.entry['entry_id']}/reverse"
+
+    def refunds(self):
+        return [r for r in self.store['income_ledger'] if r['kind'] == 'refund']
+
+    def test_a_missing_or_malformed_code_is_refused_before_anything_else_and_is_not_counted_as_a_wrong_attempt(self):
+        for body in ({'reason': 'A long enough reason'}, {'reason': 'A long enough reason', 'authenticator_code': ''}, {'reason': 'A long enough reason', 'authenticator_code': '12345'},
+                     {'reason': 'A long enough reason', 'authenticator_code': 'abcdef'}, {'reason': 'A long enough reason', 'authenticator_code': '1234567'}):
+            reply = self.boss.post(self.path, json=body)
+            self.assertEqual((reply.status_code, reply.get_json()['code']), (400, 'authenticator_required'))
+        self.assertEqual((self.spent, self.refunds()), ([], []))
+
+    def test_the_code_is_not_spent_when_another_rule_stops_the_reversal(self):
+        short = self.boss.post(self.path, json={'reason': 'oops', 'authenticator_code': '123456'})
+        missing = self.boss.post('/api/admin/income/entries/does-not-exist/reverse', json={'reason': 'A long enough reason', 'authenticator_code': '123456'})
+        self.assertEqual((short.status_code, missing.status_code), (400, 404))
+        self.assertEqual((self.spent, self.refunds()), ([], []))
+        self.assertEqual(self.boss.post(self.path, json={'reason': 'A long enough reason', 'authenticator_code': '123456'}).status_code, 200)
+        again = self.boss.post(self.path, json={'reason': 'Trying a second time', 'authenticator_code': '654321'})
+        self.assertEqual((again.status_code, again.get_json()['code']), (409, 'already_reversed'))
+        self.assertEqual(len(self.spent), 1)                                                   # only the reversal that happened used a code
+
+    def test_a_valid_code_is_spent_once_for_the_right_action_and_the_reversal_is_logged(self):
+        reply = self.boss.post(self.path, json={'reason': 'A long enough reason', 'authenticator_code': ' 123456 '})
+        self.assertEqual(reply.status_code, 200)
+        self.assertEqual(self.spent, [('123456', 'reversing a payment')])
+        self.assertEqual((len(self.refunds()), self.refunds()[0]['amount']), (1, '-300.00'))
+        self.assertIn('Reverse Payment', self.logged)
+
+    def test_a_wrong_code_writes_nothing_and_answers_with_the_authenticators_own_status(self):
+        from Admin.Backend.income import routes
+        from Admin.Backend.shared.authenticator import AuthenticatorError
+        for status, message in ((401, 'Authenticator code is invalid.'), (423, 'Google Authenticator verification is temporarily locked.'), (403, 'Enable Google Authenticator in your Admin Profile before reversing a payment.')):
+            with patch.object(routes, 'consume_authenticator_code', side_effect=AuthenticatorError(message, status)):
+                reply = self.boss.post(self.path, json={'reason': 'A long enough reason', 'authenticator_code': '123456'})
+            self.assertEqual((reply.status_code, reply.get_json()['error'], reply.get_json()['code']), (status, message, 'authenticator'))
+        self.assertEqual(self.refunds(), [])
+        self.assertNotIn('Reverse Payment', self.logged)
+
+    def test_the_engine_runs_the_check_after_every_rule_and_before_writing(self):
+        db, store = make()
+        desk = PaymentDesk(db)
+        entry = desk.confirm('auction', 'a2', 'cash', '', '', '300', ADMIN)['entry']
+        order = []
+
+        def check():
+            order.append(('checked', len(store['income_ledger'])))
+        with self.assertRaisesRegex(IncomeError, 'at least 8'):
+            desk.reverse(entry['entry_id'], 'short', ADMIN, before_commit=check)
+        self.assertEqual(order, [])
+        desk.reverse(entry['entry_id'], 'A long enough reason', ADMIN, before_commit=check)
+        self.assertEqual(order, [('checked', 1)])                                              # asked while only the original sale existed
+        self.assertEqual(len(store['income_ledger']), 2)
+
+        def refuse():
+            raise IncomeError('Authenticator code is invalid.', 401)
+        other = desk.confirm('auction', AUCTION, 'cash', '', '', '2500', ADMIN)['entry']
+        with self.assertRaises(IncomeError):
+            desk.reverse(other['entry_id'], 'A long enough reason', ADMIN, before_commit=refuse)
+        self.assertEqual(len(store['income_ledger']), 3)                                       # the refused reversal wrote nothing
 
 
 class UserPaymentRouteTests(unittest.TestCase):

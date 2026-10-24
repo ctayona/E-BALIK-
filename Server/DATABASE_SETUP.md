@@ -418,3 +418,14 @@ Run `manual_migrations/20261025_payment_proofs_and_matching.sql` after `20261024
 SELECT id, public FROM storage.buckets WHERE id = 'payment-proofs';   -- public must be false
 SELECT to_regclass('public.payment_proofs');
 ```
+
+## 20261026: income ledger lock
+
+Run `manual_migrations/20261026_income_ledger_lock.sql` after `20261022`. The app only ever adds rows to `income_ledger` (a mistake is fixed with a reversal or an adjustment); this makes the database enforce it too. After it runs, `DELETE`, `TRUNCATE` and any `UPDATE` that changes a money record are refused, even from the SQL Editor. Two harmless cases still work: an update that changes nothing (a restore merging identical rows) and the database blanking `payer_account_id` or `recorded_by` when a person's account is deleted. **The app works the same with or without it**; it only adds protection. The admin Restore and `restore_database.py` treat the ledger as append-only (they add missing entries and skip the rest). Verify with:
+
+```sql
+SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.income_ledger'::regclass AND NOT tgisinternal ORDER BY tgname;
+-- trg_income_ledger_guard, trg_income_ledger_no_truncate
+```
+
+If you ever have to correct the ledger by hand, drop the two triggers (the last lines of the file), make the fix, and run the file again.

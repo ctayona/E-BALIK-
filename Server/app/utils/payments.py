@@ -18,7 +18,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from app.utils import receipts
 from app.utils.income import MAX_ROWS, METHODS, IncomeError, IncomeService, IncomeUnavailable, _missing_schema, _parse_moment, money
@@ -280,7 +280,9 @@ class PaymentDesk:
         return self._notify_paid({'payer': receipt['owner_id'], 'title': receipt['item']['name']}, receipt, notice=False)
 
     # ------------------------------------------------------------------ reversing (super administrators)
-    def reverse(self, entry_id: str, reason: Any, admin_id: str) -> Dict[str, Any]:
+    def reverse(self, entry_id: str, reason: Any, admin_id: str, before_commit: Optional[Callable[[], None]] = None) -> Dict[str, Any]:
+        """Reverse a confirmed payment with a linked refund. `before_commit` runs after every check has passed and before anything is written:
+        the route puts the authenticator code there, so a code is only spent on a reversal that will really happen."""
         reason = _clean(reason, 300)
         if len(reason) < 8:
             raise IncomeError('Give the reason for reversing this payment (at least 8 characters). It stays in the record.')
@@ -292,6 +294,8 @@ class PaymentDesk:
         linked = self.client.table('income_ledger').select('entry_id').eq('kind', 'refund').eq('receipt_no', number).limit(1).execute().data or []
         if linked:
             raise IncomeError('This payment was already reversed.', 409, 'already_reversed')
+        if before_commit:
+            before_commit()
         now = datetime.now(timezone.utc)
         row = {
             'source': sale['source'], 'kind': 'refund', 'source_ref': sale.get('source_ref'), 'description': f"Reversal of {number}: {sale.get('description') or ''}"[:255],

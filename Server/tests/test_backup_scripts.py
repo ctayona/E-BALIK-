@@ -111,6 +111,14 @@ class RestoreTests(unittest.TestCase):
         self.assertIn('user_profiles', writes[0][0])                               # the parent table first
         self.assertEqual(len([w for w in writes if 'found_items' in w[0]]), 5)    # 2300 rows in batches of 500
 
+    def test_the_income_ledger_is_restored_append_only(self):
+        seen = {}
+        with patch.object(restore, 'http', lambda url, key, method, body, headers, timeout=60: seen.setdefault(url.rsplit('/', 1)[-1], headers['Prefer']) and (b'', {})):
+            restore.upsert(ENV, 'income_ledger', [{'entry_id': 'e1'}])
+            restore.upsert(ENV, 'claims', [{'claim_id': 'c1'}])
+        self.assertIn('ignore-duplicates', seen['income_ledger'])        # existing money records are skipped, the database refuses to change them
+        self.assertIn('merge-duplicates', seen['claims'])
+
     def test_a_table_that_fails_is_retried_in_a_later_pass(self):
         with tempfile.TemporaryDirectory() as folder:
             path = self.make(folder)

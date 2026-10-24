@@ -2,12 +2,14 @@
 
 Administrators read it and confirm payments (each confirmation issues a receipt). Only super administrators add manual entries and reverse payments.
 """
+import re
 from functools import wraps
 from flask import Blueprint, Response, current_app, jsonify, request
 from app.utils import get_db, rate_limit, receipts
 from app.utils.income import IncomeError, IncomeService, IncomeUnavailable
 from app.utils.payments import PaymentDesk
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
+from Admin.Backend.shared.authenticator import AuthenticatorError, consume_authenticator_code
 
 income_bp = Blueprint('admin_income', __name__)
 
@@ -27,6 +29,8 @@ def _handled(label):
                 return jsonify({'error': error.message, 'code': error.code}), error.status
             except IncomeUnavailable as error:
                 return jsonify({'error': str(error), 'code': 'setup_required', 'setup_required': True}), 503
+            except AuthenticatorError as error:
+                return jsonify({'error': error.message, 'code': 'authenticator'}), error.status
             except ValueError as error:
                 return jsonify({'error': str(error)}), 401
             except PermissionError as error:
@@ -133,8 +137,15 @@ def confirm_payment():
 @_handled('reverse the payment')
 def reverse_payment(entry_id):
     admin = _require_admin(required_level='super_admin')
+    body = request.get_json(silent=True) or {}
+    code = str(body.get('authenticator_code') or '').strip()
+    if not re.fullmatch(r'\d{6}', code):       # checked before anything else, and never counted as a wrong attempt
+        raise IncomeError('Enter the 6-digit code from Google Authenticator to reverse a payment.', 400, 'authenticator_required')
+    if not rate_limit.allow(f"income-reverse:{admin['account_id']}", 10, 3600):
+        raise IncomeError('You are reversing payments very quickly. Wait a few minutes and try again.', 429, 'rate_limited')
     db, _ = _service()
-    result = PaymentDesk(db).reverse(entry_id, (request.get_json(silent=True) or {}).get('reason'), admin['account_id'])
+    result = PaymentDesk(db).reverse(entry_id, body.get('reason'), admin['account_id'],
+                                     before_commit=lambda: consume_authenticator_code(db, admin['account_id'], code, 'reversing a payment'))
     _log_admin_action(db, admin, 'Reverse Payment', 'Income', f"Receipt {result['receipt_no']}", result['receipt_no'])
     return jsonify({'success': True, 'message': f"Receipt {result['receipt_no']} was reversed.", 'entry': result['entry']}), 200
 

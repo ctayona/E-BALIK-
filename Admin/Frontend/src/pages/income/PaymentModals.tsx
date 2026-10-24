@@ -211,13 +211,14 @@ export function ConfirmPaymentModal({ item, onClose, onConfirmed }: { item: Paya
 export function ReverseModal({ entryId, receiptNo, amount, onClose, onDone }: { entryId: string; receiptNo: string; amount: number; onClose: () => void; onDone: () => void }) {
   const [reason, setReason] = useState("");
   const [sure, setSure] = useState(false);
+  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const valid = sure && reason.trim().length >= 8;
+  const valid = sure && reason.trim().length >= 8 && /^\d{6}$/.test(code);
   const submit = async () => {
     if (!valid || busy) return;
     setBusy(true); setError("");
-    try { await reversePayment(entryId, reason.trim()); onDone(); } catch (failure) { setError(failure instanceof Error ? failure.message : tr("Unable to reverse the payment.")); } finally { setBusy(false); }
+    try { await reversePayment(entryId, reason.trim(), code); onDone(); } catch (failure) { setCode(""); setError(failure instanceof Error ? failure.message : tr("Unable to reverse the payment.")); } finally { setBusy(false); }
   };
   return (
     <AdminModal title={tr("Reverse this payment")} description={tr("Use this when a payment was confirmed by mistake or the money was given back. The record stays: a linked refund is added.")} icon={<RotateCcw size={19} />} tone="danger" size="sm" busy={busy} onClose={onClose}
@@ -233,6 +234,9 @@ export function ReverseModal({ entryId, receiptNo, amount, onClose, onDone }: { 
           <textarea value={reason} onChange={(event) => setReason(event.target.value)} maxLength={300} rows={3} className={`${INPUT} py-2.5`} placeholder={tr("Why is this being reversed? It stays in the record.")} />
           {reason.trim().length > 0 && reason.trim().length < 8 && <span className="mt-1 block text-[12.5px] text-rose-600">{tr("Write at least 8 characters.")}</span>}</label>
         <label className="flex items-start gap-3 text-[14px] leading-5 text-ink-soft"><input type="checkbox" checked={sure} onChange={(event) => setSure(event.target.checked)} className="mt-0.5 size-4 shrink-0 accent-navy-800" />{tr("I understand a reversal cannot be undone.")}</label>
+        <label className="block"><span className="mb-1.5 flex items-center gap-1.5 text-[14px] font-semibold text-ink-soft"><ShieldCheck size={15} aria-hidden="true" />{tr("Google Authenticator code")}</span>
+          <input value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="123456" className={`${INPUT} max-w-[12rem] font-mono tracking-[0.3em]`} aria-describedby="reverse-code-hint" />
+          <span id="reverse-code-hint" className="mt-1 block text-[12.5px] text-ink-muted">{tr("Reversing money needs your authenticator, like deleting an account. Each code works once.")}</span></label>
         {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[13.5px] text-rose-800">{error}</p>}
       </div>
     </AdminModal>
