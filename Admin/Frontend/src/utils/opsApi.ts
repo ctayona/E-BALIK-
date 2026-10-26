@@ -95,6 +95,10 @@ export interface MonthlyReport {
   waiting: { total: number; buckets: { label: string; count: number }[] } | null;
   match_alerts: { sent: number } | null;
   smart_tags: { registered: number } | null;
+  payments: { confirmed: number; refunds: number; adjustments: number; by_method: { method: string; count: number; amount: number }[]; proofs_sent: number; proofs_by_status: Record<string, number>; proofs_waiting_now: number } | null;
+  auctions: { listed: number; by_status: Record<string, number>; bids: number; finalized: number } | null;
+  people: { registered: number; verifications_reviewed: number } | null;
+  activity: { total: number; failed: number; by_module: RankedCount[] } | null;
 }
 
 export async function fetchMonthlyReport(month: string): Promise<MonthlyReport> {

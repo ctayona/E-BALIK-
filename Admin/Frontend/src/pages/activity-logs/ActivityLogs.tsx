@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import type { ActivityLog } from "../../data/types";
-import { fetchAdminActivityLogs, fetchAdminAdministratorActivityLogs, reportAdminProcess, type UserActivityLog } from "../../utils/api";
+import { downloadActivityLogs, fetchAdminActivityLogs, fetchAdminAdministratorActivityLogs, reportAdminProcess, type UserActivityLog } from "../../utils/api";
 import { isSuperAdmin as isSuperAdminRole } from "../../utils/permissions";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import { T } from "../../components/ui/management";
 
 import { tr } from "../../utils/preferences";
-type FilterType = "All Types" | "Lost Item" | "Found Item" | "Claim Actions" | "AI Matching" | "Admin & Security";
-const FILTER_TABS: FilterType[] = ["All Types", "Lost Item", "Found Item", "Claim Actions", "AI Matching", "Admin & Security"];
+type FilterType = "All Types" | "Lost Item" | "Found Item" | "Claim Actions" | "AI Matching" | "Auctions" | "Smart Tags" | "Payments" | "Admin & Security" | "System";
+const FILTER_TABS: FilterType[] = ["All Types", "Lost Item", "Found Item", "Claim Actions", "AI Matching", "Auctions", "Smart Tags", "Payments", "Admin & Security", "System"];
 
 const moduleColors: Record<string, { bg: string; text: string }> = {
   "Claims & Verification": { bg: "#eff6ff", text: "#2563eb" },
@@ -16,6 +16,13 @@ const moduleColors: Record<string, { bg: string; text: string }> = {
   "Admin Security": { bg: "#fef3c7", text: "#92400e" },
   Users: { bg: "#eff6ff", text: "#1d4ed8" },
   "AI Matching": { bg: "#f5f3ff", text: "#7c3aed" },
+  Auctions: { bg: "#fdf6e7", text: "#8a6320" },
+  "Smart Tags": { bg: "#ecfeff", text: "#0e7490" },
+  Income: { bg: "#ecfdf5", text: "#047857" },
+  "System Control": { bg: "#f1f5f9", text: "#334155" },
+  Reports: { bg: "#f1f5f9", text: "#334155" },
+  "Recycle Bin": { bg: "#f1f5f9", text: "#334155" },
+  "Release Desk": { bg: "#eff6ff", text: "#1d4ed8" },
 };
 
 const moduleToFilter: Record<string, FilterType> = {
@@ -23,6 +30,13 @@ const moduleToFilter: Record<string, FilterType> = {
   "Found Items": "Found Item",
   "Lost Items": "Lost Item",
   "AI Matching": "AI Matching",
+  Auctions: "Auctions",
+  "Smart Tags": "Smart Tags",
+  Income: "Payments",
+  "System Control": "System",
+  Reports: "System",
+  "Recycle Bin": "System",
+  "Release Desk": "Claim Actions",
   Users: "Admin & Security",
   "Admin Security": "Admin & Security",
 };
@@ -48,6 +62,9 @@ export default function ActivityLogs() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [adminLogView, setAdminLogView] = useState(false);
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
+  const [exporting, setExporting] = useState(false);
   const isSuperAdmin = isSuperAdminRole();
 
   useEffect(() => {
@@ -104,21 +121,16 @@ export default function ActivityLogs() {
     }
   };
 
-  const exportLogs = () => {
-    if (filtered.length === 0) {
-      reportAdminProcess({ success: false, title: "Export activity logs", message: "There are no matching records to export." });
-      return;
+  const exportLogs = async () => {
+    setExporting(true);
+    try {
+      await downloadActivityLogs(adminLogView ? "admin" : "user", exportFrom, exportTo);
+      reportAdminProcess({ success: true, title: "Export activity logs", message: exportFrom || exportTo ? tr("The activity log for the chosen dates was downloaded.") : tr("The latest activity log records were downloaded.") });
+    } catch (error) {
+      reportAdminProcess({ success: false, title: "Export activity logs", message: error instanceof Error ? error.message : "Unable to export the activity log." });
+    } finally {
+      setExporting(false);
     }
-    const columns: Array<keyof ActivityLog> = ["id", "timestamp", "admin", "adminId", "action", "module", "target", "targetId", "result"];
-    const escapeCsv = (value: string) => `"${value.replaceAll('"', '""')}"`;
-    const csv = [columns.join(","), ...filtered.map((log) => columns.map((key) => escapeCsv(String(log[key] ?? ""))).join(","))].join("\r\n");
-    const blobUrl = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = blobUrl;
-    link.download = `${adminLogView ? "admin" : "user"}-activity-logs.csv`;
-    link.click();
-    URL.revokeObjectURL(blobUrl);
-    reportAdminProcess({ success: true, title: "Export activity logs", message: tr("{0} records exported to CSV.", { "0": filtered.length }) });
   };
 
   if (loading) {
@@ -142,9 +154,15 @@ export default function ActivityLogs() {
         {isSuperAdmin && <button onClick={() => void toggleAdminLogs()} className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100">
           {adminLogView ? tr("View User Logs") : tr("View Admin / Superadmin Logs")}
         </button>}
-        <button onClick={exportLogs} className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border border-line rounded-lg hover:bg-navy-50 text-slate-700">
+        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">{tr("From")}
+          <input type="date" value={exportFrom} max={exportTo || undefined} onChange={(e) => setExportFrom(e.target.value)} className="rounded-lg border border-line px-2 py-2 text-sm font-normal text-slate-700" />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">{tr("To")}
+          <input type="date" value={exportTo} min={exportFrom || undefined} onChange={(e) => setExportTo(e.target.value)} className="rounded-lg border border-line px-2 py-2 text-sm font-normal text-slate-700" />
+        </label>
+        <button onClick={() => void exportLogs()} disabled={exporting} className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border border-line rounded-lg hover:bg-navy-50 text-slate-700 disabled:opacity-60">
           <svg width="15" height="15" fill="none" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          {tr("Export CSV")}
+          {exporting ? tr("Preparing…") : tr("Export CSV")}
         </button>
         </div>
       </div>

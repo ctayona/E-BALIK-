@@ -564,6 +564,26 @@ export function deleteAdminFoundItem(reference: string) {
   return adminItemMutation(`found-items/${encodeURIComponent(reference)}`, "DELETE");
 }
 
+/** Downloads the activity log as a CSV file made by the server (spreadsheet-safe, and the download itself is written to the log). */
+export async function downloadActivityLogs(scope: "user" | "admin", from: string, to: string): Promise<void> {
+  const query = new URLSearchParams({ scope });
+  if (from) query.set("from", from);
+  if (to) query.set("to", to);
+  const response = await fetch(`${API_URL}/api/admin/activity-logs/export?${query.toString()}`, { headers: getAuthHeaders() });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(typeof error.error === "string" ? error.error : "Unable to export the activity log");
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `ebalik-${scope}-activity-log.csv`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
 export async function fetchAdminActivityLogs(): Promise<UserActivityLog[]> {
   const response = await fetch(`${API_URL}/api/admin/activity-logs`, {
     headers: getAuthHeaders(),

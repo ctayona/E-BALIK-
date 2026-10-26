@@ -296,6 +296,41 @@ class MonthlyReportTests(unittest.TestCase):
         self.assertIn('Total income (PHP),1450.00', text)
         self.assertTrue(text.startswith('E-Balik monthly report,October 2026'))
 
+    def test_payments_auctions_people_and_activity_sections(self):
+        octo = '2026-10-10T04:00:00+00:00'
+        store = self.store()
+        store['income_ledger'][0]['method'] = 'gcash'
+        store['income_ledger'][1]['method'] = 'cash'
+        store['payment_proofs'] = [{'proof_id': 'p1', 'status': 'accepted', 'created_at': octo}, {'proof_id': 'p2', 'status': 'pending', 'created_at': octo},
+                                   {'proof_id': 'p3', 'status': 'rejected', 'created_at': '2026-09-02T04:00:00+00:00'}]
+        store['auctions'] = [{'auction_id': 'a1', 'status': 'ended', 'created_at': octo, 'finalized_at': octo}, {'auction_id': 'a2', 'status': 'live', 'created_at': octo, 'finalized_at': None}]
+        store['auction_bids'] = [{'bid_id': 'b1', 'created_at': octo}, {'bid_id': 'b2', 'created_at': octo}, {'bid_id': 'b3', 'created_at': '2026-09-03T04:00:00+00:00'}]
+        store['user_profiles'] = [{'account_id': 'u1', 'created_at': octo, 'verification_reviewed_at': octo}, {'account_id': 'u2', 'created_at': octo, 'verification_reviewed_at': None}]
+        store['user_activity_logs'] = [{'log_id': 'l1', 'module_name': 'Income', 'result': 'success', 'created_at': octo}, {'log_id': 'l2', 'module_name': 'Income', 'result': 'error', 'created_at': octo},
+                                       {'log_id': 'l3', 'module_name': 'Auctions', 'result': 'success', 'created_at': octo}]
+        report = monthly_report.build(make_db(store), '2026-10', today=date(2026, 10, 20))
+        pay = report['payments']
+        self.assertEqual((pay['confirmed'], pay['refunds'], pay['proofs_sent'], pay['proofs_waiting_now']), (2, 1, 2, 1))
+        self.assertEqual(pay['proofs_by_status'], {'accepted': 1, 'pending': 1})
+        self.assertEqual({e['method']: (e['count'], e['amount']) for e in pay['by_method']}, {'gcash': (1, 1500.0), 'cash': (1, 150.0), 'other': (1, -200.0)})
+        self.assertEqual(report['auctions'], {'listed': 2, 'by_status': {'ended': 1, 'live': 1}, 'bids': 2, 'finalized': 1})
+        self.assertEqual(report['people'], {'registered': 2, 'verifications_reviewed': 1})
+        self.assertEqual((report['activity']['total'], report['activity']['failed']), (3, 1))
+        self.assertEqual(report['activity']['by_module'][0], {'name': 'Income', 'count': 2})
+        text = monthly_report.to_csv(report)
+        for line in ('Payments,Payments confirmed,2', 'Payments by method (PHP),gcash,1500.00', 'Auction Hall,Bids placed,2', 'People,New accounts,2', 'Activity log by module,Income,2'):
+            self.assertIn(line, text)
+
+    def test_a_missing_new_table_leaves_only_its_section_out(self):
+        store = self.store()
+        store['missing'] = ('payment_proofs', 'auctions', 'user_activity_logs')
+        report = monthly_report.build(make_db(store), '2026-10', today=date(2026, 10, 20))
+        self.assertIsNone(report['payments'])
+        self.assertIsNone(report['auctions'])
+        self.assertIsNone(report['activity'])
+        self.assertEqual(report['figures']['income']['total'], 1450.0)
+        monthly_report.to_csv(report)
+
 
 class RouteTests(unittest.TestCase):
     def test_the_receipt_verification_is_public_and_throttled(self):

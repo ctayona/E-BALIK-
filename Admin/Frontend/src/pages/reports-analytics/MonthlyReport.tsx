@@ -14,6 +14,7 @@ const shiftMonth = (month: string, by: number) => {
   const moved = new Date(Date.UTC(year, number - 1 + by, 1));
   return `${moved.getUTCFullYear()}-${String(moved.getUTCMonth() + 1).padStart(2, "0")}`;
 };
+const PAYMENT_METHOD: Record<string, string> = { cash: "Cash", gcash: "GCash", maya: "Maya", bank: "Bank transfer", other: "Other" };
 const STATUS_LABEL: Record<string, string> = { pending: "Waiting for review", approved: "Approved", rejected: "Rejected", collected: "Collected", cancelled: "Cancelled", ready: "Ready for pickup" };
 
 /** How this month compares with the one before. Neutral colours on purpose: more lost reports is not "bad news" and more returns is not automatically "good". */
@@ -220,6 +221,67 @@ export default function MonthlyReportView() {
                   <div><p className="font-[family-name:var(--font-heading)] text-[22px] font-semibold tabular-nums leading-none text-ink">{report.smart_tags ? report.smart_tags.registered : "-"}</p><p className="mt-1 text-[12.5px] text-ink-muted">{tr("Smart Tags registered by owners")}</p></div>
                 </li>
               </ul>
+            </Panel>
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <Panel title={tr("Payments")} note={tr("Confirmed by an administrator, with the receipts payers sent")}>
+              {report.payments ? (
+                <>
+                  <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div><dt className="text-[12.5px] text-ink-muted">{tr("Confirmed")}</dt><dd className="font-[family-name:var(--font-heading)] text-[24px] font-semibold tabular-nums text-ink">{report.payments.confirmed}</dd></div>
+                    <div><dt className="text-[12.5px] text-ink-muted">{tr("Refunds")}</dt><dd className="font-[family-name:var(--font-heading)] text-[24px] font-semibold tabular-nums text-ink">{report.payments.refunds}</dd></div>
+                    <div><dt className="text-[12.5px] text-ink-muted">{tr("Receipts sent")}</dt><dd className="font-[family-name:var(--font-heading)] text-[24px] font-semibold tabular-nums text-ink">{report.payments.proofs_sent}</dd></div>
+                    <div><dt className="text-[12.5px] text-ink-muted">{tr("Waiting now")}</dt><dd className="font-[family-name:var(--font-heading)] text-[24px] font-semibold tabular-nums text-ink">{report.payments.proofs_waiting_now}</dd></div>
+                  </dl>
+                  {report.payments.by_method.length > 0 ? (
+                    <ul className="mt-4 space-y-2">
+                      {report.payments.by_method.map((entry) => (
+                        <li key={entry.method} className="flex items-baseline gap-3 text-[13.5px]"><span className="text-ink-soft">{tr(PAYMENT_METHOD[entry.method] ?? entry.method)}</span><span className="text-ink-muted">{tr("{0} entries", { "0": entry.count })}</span><span className="ml-auto font-semibold tabular-nums text-ink">{peso(entry.amount)}</span></li>
+                      ))}
+                    </ul>
+                  ) : <p className="mt-4 text-[13px] text-ink-muted">{tr("No payments were recorded this month.")}</p>}
+                </>
+              ) : <Unavailable what={tr("Payments")} />}
+            </Panel>
+
+            <Panel title={tr("Auction Hall")} note={tr("Auctions listed and bids placed this month")}>
+              {report.auctions ? (
+                <>
+                  <dl className="grid grid-cols-3 gap-3">
+                    <div><dt className="text-[12.5px] text-ink-muted">{tr("Listed")}</dt><dd className="font-[family-name:var(--font-heading)] text-[24px] font-semibold tabular-nums text-ink">{report.auctions.listed}</dd></div>
+                    <div><dt className="text-[12.5px] text-ink-muted">{tr("Finalized")}</dt><dd className="font-[family-name:var(--font-heading)] text-[24px] font-semibold tabular-nums text-ink">{report.auctions.finalized}</dd></div>
+                    <div><dt className="text-[12.5px] text-ink-muted">{tr("Bids placed")}</dt><dd className="font-[family-name:var(--font-heading)] text-[24px] font-semibold tabular-nums text-ink">{report.auctions.bids}</dd></div>
+                  </dl>
+                  {Object.keys(report.auctions.by_status).length > 0 && (
+                    <ul className="mt-4 flex flex-wrap gap-2">
+                      {Object.entries(report.auctions.by_status).sort((a, b) => b[1] - a[1]).map(([status, count]) => (
+                        <li key={status} className="rounded-full border border-line-strong bg-frost-50 px-3 py-1 text-[13px] capitalize text-ink-soft dark:bg-white/[0.05]"><span className="font-semibold tabular-nums text-ink">{count}</span> {tr(status.replaceAll("_", " "))}</li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : <Unavailable what={tr("Auction Hall")} />}
+            </Panel>
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <Panel title={tr("People")} note={tr("Accounts and ID checks this month")}>
+              {report.people ? (
+                <dl className="grid grid-cols-2 gap-3">
+                  <div><dt className="text-[12.5px] text-ink-muted">{tr("New accounts")}</dt><dd className="font-[family-name:var(--font-heading)] text-[24px] font-semibold tabular-nums text-ink">{report.people.registered}</dd></div>
+                  <div><dt className="text-[12.5px] text-ink-muted">{tr("ID verifications reviewed")}</dt><dd className="font-[family-name:var(--font-heading)] text-[24px] font-semibold tabular-nums text-ink">{report.people.verifications_reviewed}</dd></div>
+                </dl>
+              ) : <Unavailable what={tr("People")} />}
+            </Panel>
+
+            <Panel title={tr("Activity log")} note={tr("Everything recorded in the audit log this month")}>
+              {report.activity ? (
+                <>
+                  <p className="mb-3 font-[family-name:var(--font-heading)] text-[26px] font-semibold tabular-nums text-ink">{report.activity.total.toLocaleString()} <span className="text-[14px] font-normal text-ink-muted">{tr("actions, {0} failed", { "0": report.activity.failed })}</span></p>
+                  <Ranked title={tr("Busiest modules")} rows={report.activity.by_module} />
+                </>
+              ) : <Unavailable what={tr("Activity log")} />}
             </Panel>
           </div>
         </div>

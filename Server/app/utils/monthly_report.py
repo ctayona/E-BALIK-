@@ -168,6 +168,40 @@ def build(db, month: Any = None, today: Optional[date] = None) -> Dict[str, Any]
         return {'registered': _count(db, 'smart_tags', 'claimed_at', first, nxt), 'scans': None}
     report['smart_tags'] = _section('smart tags', tags)
 
+    def payments():
+        ledger = _rows(db, 'income_ledger', 'kind,method,amount', 'received_at', first, nxt)
+        by_method: Dict[str, Dict[str, Any]] = {}
+        for row in ledger:
+            amount = Decimal(str(row.get('amount') or 0))
+            entry = by_method.setdefault(str(row.get('method') or 'other'), {'count': 0, 'amount': Decimal('0')})
+            entry['count'] += 1
+            entry['amount'] += amount
+        proofs = _rows(db, 'payment_proofs', 'status', 'created_at', first, nxt)
+        waiting = int(db.client.table('payment_proofs').select('proof_id', count='exact').eq('status', 'pending').limit(1).execute().count or 0)
+        return {
+            'confirmed': sum(1 for r in ledger if r.get('kind') == 'sale'), 'refunds': sum(1 for r in ledger if r.get('kind') == 'refund'),
+            'adjustments': sum(1 for r in ledger if r.get('kind') == 'adjustment'),
+            'by_method': [{'method': m, 'count': v['count'], 'amount': float(v['amount'])} for m, v in sorted(by_method.items(), key=lambda kv: -kv[1]['count'])],
+            'proofs_sent': len(proofs), 'proofs_by_status': dict(Counter(str(r.get('status') or 'unknown') for r in proofs)), 'proofs_waiting_now': waiting,
+        }
+    report['payments'] = _section('payments', payments)
+
+    def auctions():
+        listed = _rows(db, 'auctions', 'status', 'created_at', first, nxt)
+        return {'listed': len(listed), 'by_status': dict(Counter(str(r.get('status') or 'unknown') for r in listed)),
+                'bids': _count(db, 'auction_bids', 'created_at', first, nxt), 'finalized': _count(db, 'auctions', 'finalized_at', first, nxt)}
+    report['auctions'] = _section('auctions', auctions)
+
+    def people():
+        return {'registered': _count(db, 'user_profiles', 'created_at', first, nxt), 'verifications_reviewed': _count(db, 'user_profiles', 'verification_reviewed_at', first, nxt)}
+    report['people'] = _section('people', people)
+
+    def activity():
+        rows = _rows(db, 'user_activity_logs', 'module_name,result', 'created_at', first, nxt)
+        return {'total': len(rows), 'failed': sum(1 for r in rows if str(r.get('result') or '').strip().lower() == 'error'),
+                'by_module': _top([r.get('module_name') for r in rows], 8)}
+    report['activity'] = _section('activity log', activity)
+
     def delta(current: Any, before: Any) -> Optional[float]:
         if current is None or before in (None, 0):
             return None
@@ -208,6 +242,32 @@ def to_csv(report: Dict[str, Any]) -> str:
         writer.writerow(['Still at the office', 'Total waiting', waiting['total']])
         for bucket in waiting['buckets']:
             writer.writerow(['Still at the office', bucket['label'], bucket['count']])
+    payments = report.get('payments')
+    if payments:
+        for label, key in (('Payments confirmed', 'confirmed'), ('Refunds recorded', 'refunds'), ('Adjustments recorded', 'adjustments'), ('Payment receipts sent by payers', 'proofs_sent'), ('Payment receipts waiting now', 'proofs_waiting_now')):
+            writer.writerow(['Payments', label, payments[key]])
+        for status, count in sorted(payments['proofs_by_status'].items()):
+            writer.writerow(['Payment receipts by result', csv_safe(status), count])
+        for entry in payments['by_method']:
+            writer.writerow(['Payments by method (count)', csv_safe(entry['method']), entry['count']])
+            writer.writerow(['Payments by method (PHP)', csv_safe(entry['method']), f"{entry['amount']:.2f}"])
+    auctions = report.get('auctions')
+    if auctions:
+        writer.writerow(['Auction Hall', 'Auctions listed', auctions['listed']])
+        writer.writerow(['Auction Hall', 'Auctions finalized', auctions['finalized']])
+        writer.writerow(['Auction Hall', 'Bids placed', auctions['bids']])
+        for status, count in sorted(auctions['by_status'].items()):
+            writer.writerow(['Auctions listed by status', csv_safe(status), count])
+    people = report.get('people')
+    if people:
+        writer.writerow(['People', 'New accounts', people['registered']])
+        writer.writerow(['People', 'ID verifications reviewed', people['verifications_reviewed']])
+    activity = report.get('activity')
+    if activity:
+        writer.writerow(['Activity log', 'Recorded actions', activity['total']])
+        writer.writerow(['Activity log', 'Actions that failed', activity['failed']])
+        for entry in activity['by_module']:
+            writer.writerow(['Activity log by module', csv_safe(entry['name']), entry['count']])
     if report.get('match_alerts'):
         writer.writerow(['Matching', 'Match alerts sent', report['match_alerts']['sent']])
     if report.get('smart_tags'):
