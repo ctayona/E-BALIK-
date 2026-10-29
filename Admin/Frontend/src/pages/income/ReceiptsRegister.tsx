@@ -11,8 +11,8 @@ import { METHOD_LABEL, ReceiptModal } from "./PaymentModals";
 
 type KindFilter = "" | ReceiptRow["kind"];
 const PAGE = 25;
-const KIND_LABEL: Record<ReceiptRow["kind"], string> = { payment: "Payment", claim: "Item handover", auction: "Auction collection" };
-const KIND_TONE: Record<ReceiptRow["kind"], Tone> = { payment: "gold", claim: "iris", auction: "mint" };
+const KIND_LABEL: Record<ReceiptRow["kind"], string> = { payment: "Payment", claim: "Item handover", auction: "Auction collection", payout: "Seller payout" };
+const KIND_TONE: Record<ReceiptRow["kind"], Tone> = { payment: "gold", claim: "iris", auction: "mint", payout: "slate" };
 
 /** Every receipt the office has issued (payments, item handovers, auction collections): search it, open it, print it, email it again, see its history. */
 export default function ReceiptsRegister() {
@@ -44,10 +44,11 @@ export default function ReceiptsRegister() {
           value={kind}
           onChange={setKind}
           options={[
-            { value: "", label: "All", count: counts ? counts.payment + counts.claim + counts.auction : undefined },
+            { value: "", label: "All", count: counts ? counts.payment + counts.claim + counts.auction + (counts.payout ?? 0) : undefined },
             { value: "payment", label: "Payments", count: counts?.payment },
             { value: "claim", label: "Item handovers", count: counts?.claim },
             { value: "auction", label: "Auction collections", count: counts?.auction },
+            { value: "payout", label: "Seller payouts", count: counts?.payout },
           ]}
         />
       </div>

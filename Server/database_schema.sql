@@ -758,3 +758,9 @@ ALTER TABLE public.missing_items ADD COLUMN IF NOT EXISTS image_features JSONB;
 -- 20261026: the income ledger is locked at the database level (no UPDATE that changes money, no DELETE, no TRUNCATE).
 -- The triggers trg_income_ledger_guard and trg_income_ledger_no_truncate are created by manual_migrations/20261026_income_ledger_lock.sql.
 -- ============================================================================
+
+-- ============================================================================
+-- 20261027: seller auctions. auction_submissions (seller listings, staff only), auctions.seller_account_id / submission_id,
+-- income_ledger kind 'payout' (the seller's share, negative, one per sale), seller_payouts (owed / paid, PO- receipts).
+-- Created by manual_migrations/20261027_seller_auctions.sql.
+-- ============================================================================

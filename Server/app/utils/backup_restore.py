@@ -31,7 +31,7 @@ BATCH = 200
 PASSES = 3
 PROTECTED = frozenset({'admin_mfa', 'admin_mfa_challenges', 'admin_mfa_recovery_codes', 'otp_tokens'})
 SENSITIVE = frozenset({'user_profiles', 'system_settings'})
-FIRST = ['user_profiles', 'system_settings', 'migration_log', 'found_items', 'missing_items', 'auctions', 'smart_tags', 'claims']
+FIRST = ['user_profiles', 'system_settings', 'migration_log', 'found_items', 'missing_items', 'auction_submissions', 'auctions', 'smart_tags', 'claims']
 SENSITIVE_PHRASE = 'RESTORE ACCOUNTS AND SETTINGS'
 # Tables the database itself refuses to change (migration 20261026): a restore only adds the entries that are missing and skips the rest.
 APPEND_ONLY = frozenset({'income_ledger'})

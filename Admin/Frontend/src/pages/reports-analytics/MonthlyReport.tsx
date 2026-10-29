@@ -93,6 +93,7 @@ export default function MonthlyReportView() {
   const incomeParts = income ? [
     { label: tr("Auction Hall"), value: income.auction, color: "#1f3160" },
     { label: tr("Smart Tags"), value: income.smart_tag, color: "#d1a153" },
+    ...(income.commission ? [{ label: tr("Seller commissions"), value: income.commission, color: "#c9784a" }] : []),
     { label: tr("Other"), value: income.other, color: "#0f8077" },
   ] : [];
   const incomeBase = Math.max(1, incomeParts.reduce((sum, part) => sum + Math.max(0, part.value), 0));
@@ -205,7 +206,7 @@ export default function MonthlyReportView() {
                       <li key={part.label} className="flex items-center gap-2 text-[13.5px]"><span className="size-2.5 shrink-0 rounded-full" style={{ background: part.color }} aria-hidden="true" /><span className="text-ink-soft">{part.label}</span><span className="ml-auto font-semibold tabular-nums text-ink">{peso(part.value)}</span></li>
                     ))}
                   </ul>
-                  <p className="mt-3 text-[12.5px] text-ink-muted">{tr("{0} auctions sold, {1} Smart Tags sold, refunds {2}.", { "0": income.auctions_sold, "1": income.tags_sold, "2": peso(income.refunds) })}</p>
+                  <p className="mt-3 text-[12.5px] text-ink-muted">{tr("{0} auctions sold, {1} Smart Tags sold, {2} members' items sold, refunds {3}.", { "0": income.auctions_sold, "1": income.tags_sold, "2": income.seller_sales ?? 0, "3": peso(income.refunds) })}</p>
                 </>
               ) : <Unavailable what={tr("Income")} />}
             </Panel>

@@ -31,6 +31,7 @@ export function notificationTarget(notification: UserNotification): { page: Page
   if (notification.link_page === 'receipts') return { page: 'claim', options: { openReceipts: true } };
   if (notification.link_page === 'profile') return { page: 'profile' };
   if (notification.link_page === 'auction-hall') return { page: 'auction-hall' };
+  if (notification.link_page === 'auction-selling') return { page: 'auction-hall', options: { auctionTab: 'selling' } };
   if (notification.link_page === 'my-reports') return { page: 'my-reports', options: { reportsTab: 'completed' } };
   if (opensSmartTags(notification)) return { page: 'my-tags' };
   return null;
@@ -44,7 +45,7 @@ export function notificationKind(notification: UserNotification): NotificationKi
   const title = String(notification.title || '').toLowerCase();
   if (type.endsWith('_rejection') || title.includes('not confirmed') || title.includes('rejected')) return 'rejected';
   if (opensSmartTags(notification) || type.includes('tag')) return 'tag';
-  if (type.includes('auction') || title.includes('auction') || notification.link_page === 'auction-hall') return 'auction';
+  if (type.includes('auction') || type.includes('seller') || title.includes('auction') || String(notification.link_page || '').startsWith('auction')) return 'auction';
   if (type.includes('claim') || notification.link_page === 'claim') return 'claim';
   if (type.includes('match') || title.includes('match')) return 'match';
   if (type.includes('verif') || notification.link_page === 'profile') return 'verification';

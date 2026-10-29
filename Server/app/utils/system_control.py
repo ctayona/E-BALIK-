@@ -40,6 +40,7 @@ DEFAULT_SETTINGS: Dict[str, Dict[str, Any]] = {
     'last_backup': {},
     'last_restore': {},
     'payment_instructions': {'text': ''},
+    'seller_auctions': {},
     'maintenance_windows': {'items': []},
     'page_locks': {},
     'announcement': {'live': False, 'tone': 'info', 'title': '', 'message': '', 'updated_at': None},
@@ -57,6 +58,8 @@ VERIFICATION_GATED = [
     ('POST', re.compile(r'^/api/(found-items|missing-items)/?$'), 'file a report'),
     ('POST', re.compile(r'^/api/claims/?$'), 'file a claim'),
     ('POST', re.compile(r'^/api/auctions/[^/]+/bids/?$'), 'place a bid'),
+    ('POST', re.compile(r'^/api/auctions/selling/?$'), 'list an item for auction'),
+    ('PUT', re.compile(r'^/api/auctions/selling/[^/]+/?$'), 'edit an auction listing'),
     ('POST', re.compile(r'^/api/feed/[^/]+/[^/]+/comments/?$'), 'comment on a report'),
     ('PUT', re.compile(r'^/api/feed/[^/]+/[^/]+/reaction/?$'), 'react to a report'),
 ]

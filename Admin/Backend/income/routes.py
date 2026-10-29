@@ -219,7 +219,7 @@ def receipts_list():
 def receipt_detail(kind, record_id):
     _require_admin()
     db, _ = _service()
-    builders = {'payment': receipts.receipt_for_payment, 'claim': receipts.receipt_for_claim, 'auction': receipts.receipt_for_auction}
+    builders = {'payment': receipts.receipt_for_payment, 'claim': receipts.receipt_for_claim, 'auction': receipts.receipt_for_auction, 'payout': receipts.receipt_for_payout}
     if kind not in builders:
         raise IncomeError('Unknown receipt type.', 404, 'not_found')
     receipt = builders[kind](db, record_id)

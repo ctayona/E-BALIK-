@@ -27,7 +27,7 @@ from backup_database import BackupError, decrypt_file, http, load_env  # noqa: E
 BATCH = 500
 PASSES = 4
 # Tables other tables point at come first; anything not listed follows alphabetically and is retried until it fits.
-FIRST = ['user_profiles', 'system_settings', 'migration_log', 'found_items', 'missing_items', 'auctions', 'smart_tags', 'claims']
+FIRST = ['user_profiles', 'system_settings', 'migration_log', 'found_items', 'missing_items', 'auction_submissions', 'auctions', 'smart_tags', 'claims']
 
 
 def read_backup(path: Path, passphrase: str, workdir: Path) -> zipfile.ZipFile:

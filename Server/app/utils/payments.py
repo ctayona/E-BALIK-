@@ -13,6 +13,9 @@ administrator in the queue) or the administrator can attach one while confirming
 A wrong confirmation is not edited: a super administrator REVERSES it, which adds a refund row linked to the receipt (the receipt then
 verifies as reversed). Auctions can still be handed over before payment is confirmed, so the desk is never blocked; those items are
 flagged "released, payment not confirmed" until someone confirms them.
+A SELLER'S auction (someone's own item, see seller_auctions.py) is confirmed the same way, but the seller's share is written to the ledger
+in the same insert as the sale (kind 'payout', negative), so income counts only the office's commission, and a payout is opened for the
+seller. Reversing it also cancels the seller's share; it is refused once the seller has been paid.
 """
 import logging
 import uuid
@@ -48,7 +51,7 @@ class PaymentDesk:
     def _record(self, source: str, ref: str) -> Dict[str, Any]:
         """The authoritative amount, payer and description for an auction or tag, or an IncomeError saying why there is nothing to confirm."""
         if source == 'auction':
-            rows = self.client.table('auctions').select('auction_id,title,item_reference,winning_amount,winner_account_id,fulfillment_status').eq('auction_id', ref).limit(1).execute().data or []
+            rows = self._auction_rows('auction_id,title,item_reference,winning_amount,winner_account_id,fulfillment_status', lambda q: q.eq('auction_id', ref).limit(1))
             if not rows:
                 raise IncomeError('This auction was not found.', 404, 'not_found')
             row = rows[0]
@@ -58,7 +61,8 @@ class PaymentDesk:
             if not row.get('winner_account_id') or row.get('fulfillment_status') not in ('awaiting_pickup', 'collected'):
                 raise IncomeError('There is no winner payment to confirm for this auction (it has no winner, or it was forfeited).', 409, 'nothing_owed')
             return {'source': 'auction', 'ref': str(row['auction_id']), 'title': row.get('title') or 'Auction item', 'description': f"Auction: {row.get('title') or 'item'}",
-                    'payer': row.get('winner_account_id'), 'amount': amount, 'released': row.get('fulfillment_status') == 'collected', 'item_reference': row.get('item_reference') or ''}
+                    'payer': row.get('winner_account_id'), 'amount': amount, 'released': row.get('fulfillment_status') == 'collected', 'item_reference': row.get('item_reference') or '',
+                    'seller': row.get('seller_account_id'), 'auction': row}
         rows = self.client.table('smart_tags').select('tag_id,status,price,paid_at,is_disabled,owner_account_id,item_name').eq('tag_id', ref).limit(1).execute().data or []
         if not rows:
             raise IncomeError('This Smart Tag was not found.', 404, 'not_found')
@@ -72,6 +76,21 @@ class PaymentDesk:
             raise IncomeError('This Smart Tag is disabled.', 409, 'nothing_owed')
         return {'source': 'smart_tag', 'ref': str(row['tag_id']), 'title': row.get('item_name') or 'Smart Tag', 'description': f"Smart Tag {row['tag_id']} ({row.get('item_name') or 'item'})",
                 'payer': row.get('owner_account_id'), 'amount': amount, 'released': False, 'item_reference': str(row['tag_id'])}
+
+    def _auction_rows(self, columns: str, narrow: Callable) -> List[Dict[str, Any]]:
+        """Auctions with their seller columns, or without them on a database that has not run the seller auctions migration yet."""
+        try:
+            return narrow(self.client.table('auctions').select(columns + ',seller_account_id,submission_id')).execute().data or []
+        except Exception as error:
+            if 'seller_account_id' not in str(error) and 'submission_id' not in str(error):
+                raise
+            return narrow(self.client.table('auctions').select(columns)).execute().data or []
+
+    def _seller_split(self, auction: Dict[str, Any], amount: Decimal) -> Optional[Dict[str, Any]]:
+        if not auction.get('seller_account_id'):
+            return None
+        from app.utils.seller_auctions import SellerDesk
+        return SellerDesk(self.db).split_for(auction, amount)
 
     def _sales(self, source: str, refs: List[str]) -> Dict[str, Dict[str, Any]]:
         if not refs:
@@ -88,8 +107,8 @@ class PaymentDesk:
         """Everything that is owed and not yet confirmed: auction winners and registered priced Smart Tags."""
         items: List[Dict[str, Any]] = []
         try:
-            auctions = self.client.table('auctions').select('auction_id,title,item_reference,winning_amount,winner_account_id,fulfillment_status,fulfillment_updated_at,ended_at') \
-                .eq('status', 'ended').in_('fulfillment_status', ['awaiting_pickup', 'collected']).not_.is_('winner_account_id', 'null').limit(MAX_ROWS).execute().data or []
+            auctions = self._auction_rows('auction_id,title,item_reference,winning_amount,winner_account_id,fulfillment_status,fulfillment_updated_at,ended_at',
+                                          lambda q: q.eq('status', 'ended').in_('fulfillment_status', ['awaiting_pickup', 'collected']).not_.is_('winner_account_id', 'null').limit(MAX_ROWS))
         except Exception as error:
             logger.info('Auction payments unavailable: %s', str(error)[:120])
             auctions = []
@@ -99,9 +118,17 @@ class PaymentDesk:
             if str(a['auction_id']) in paid:
                 continue
             released = a.get('fulfillment_status') == 'collected'
+            split = None
+            if a.get('seller_account_id'):
+                try:
+                    split = self._seller_split(a, Decimal(str(a['winning_amount'])))
+                except Exception as error:
+                    logger.info('Seller split unavailable: %s', str(error)[:120])
             items.append({'source': 'auction', 'source_ref': str(a['auction_id']), 'title': a.get('title') or 'Auction item', 'reference': a.get('item_reference') or '',
                           'payer_account_id': a.get('winner_account_id'), 'amount': float(Decimal(str(a['winning_amount']))), 'released': released,
-                          'state': 'released' if released else 'awaiting_pickup', 'since': a.get('fulfillment_updated_at') or a.get('ended_at')})
+                          'state': 'released' if released else 'awaiting_pickup', 'since': a.get('fulfillment_updated_at') or a.get('ended_at'),
+                          'seller_listing': bool(a.get('seller_account_id')),
+                          'seller_split': {'commission': float(split['commission']), 'share': float(split['share']), 'rate': float(split['rate'])} if split else None})
         try:
             tags = self.client.table('smart_tags').select('tag_id,status,price,paid_at,is_disabled,owner_account_id,item_name').neq('status', 'blank').not_.is_('owner_account_id', 'null').limit(MAX_ROWS).execute().data or []
         except Exception as error:
@@ -202,6 +229,7 @@ class PaymentDesk:
         existing = self._sales(source, [record['ref']]).get(record['ref'])
         if existing:
             raise IncomeError(f"This payment was already confirmed (receipt {existing.get('receipt_no') or 'on file'}).", 409, 'already_confirmed')
+        split = self._seller_split(record['auction'], record['amount']) if source == 'auction' and record.get('seller') else None
         uploaded = None
         if proof_data and not proof_row:
             uploaded = self._store_image(record['ref'], proof_data)        # validated and stored before the sale is written
@@ -215,8 +243,15 @@ class PaymentDesk:
         }
         if proof_path:
             row['proof_path'] = proof_path
+        rows = [row]
+        if split and split['share'] > 0:
+            # The seller's share is not the office's income. Same keys as the sale, one insert: both rows are written or neither is.
+            rows.append({**row, 'kind': 'payout', 'amount': str(-split['share']), 'payer_account_id': str(record['seller']), 'payment_reference': None,
+                         'receipt_no': None, 'notes': f"Owed to the seller ({float(split['rate']):g}% office fee ₱{split['commission']:,.2f} kept)",
+                         'description': f"Seller's share: {record['title']}"[:255], **({'proof_path': None} if proof_path else {})})
         try:
-            entry = (self.client.table('income_ledger').insert(row).execute().data or [row])[0]
+            written = self.client.table('income_ledger').insert(rows if len(rows) > 1 else row).execute().data or rows
+            entry = next((r for r in written if r.get('kind') == 'sale'), written[0])
         except Exception as error:
             self._remove_image(uploaded)
             text = str(error).lower()
@@ -226,6 +261,8 @@ class PaymentDesk:
                 raise IncomeUnavailable(PROOF_SETUP) from error
             if 'payment_reference' in text:
                 raise IncomeUnavailable(SETUP_MESSAGE) from error
+            if 'kind' in text and ('check' in text or '23514' in text):
+                raise IncomeUnavailable('Seller auctions are not set up yet. Run Server/manual_migrations/20261027_seller_auctions.sql in Supabase.') from error
             if _missing_schema(error):
                 raise IncomeUnavailable('Income tracking is not set up yet. Run Server/manual_migrations/20261022_income_ledger.sql in Supabase.') from error
             raise
@@ -235,6 +272,9 @@ class PaymentDesk:
             except Exception as error:
                 logger.warning('Smart Tag %s paid_at not saved: %s', record['ref'], error)
         self._close_proofs(source, record['ref'], accepted=proof_row, admin_id=admin_id)
+        if split:
+            from app.utils.seller_auctions import SellerDesk
+            SellerDesk(self.db).open_payout(record['auction'], entry, split)
         receipt = receipts.receipt_for_payment(self.db, entry['entry_id'])
         self._notify_paid(record, receipt)
         return {'entry': entry, 'receipt': receipt}
@@ -294,6 +334,13 @@ class PaymentDesk:
         linked = self.client.table('income_ledger').select('entry_id').eq('kind', 'refund').eq('receipt_no', number).limit(1).execute().data or []
         if linked:
             raise IncomeError('This payment was already reversed.', 409, 'already_reversed')
+        share = self._seller_share(sale)
+        if share:
+            from app.utils.seller_auctions import SellerDesk
+            payout = SellerDesk(self.db).payout_for(sale.get('source_ref'))
+            if payout and payout.get('status') == 'paid':
+                raise IncomeError(f"The seller was already paid for this sale (receipt {payout.get('receipt_no')}). Recover the money from the seller first, "
+                                  'then record the refund as a manual adjustment.', 409, 'seller_paid')
         if before_commit:
             before_commit()
         now = datetime.now(timezone.utc)
@@ -302,12 +349,20 @@ class PaymentDesk:
             'amount': str(-Decimal(str(sale['amount']))), 'payer_account_id': sale.get('payer_account_id'), 'method': sale.get('method') or 'cash', 'receipt_no': number,
             'notes': reason, 'recorded_by': str(admin_id), 'received_at': now.isoformat(),
         }
+        rows = [row]
+        if share:
+            rows.append({**row, 'kind': 'payout', 'amount': str(-Decimal(str(share['amount']))), 'payer_account_id': share.get('payer_account_id'),
+                         'receipt_no': None, 'description': f"Seller's share cancelled ({number} reversed)"[:255]})
         try:
-            entry = (self.client.table('income_ledger').insert(row).execute().data or [row])[0]
+            written = self.client.table('income_ledger').insert(rows if len(rows) > 1 else row).execute().data or rows
+            entry = next((r for r in written if r.get('kind') == 'refund'), written[0])
         except Exception as error:
             if _missing_schema(error):
                 raise IncomeUnavailable('Income tracking is not set up yet.') from error
             raise
+        if share:
+            from app.utils.seller_auctions import SellerDesk
+            SellerDesk(self.db).cancel_payout(sale.get('source_ref'), reason)
         if sale.get('payer_account_id'):
             try:
                 self.db.create_user_notification(
@@ -317,6 +372,19 @@ class PaymentDesk:
             except Exception as error:
                 logger.warning('Reversal notice failed: %s', error)
         return {'entry': entry, 'receipt_no': number}
+
+    def _seller_share(self, sale: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """The seller's share written with this sale, if it was a seller's auction and the share was not cancelled already."""
+        if sale.get('source') != 'auction' or not sale.get('source_ref'):
+            return None
+        try:
+            rows = self.client.table('income_ledger').select('entry_id,amount,payer_account_id').eq('source', 'auction').eq('kind', 'payout').eq('source_ref', sale['source_ref']).execute().data or []
+        except Exception:
+            return None
+        owed = [r for r in rows if Decimal(str(r.get('amount') or 0)) < 0]
+        if not owed or any(Decimal(str(r.get('amount') or 0)) > 0 for r in rows):
+            return None
+        return owed[0]
 
     # ------------------------------------------------------------------ the log
     def activity(self, limit: Any = 100) -> List[Dict[str, Any]]:

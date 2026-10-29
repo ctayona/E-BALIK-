@@ -285,6 +285,7 @@ class AuctionService:
             'sold': bool(winner_id) and status == 'ended',
             'awaiting_admin': status == 'awaiting',
             'cancel_reason': row.get('cancel_reason') if status == 'cancelled' else None,
+            'seller_listing': bool(row.get('seller_account_id')),
         }
 
     # ------------------------------------------------------------------ settlement
@@ -587,7 +588,7 @@ class AuctionService:
         except Exception as error:
             self._guard(error)
         rows = live + past
-        profiles = self._profiles([r.get(k) for r in rows for k in ('highest_bidder_id', 'winner_account_id')])
+        profiles = self._profiles([r.get(k) for r in rows for k in ('highest_bidder_id', 'winner_account_id', 'seller_account_id')])
         reactions = self.reaction_counts([str(r['auction_id']) for r in rows])
         cards = [self.card(r, profiles, now, reactions=reactions) for r in rows]
         return {
@@ -728,7 +729,7 @@ class AuctionService:
                 rows += self.client.table('auctions').select('*').in_('auction_id', chunk).execute().data or []
         except Exception as error:
             self._guard(error)
-        profiles = self._profiles([r.get(k) for r in rows for k in ('highest_bidder_id', 'winner_account_id')])
+        profiles = self._profiles([r.get(k) for r in rows for k in ('highest_bidder_id', 'winner_account_id', 'seller_account_id')])
         items = []
         for row in rows:
             card = self.card(row, profiles, now)
@@ -759,6 +760,15 @@ class AuctionService:
                 403, code='bidding_banned', banned_until=_iso(until),
             )
 
+    def _assert_not_seller(self, auction_id: str, account_id: str) -> None:
+        """A seller may not bid on their own item (it would push the price up for real buyers). Quietly allows it before seller auctions exist."""
+        try:
+            rows = self.client.table('auctions').select('seller_account_id').eq('auction_id', auction_id).limit(1).execute().data or []
+        except Exception:
+            return
+        if rows and rows[0].get('seller_account_id') and str(rows[0]['seller_account_id']) == str(account_id):
+            raise AuctionError('This is your own item, so you cannot bid on it.', 403, code='own_item')
+
     @staticmethod
     def _step_message(step: float, suggested: float) -> str:
         return f"Bids go up in exact steps of {format_peso(step)} from the starting bid. The next bid you can place is {format_peso(suggested)} (or any higher step)."
@@ -783,6 +793,7 @@ class AuctionService:
         except (InvalidOperation, ValueError):
             raise AuctionError('Enter a valid bid amount.')
         self._assert_can_bid(account_id)
+        self._assert_not_seller(auction_id, account_id)
         self._assert_on_step(auction_id, value)
         try:
             response = self.client.rpc('auction_place_bid', {'p_auction_id': auction_id, 'p_bidder_id': account_id, 'p_amount': value}).execute()
@@ -969,6 +980,46 @@ class AuctionService:
         self._log_item(item['item_id'], 'auction_listed', admin_id, f"Starting bid {format_peso(starting)}.")
         return created[0]
 
+    def create_seller_auction(self, submission: Dict[str, Any], payload: Dict[str, Any], admin_id: str) -> Dict[str, Any]:
+        """The auction for a seller's listing the office approved. The seller's price, buy-now and length are used; the office may set the
+        start time and the bid step. There is no found item behind it, so custody rules do not apply."""
+        from app.utils.seller_auctions import default_increment
+        now = _now()
+        starting = parse_money(submission.get('starting_price'), 'starting bid')
+        increment = parse_money(payload.get('bid_increment') or default_increment(starting), 'bid increment', maximum=Decimal('1000000'))
+        days = int(submission.get('duration_days') or 3)
+        duration = parse_int(payload.get('duration_minutes') or days * 1440, 'auction length in minutes', MIN_DURATION_MINUTES, MAX_DURATION_MINUTES)
+        starts = _parse(payload.get('starts_at')) or now
+        if starts < now - timedelta(minutes=2):
+            starts = now
+        if starts > now + timedelta(days=30):
+            raise AuctionError('The start time can be at most 30 days away.')
+        ends = starts + timedelta(minutes=duration)
+        buyout = parse_buyout(submission.get('buyout_price'), starting) if submission.get('buyout_price') is not None else None
+        photos = [u for u in (submission.get('photo_urls') or []) if isinstance(u, str) and u]
+        if not photos:
+            raise AuctionError('The listing has no photos.')
+        row = {
+            'found_item_id': None, 'item_reference': f"SL-{str(submission['submission_id'])[:8].upper()}",
+            'title': str(submission.get('title') or 'Item')[:255], 'description': str(submission.get('description') or '')[:2000],
+            'category': submission.get('category'), 'found_location': None, 'image_url': photos[0], 'gallery_urls': photos[1:MAX_GALLERY_IMAGES + 1],
+            'starting_price': float(starting), 'bid_increment': float(increment), 'current_price': float(starting),
+            'starts_at': _iso(starts), 'ends_at': _iso(ends), 'original_ends_at': _iso(ends),
+            'anti_snipe_enabled': True, 'anti_snipe_window_seconds': 300, 'anti_snipe_extension_seconds': 300, 'max_extensions': 10,
+            'status': 'scheduled' if starts > now else 'active', 'created_by': admin_id,
+            'seller_account_id': str(submission['seller_account_id']), 'submission_id': str(submission['submission_id']),
+        }
+        if buyout is not None:
+            row['buyout_price'] = float(buyout)
+        try:
+            created = self.client.table('auctions').insert(row).execute().data or []
+        except Exception as error:
+            from app.utils.seller_auctions import SETUP_MESSAGE, SellerUnavailable, _missing_schema as seller_schema_missing
+            if seller_schema_missing(error):
+                raise SellerUnavailable(SETUP_MESSAGE) from error
+            self._guard(error)
+        return created[0]
+
     # ------------------------------------------------------------------ admin: reads
     @staticmethod
     def stage_of(card: Dict[str, Any], row: Dict[str, Any]) -> str:
@@ -1001,6 +1052,8 @@ class AuctionService:
                 'pickup_warning_sent_at': row.get('pickup_warning_sent_at'), 'auto_forfeited_at': row.get('auto_forfeited_at'),
                 'cancelled_at': row.get('cancelled_at'), 'ended_at': row.get('ended_at'), 'created_at': row.get('created_at'),
                 'finalized_at': row.get('finalized_at'), 'reauctioned_from': str(row['reauctioned_from']) if row.get('reauctioned_from') else None, 'reauction_reason': row.get('reauction_reason'),
+                'seller_detail': person(profiles.get(str(row['seller_account_id']))) if row.get('seller_account_id') else None,
+                'submission_id': str(row['submission_id']) if row.get('submission_id') else None,
                 'leader': (person(leader) or {}).get('name') or card['leader'],
                 'leader_detail': person(leader), 'winner_detail': person(winner) if card['status'] == 'ended' else None,
                 'winner': (person(winner) or {}).get('name') if card['status'] == 'ended' and winner else None}
@@ -1013,7 +1066,7 @@ class AuctionService:
             rows = self.client.table('auctions').select('*').order('created_at', desc=True).limit(300).execute().data or []
         except Exception as error:
             self._guard(error)
-        profiles = self._profiles([r.get(k) for r in rows for k in ('highest_bidder_id', 'winner_account_id')])
+        profiles = self._profiles([r.get(k) for r in rows for k in ('highest_bidder_id', 'winner_account_id', 'seller_account_id')])
         reactions = self.reaction_counts([str(r['auction_id']) for r in rows])
         cards = [self._admin_card(r, profiles, now, reactions) for r in rows]
         claimed_items = self._items_with_open_claims([str(r['found_item_id']) for r in rows if r.get('found_item_id') and r.get('status') in OPEN_STATUSES])
@@ -1034,6 +1087,10 @@ class AuctionService:
             card['payment_receipt_no'] = confirmed['receipt_no'] if confirmed else None
             card['payment_tracking'] = paid is not None
         owed = [c for c in sold if c['id'] not in (paid or {}) and c['fulfillment_status'] in ('awaiting_pickup', 'collected')]
+        seller_ids = {c['id'] for c in cards if c.get('seller_listing')}
+        commission = self._seller_commissions([i for i in (paid or {}) if i in seller_ids])
+        office_sales = sum(v['amount'] for k, v in (paid or {}).items() if k not in seller_ids)
+        seller_gross = sum(v['amount'] for k, v in (paid or {}).items() if k in seller_ids)
         cards_in_play = [c for c in cards if not c['archived']]
         stats = {
             'live': sum(1 for c in cards if c['status'] == 'live'),
@@ -1045,13 +1102,27 @@ class AuctionService:
             'archived': archived_total,
             'reauction_ready': sum(1 for c in cards_in_play if c.get('reauction_ready')),
             'total_bids': sum(c['bid_count'] for c in cards),
-            'sales_total': round(sum(v['amount'] for v in (paid or {}).values()), 2),
+            'sales_total': round(office_sales + commission, 2),
             'sales_count': len(paid or {}),
+            'office_sales_total': round(office_sales, 2),
+            'seller_sales_total': round(seller_gross, 2),
+            'seller_commission_total': round(commission, 2),
+            'seller_listings': len(seller_ids),
             'awaiting_payment_total': round(sum(c['winning_amount'] or 0 for c in owed), 2),
             'awaiting_payment_count': len(owed),
             'payment_tracking': paid is not None,
         }
         return {'auctions': cards, 'stats': stats, 'server_time': _iso(now), 'min_custody_days': MIN_CUSTODY_DAYS}
+
+    def _seller_commissions(self, auction_ids: List[str]) -> float:
+        """What the office kept from these sellers' sales (the payout rows say it exactly). 0 when there are none or before seller auctions exist."""
+        if not auction_ids:
+            return 0.0
+        try:
+            rows = self.client.table('seller_payouts').select('commission,status').in_('auction_id', auction_ids).execute().data or []
+        except Exception:
+            return 0.0
+        return float(sum(Decimal(str(r.get('commission') or 0)) for r in rows if r.get('status') in ('holding', 'paid')))
 
     def _items_with_open_claims(self, item_ids: List[str]) -> set:
         """Which of these found items have an ownership claim waiting or approved. Empty on any error."""
@@ -1093,7 +1164,7 @@ class AuctionService:
         except Exception as error:
             self._guard(error)
         row = rows[0]
-        profiles = self._profiles([row.get('highest_bidder_id'), row.get('winner_account_id'), *(b.get('bidder_account_id') for b in bids), *(c.get('account_id') for c in comments)])
+        profiles = self._profiles([row.get('highest_bidder_id'), row.get('winner_account_id'), row.get('seller_account_id'), *(b.get('bidder_account_id') for b in bids), *(c.get('account_id') for c in comments)])
 
         def who(account_id):
             profile = profiles.get(str(account_id)) if account_id else None
@@ -1464,6 +1535,8 @@ class AuctionService:
                 'anti_snipe_window_seconds': window, 'anti_snipe_extension_seconds': extension, 'max_extensions': max_extensions,
                 'status': 'active', 'created_by': admin_id, 'reauctioned_from': auction_id,
             }
+            if row.get('seller_account_id'):
+                fresh.update(seller_account_id=row['seller_account_id'], submission_id=row.get('submission_id'))
             try:
                 created = self.client.table('auctions').insert(fresh).execute().data or []
             except Exception:
@@ -1482,6 +1555,11 @@ class AuctionService:
             self._log_item(row.get('found_item_id'), 'auction_forfeited', admin_id, reason)
             self._log_item(row.get('found_item_id'), 'returned_to_custody', admin_id, 'The item is back in custody and is being auctioned again.')
         self._log_item(row.get('found_item_id'), 'auction_listed', admin_id, f'Listed again (re-auction) from {format_peso(starting)}.')
+        if row.get('submission_id'):
+            try:   # the seller's listing now follows the new auction
+                self.client.table('auction_submissions').update({'auction_id': created[0]['auction_id']}).eq('submission_id', row['submission_id']).execute()
+            except Exception as error:
+                logger.warning('Seller listing not moved to the re-auction: %s', error)
         return {'old': closed[0], 'new': created[0], 'previous_winner_id': row.get('winner_account_id')}
 
     def delete_auction(self, auction_id: str, admin_id: Optional[str] = None) -> Dict[str, Any]:

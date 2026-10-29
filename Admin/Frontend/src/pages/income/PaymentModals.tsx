@@ -16,7 +16,9 @@ export const METHOD_LABEL: Record<IncomeMethod, string> = { cash: "Cash", gcash:
 const NEEDS_REFERENCE: IncomeMethod[] = ["gcash", "maya", "bank"];
 
 /** What is being paid for. Amounts here are only shown: the server reads the real amount again and refuses a stale one. */
-export interface PayableItem { source: "auction" | "smart_tag"; source_ref: string; title: string; amount: number; payer_name: string; released?: boolean; proof?: PaymentProof | null }
+export interface PayableItem { source: "auction" | "smart_tag"; source_ref: string; title: string; amount: number; payer_name: string; released?: boolean; proof?: PaymentProof | null;
+  /** A seller's item: only the commission becomes income, the rest is held for the seller. */
+  seller_split?: { commission: number; share: number; rate: number } | null }
 
 function Line({ label, value }: { label: string; value: string }) {
   return <div className="min-w-0"><dt className="text-[12.5px] font-medium text-ink-muted">{label}</dt><dd className="mt-0.5 break-words text-[14.5px] font-semibold text-ink">{value}</dd></div>;
@@ -41,7 +43,8 @@ function ProofImage({ load, label }: { load: () => Promise<string>; label: strin
 export function ReceiptCard({ receipt }: { receipt: PaymentReceipt }) {
   const print = () => { if (!printPaymentReceipt(receipt)) showInfoModal({ variant: "warning", title: tr("Pop-up blocked"), message: tr("Allow pop-ups for this site, then press Print again.") }); };
   const payment = receipt.kind === "payment";
-  const title = payment ? tr("Official payment receipt") : receipt.kind === "auction" ? tr("Auction collection receipt") : tr("Handover receipt");
+  const payout = receipt.kind === "payout";
+  const title = payment ? tr("Official payment receipt") : payout ? tr("Seller payout receipt") : receipt.kind === "auction" ? tr("Auction collection receipt") : tr("Handover receipt");
   return (
     <article className="overflow-hidden rounded-2xl border border-navy-800/25 bg-[var(--surface)]" aria-label={tr("Receipt {0}", { "0": receipt.receipt_no })}>
       <header className="border-b-4 border-gold-400 bg-[linear-gradient(135deg,#22366a_0%,#162448_100%)] px-5 py-4 text-white">
@@ -57,12 +60,14 @@ export function ReceiptCard({ receipt }: { receipt: PaymentReceipt }) {
         </div>
         <dl className="grid gap-x-6 gap-y-3.5 sm:grid-cols-2">
           <Line label={tr("Item")} value={receipt.item.name} />
-          {receipt.amount ? <Line label={payment ? tr("Amount received") : tr("Amount paid")} value={peso(receipt.amount)} /> : null}
-          <Line label={payment ? tr("Received from") : tr("Released to")} value={receipt.released_to || "-"} />
-          {payment && receipt.method && <Line label={tr("Paid by")} value={tr(METHOD_LABEL[receipt.method] ?? receipt.method)} />}
-          {receipt.payment_reference && <Line label={tr("Payment reference")} value={receipt.payment_reference} />}
+          {payout && receipt.gross ? <Line label={tr("Sold for")} value={peso(receipt.gross)} /> : null}
+          {payout && receipt.gross ? <Line label={tr("Office fee ({0}%)", { "0": receipt.commission_rate ?? 0 })} value={peso(receipt.commission ?? 0)} /> : null}
+          {receipt.amount ? <Line label={payment ? tr("Amount received") : payout ? tr("Amount sent to the seller") : tr("Amount paid")} value={peso(receipt.amount)} /> : null}
+          <Line label={payment ? tr("Received from") : payout ? tr("Paid to") : tr("Released to")} value={receipt.released_to || "-"} />
+          {(payment || payout) && receipt.method && <Line label={payout ? tr("Sent by") : tr("Paid by")} value={tr(METHOD_LABEL[receipt.method] ?? receipt.method)} />}
+          {receipt.payment_reference && <Line label={payout ? tr("Transfer reference") : tr("Payment reference")} value={receipt.payment_reference} />}
           <Line label={tr("Date and time")} value={formatDateTime(receipt.released_at)} />
-          <Line label={payment ? tr("Received by") : tr("Released by")} value={receipt.released_by} />
+          <Line label={payment ? tr("Received by") : payout ? tr("Paid by") : tr("Released by")} value={receipt.released_by} />
         </dl>
         <button type="button" onClick={print} className={`${BTN.primary} w-full`}><Printer size={16} aria-hidden="true" />{tr("Print or save as PDF")}</button>
       </div>
@@ -137,6 +142,9 @@ export function ConfirmPaymentModal({ item, onClose, onConfirmed }: { item: Paya
           <p className="mt-1 font-[family-name:var(--font-heading)] text-[32px] font-semibold leading-none tabular-nums text-ink">{peso(item.amount)}</p>
           <p className="mt-2 text-[13.5px] text-ink-soft">{tr("Payer: {0}", { "0": item.payer_name || tr("Unknown") })}</p>
           {item.released && <p className="mt-2 rounded-lg bg-gold-50 px-3 py-2 text-[13px] font-medium text-gold-800 dark:bg-gold-500/10 dark:text-gold-200">{tr("This item was already handed over. Confirm only if the payment was really received.")}</p>}
+          {item.seller_split && (
+            <p className="mt-2 rounded-lg bg-frost-100 px-3 py-2 text-[13px] text-ink-soft dark:bg-white/[0.06]">{tr("A seller's item. The office keeps {0} ({1}% fee) as revenue; {2} is held for the seller and paid out under Seller payouts after pickup.", { "0": peso(item.seller_split.commission), "1": item.seller_split.rate, "2": peso(item.seller_split.share) })}</p>
+          )}
         </div>
 
         <label className="block"><span className="mb-1.5 block text-[14px] font-semibold text-ink-soft">{tr("How was it paid?")}</span>
@@ -244,7 +252,7 @@ export function ReverseModal({ entryId, receiptNo, amount, onClose, onDone }: { 
 }
 
 /** One receipt of any kind, with what the office did with it, the payment receipt image kept with it, and (for payments) re-send and reverse. */
-export function ReceiptModal({ kind, id, onClose, onChanged }: { kind: "payment" | "claim" | "auction"; id: string; onClose: () => void; onChanged?: () => void }) {
+export function ReceiptModal({ kind, id, onClose, onChanged }: { kind: "payment" | "claim" | "auction" | "payout"; id: string; onClose: () => void; onChanged?: () => void }) {
   const superAdmin = canDelete();
   const [data, setData] = useState<{ receipt: PaymentReceipt; history: ReceiptHistory[] } | null>(null);
   const [error, setError] = useState("");

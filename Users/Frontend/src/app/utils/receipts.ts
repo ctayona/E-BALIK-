@@ -3,7 +3,7 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export interface Receipt {
-  kind: "claim" | "auction" | "payment";
+  kind: "claim" | "auction" | "payment" | "payout";
   receipt_no: string;
   /** Ten characters (XXXXX-XXXXX) that only the server can produce. Anyone with the number and this code can check the receipt. */
   code: string;
@@ -18,9 +18,21 @@ export interface Receipt {
   method?: string;
   payment_reference?: string;
   reversed?: boolean;
+  /** Payout receipts only (money the office sent a seller): what the item sold for and the office fee kept. */
+  gross?: number;
+  commission?: number;
+  commission_rate?: number;
 }
 
-export type ReceiptCheck = { valid: false } | { valid: true; kind: "claim" | "auction" | "payment"; item_name: string; released_on: string; reversed?: boolean };
+/** The receipt's heading, its people labels and what it proves, by kind. */
+export const RECEIPT_COPY: Record<Receipt["kind"], { title: string; to: string; by: string; amount: string; proves: string; checked: string }> = {
+  claim: { title: "Handover receipt", to: "Released to", by: "Released by", amount: "Amount paid", proves: "This receipt proves the item above was released to the person named.", checked: "was released to its owner" },
+  auction: { title: "Auction collection receipt", to: "Released to", by: "Released by", amount: "Amount paid", proves: "This receipt proves the item above was released to the person named.", checked: "was collected from the Auction Hall" },
+  payment: { title: "Official payment receipt", to: "Received from", by: "Received by", amount: "Amount paid", proves: "This receipt proves the payment above was received by the Lost and Found Office.", checked: "was paid for and the payment was received" },
+  payout: { title: "Seller payout receipt", to: "Paid to", by: "Paid by", amount: "Amount sent to you", proves: "This receipt proves the Lost and Found Office sent the seller the amount above for an item sold in the Auction Hall.", checked: "sold in the Auction Hall and the seller was paid" },
+};
+
+export type ReceiptCheck = { valid: false } | { valid: true; kind: "claim" | "auction" | "payment" | "payout"; item_name: string; released_on: string; reversed?: boolean };
 
 async function request<T>(path: string, init: RequestInit = {}, auth = true): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -53,14 +65,15 @@ const escapeHtml = (value: string | number) => String(value).replace(/[&<>"']/g,
 export function printReceipt(receipt: Receipt): boolean {
   const rows: Array<[string, string]> = [
     ["Item", receipt.item.name],
-    ...(receipt.item.reference && receipt.kind !== "payment" ? [["Item reference", receipt.item.reference] as [string, string]] : []),
+    ...(receipt.item.reference && receipt.kind !== "payment" ? [[receipt.kind === "payout" ? "Auction" : "Item reference", receipt.item.reference] as [string, string]] : []),
     ...(receipt.item.found_at ? [["Found at", receipt.item.found_at] as [string, string]] : []),
-    ["Released to", receipt.released_to || "-"],
+    [RECEIPT_COPY[receipt.kind].to, receipt.released_to || "-"],
     ...(receipt.campus_id ? [["Campus ID", receipt.campus_id] as [string, string]] : []),
-    ["Released by", receipt.released_by],
+    [RECEIPT_COPY[receipt.kind].by, receipt.released_by],
     ["Date and time", manilaDateTime(receipt.released_at)],
-    ...(receipt.amount ? [["Amount paid", pesoText(receipt.amount)] as [string, string]] : []),
-    ...(receipt.kind === "payment" && receipt.method ? [["Paid by", { cash: "Cash", gcash: "GCash", maya: "Maya", bank: "Bank transfer", other: "Other" }[receipt.method] ?? receipt.method] as [string, string]] : []),
+    ...(receipt.kind === "payout" && receipt.gross ? [["Sold for", pesoText(receipt.gross)] as [string, string], [`Office fee (${receipt.commission_rate ?? 0}%)`, pesoText(receipt.commission ?? 0)] as [string, string]] : []),
+    ...(receipt.amount ? [[RECEIPT_COPY[receipt.kind].amount, pesoText(receipt.amount)] as [string, string]] : []),
+    ...((receipt.kind === "payment" || receipt.kind === "payout") && receipt.method ? [[receipt.kind === "payout" ? "Sent by" : "Paid by", { cash: "Cash", gcash: "GCash", maya: "Maya", bank: "Bank transfer", other: "Other" }[receipt.method] ?? receipt.method] as [string, string]] : []),
     ...(receipt.payment_reference ? [["Payment reference", receipt.payment_reference] as [string, string]] : []),
   ];
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(receipt.receipt_no)}</title><style>
@@ -78,11 +91,11 @@ export function printReceipt(receipt: Receipt): boolean {
     .void{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:84px;font-weight:700;color:rgba(225,29,72,.18);transform:rotate(-18deg);pointer-events:none}
     .sheet{position:relative}
     @media print{body{padding:0}}</style></head><body><div class="sheet">${receipt.reversed ? '<div class="void">REVERSED</div>' : ""}
-    <div class="top"><small>University of Makati - Lost and Found Office</small><h1>${receipt.kind === "payment" ? "Official payment receipt" : receipt.kind === "auction" ? "Auction collection receipt" : "Handover receipt"}</h1></div>
+    <div class="top"><small>University of Makati - Lost and Found Office</small><h1>${RECEIPT_COPY[receipt.kind].title}</h1></div>
     <div class="no"><span>Receipt number</span><strong>${escapeHtml(receipt.receipt_no)}</strong></div>
     <div class="code"><span>Verification code</span><strong>${escapeHtml(receipt.code)}</strong></div>
     <dl>${rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>
-    <p class="foot">${receipt.reversed ? "This payment was reversed by the office and this receipt is no longer valid. " : ""}${receipt.kind === "payment" ? "This receipt proves the payment above was received by the Lost and Found Office." : "This receipt proves the item above was released to the person named."} To check that it is genuine, open E-Balik, choose Claims, then Check a receipt, and enter the receipt number and verification code. Keep this receipt private.</p>
+    <p class="foot">${receipt.reversed ? "This payment was reversed by the office and this receipt is no longer valid. " : ""}${RECEIPT_COPY[receipt.kind].proves} To check that it is genuine, open E-Balik, choose Claims, then Check a receipt, and enter the receipt number and verification code. Keep this receipt private.</p>
     </div></body></html>`;
   const popup = window.open("", "_blank");
   if (!popup) return false;

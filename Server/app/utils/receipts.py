@@ -18,8 +18,8 @@ from typing import Any, Dict, List, Optional
 from app.utils.crypto_service import CryptoService
 
 CAMPUS_TZ = timezone(timedelta(hours=8))
-CLAIM_PREFIX, AUCTION_PREFIX, PAYMENT_PREFIX = 'HR', 'AR', 'PR'
-_NUMBER = re.compile(r'^(HR|AR|PR)-(\d{8})-([A-Za-z0-9-]{3,40})$', re.IGNORECASE)
+CLAIM_PREFIX, AUCTION_PREFIX, PAYMENT_PREFIX, PAYOUT_PREFIX = 'HR', 'AR', 'PR', 'PO'
+_NUMBER = re.compile(r'^(HR|AR|PR|PO)-(\d{8})-([A-Za-z0-9-]{3,40})$', re.IGNORECASE)
 CODE_LENGTH = 10
 
 
@@ -101,6 +101,7 @@ def list_for_owner(db, account_id: str) -> List[Dict[str, Any]]:
     except Exception:
         pass  # before the Auction Hall tables exist there are simply no auction receipts
     receipts += _payment_receipts(db, account_id, owner)
+    receipts += _payout_receipts(db, account_id, owner)
     return sorted(receipts, key=lambda r: r['released_at'], reverse=True)
 
 
@@ -120,6 +121,8 @@ def verify(db, receipt_no: Any, code: Any) -> Dict[str, Any]:
     prefix, day, ref = match.group(1).upper(), match.group(2), match.group(3)
     if prefix == PAYMENT_PREFIX:
         return _verify_payment(db, day, ref, entered)
+    if prefix == PAYOUT_PREFIX:
+        return _verify_payout(db, f'{prefix}-{day}-{ref}', entered)
     if prefix == CLAIM_PREFIX:
         rows = db.client.table('claims').select('claim_id,claim_reference,found_item_id,status,collected_at,updated_at').eq('claim_reference', ref).eq('status', 'collected').limit(1).execute().data or []
         record = rows[0] if rows else None
@@ -240,6 +243,69 @@ def _verify_payment(db, day: str, ref: str, entered: str) -> Dict[str, Any]:
     return {'valid': False}
 
 
+# ---------------------------------------------------------------------------------------------- seller payouts (PO- receipts)
+def payout_number(auction_id: Any, moment: Optional[datetime]) -> str:
+    """PO-<date>-AU-<first 8 characters of the auction id>: the seller's receipt for the money the Office sent them after a sale."""
+    return f"{PAYOUT_PREFIX}-{_day(moment or datetime.now(timezone.utc))}-AU-{str(auction_id or '').upper()[:8]}"
+
+
+def _payout_receipt(row: Dict[str, Any], owner: Dict[str, Any], payer: Dict[str, Any]) -> Dict[str, Any]:
+    moment = _parse(row.get('paid_at')) or datetime.now(timezone.utc)
+    return {
+        'kind': 'payout', 'receipt_no': row.get('receipt_no') or payout_number(row.get('auction_id'), moment), 'code': _code('payout', str(row['payout_id']), moment),
+        'released_at': moment.isoformat(),
+        'item': {'name': row.get('title') or 'Auction item', 'reference': str(row.get('auction_id') or '')[:8].upper(), 'category': '', 'found_at': ''},
+        'reference': str(row.get('auction_id') or '')[:8].upper(), 'released_to': _name(owner), 'campus_id': owner.get('campus_id') or '',
+        'released_by': _name(payer) or 'Lost and Found Office', 'amount': float(Decimal(str(row.get('payout_amount') or 0))),
+        'gross': float(Decimal(str(row.get('gross') or 0))), 'commission': float(Decimal(str(row.get('commission') or 0))),
+        'commission_rate': float(Decimal(str(row.get('commission_rate') or 0))), 'method': row.get('method') or 'cash',
+        'payment_reference': row.get('reference') or '', 'reversed': False,
+    }
+
+
+def _payout_receipts(db, account_id: str, owner: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The payouts the Office sent this person for items they sold in the Auction Hall."""
+    try:
+        rows = db.client.table('seller_payouts').select('*').eq('seller_account_id', str(account_id)).eq('status', 'paid').order('paid_at', desc=True).limit(200).execute().data or []
+    except Exception:
+        return []        # before seller auctions exist there are simply no payout receipts
+    staff: Dict[str, Dict[str, Any]] = {}
+    result = []
+    for row in rows:
+        by = str(row.get('paid_by') or '')
+        if by and by not in staff:
+            staff[by] = db.get_user_by_account_id(by) or {}
+        result.append(_payout_receipt(row, owner, staff.get(by, {})))
+    return result
+
+
+def receipt_for_payout(db, payout_id: str) -> Optional[Dict[str, Any]]:
+    """The receipt for one payout that was sent (for the seller's email and the office). None while it is not paid."""
+    rows = db.client.table('seller_payouts').select('*').eq('payout_id', str(payout_id)).limit(1).execute().data or []
+    if not rows or rows[0].get('status') != 'paid':
+        return None
+    row = rows[0]
+    owner = db.get_user_by_account_id(str(row['seller_account_id'])) if row.get('seller_account_id') else {}
+    payer = db.get_user_by_account_id(str(row['paid_by'])) if row.get('paid_by') else {}
+    receipt = _payout_receipt(row, owner or {}, payer or {})
+    receipt['owner_id'] = str(row['seller_account_id']) if row.get('seller_account_id') else ''   # internal; never sent to a browser
+    receipt['has_proof'] = bool(row.get('proof_path'))
+    receipt['payout_id'] = str(row['payout_id'])
+    return receipt
+
+
+def _verify_payout(db, number: str, entered: str) -> Dict[str, Any]:
+    try:
+        rows = db.client.table('seller_payouts').select('*').eq('receipt_no', number.upper()).eq('status', 'paid').limit(1).execute().data or []
+    except Exception:
+        return {'valid': False}
+    row = rows[0] if rows else None
+    moment = _parse(row.get('paid_at')) if row else None
+    if not row or not moment or not hmac.compare_digest(_code('payout', str(row['payout_id']), moment), entered):
+        return {'valid': False}
+    return {'valid': True, 'kind': 'payout', 'item_name': row.get('title') or 'Auction item', 'released_on': moment.astimezone(CAMPUS_TZ).strftime('%B %d, %Y').replace(' 0', ' '), 'reversed': False}
+
+
 # ---------------------------------------------------------------------------------------------- the office's view of every receipt
 def _people(db, ids) -> Dict[str, str]:
     ids = sorted({str(i) for i in ids if i})
@@ -263,7 +329,7 @@ def receipt_for_auction(db, auction_id: str) -> Optional[Dict[str, Any]]:
 def admin_list(db, kind: str = '', q: str = '', status: str = '', start: str = '', end: str = '', limit: int = 25, offset: int = 0) -> Dict[str, Any]:
     """Every receipt the office has issued: payment receipts, item handover receipts and auction collection receipts, newest first.
 
-    Filter by kind (payment, claim, auction), status (valid, reversed), a day range (Manila days, YYYY-MM-DD) and a search word
+    Filter by kind (payment, claim, auction, payout), status (valid, reversed), a day range (Manila days, YYYY-MM-DD) and a search word
     (receipt number, item or person). The list never includes the verification code: open one receipt to see it.
     """
     rows: List[Dict[str, Any]] = []
@@ -277,11 +343,16 @@ def admin_list(db, kind: str = '', q: str = '', status: str = '', start: str = '
         auctions = db.client.table('auctions').select('auction_id,title,winning_amount,winner_account_id,fulfillment_updated_at').eq('fulfillment_status', 'collected').order('fulfillment_updated_at', desc=True).limit(500).execute().data or []
     except Exception:
         auctions = []
+    try:
+        payouts = db.client.table('seller_payouts').select('payout_id,auction_id,title,seller_account_id,payout_amount,method,proof_path,paid_by,paid_at,receipt_no').eq('status', 'paid').order('paid_at', desc=True).limit(500).execute().data or []
+    except Exception:
+        payouts = []
     item_ids = sorted({str(c['found_item_id']) for c in claims if c.get('found_item_id')})
     items = {}
     if item_ids:
         items = {str(r['item_id']): r.get('item_name') for r in db.client.table('found_items').select('item_id,item_name').in_('item_id', item_ids).execute().data or []}
-    people = _people(db, [s.get('payer_account_id') for s in sales] + [s.get('recorded_by') for s in sales] + [c.get('claimant_account_id') for c in claims] + [a.get('winner_account_id') for a in auctions])
+    people = _people(db, [s.get('payer_account_id') for s in sales] + [s.get('recorded_by') for s in sales] + [c.get('claimant_account_id') for c in claims] + [a.get('winner_account_id') for a in auctions]
+                     + [p.get('seller_account_id') for p in payouts] + [p.get('paid_by') for p in payouts])
     for entry in sales:
         if entry.get('source') not in ('auction', 'smart_tag'):
             continue
@@ -299,6 +370,12 @@ def admin_list(db, kind: str = '', q: str = '', status: str = '', start: str = '
         rows.append({'kind': 'auction', 'id': str(auction['auction_id']), 'receipt_no': f"{AUCTION_PREFIX}-{_day(moment)}-{str(auction['auction_id'])[:8].upper()}",
                      'item': auction.get('title') or 'Auction item', 'person': people.get(str(auction.get('winner_account_id')), ''), 'amount': float(auction.get('winning_amount') or 0) or None,
                      'method': None, 'has_proof': False, 'issued_by': '', 'released_at': moment.isoformat(), 'status': 'valid'})
+    for payout in payouts:
+        moment = _parse(payout.get('paid_at'))
+        rows.append({'kind': 'payout', 'id': str(payout['payout_id']), 'receipt_no': payout.get('receipt_no') or payout_number(payout.get('auction_id'), moment),
+                     'item': payout.get('title') or 'Auction item', 'person': people.get(str(payout.get('seller_account_id')), ''), 'amount': float(Decimal(str(payout.get('payout_amount') or 0))),
+                     'method': payout.get('method'), 'has_proof': bool(payout.get('proof_path')), 'issued_by': people.get(str(payout.get('paid_by')), ''),
+                     'released_at': moment.isoformat() if moment else None, 'status': 'valid'})
     word = (q or '').strip().lower()
 
     def keep(row: Dict[str, Any], with_kind: bool = True) -> bool:
@@ -312,7 +389,7 @@ def admin_list(db, kind: str = '', q: str = '', status: str = '', start: str = '
         if end and day > end.replace('-', ''):
             return False
         return not word or word in f"{row['receipt_no']} {row['item']} {row['person']}".lower()
-    counts = {k: sum(1 for r in rows if r['kind'] == k and keep(r, with_kind=False)) for k in ('payment', 'claim', 'auction')}
+    counts = {k: sum(1 for r in rows if r['kind'] == k and keep(r, with_kind=False)) for k in ('payment', 'claim', 'auction', 'payout')}
     chosen = sorted((r for r in rows if keep(r)), key=lambda r: r['released_at'] or '', reverse=True)
     limit = max(1, min(int(limit or 25), 100))
     offset = max(0, int(offset or 0))

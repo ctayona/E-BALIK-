@@ -85,7 +85,7 @@ export async function downloadAuditLog(start: string, end: string): Promise<{ ro
 export interface RankedCount { name: string; count: number }
 export interface MonthlyFigures {
   found_received: number | null; lost_filed: number | null; returned: number | null; claims_filed: number | null;
-  income: { total: number; auction: number; smart_tag: number; other: number; refunds: number; auctions_sold: number; tags_sold: number } | null;
+  income: { total: number; auction: number; smart_tag: number; commission?: number; other: number; refunds: number; auctions_sold: number; tags_sold: number; seller_sales?: number } | null;
 }
 export interface MonthlyReport {
   month: string; label: string; generated_at: string; start: string; end: string; previous_label: string;

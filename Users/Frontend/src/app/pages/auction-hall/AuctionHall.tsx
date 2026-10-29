@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { BellRing, Clock3, Gavel, Heart, ListChecks, Search, ShieldCheck, Sparkles, Trophy } from "lucide-react";
+import { BellRing, Clock3, Gavel, Heart, ListChecks, Search, ShieldCheck, Sparkles, Store, Trophy } from "lucide-react";
 import { AuctionClock, AuctionTile, SoldTile } from "@/app/shared/auction/AuctionParts";
 import { useWatchlist } from "@/app/shared/auction/useWatchlist";
 import { auctionsApi, formatRemaining, msLeft, pesoShort, useAuctionFeed, useClosingTick, useNow, type Auction } from "@/app/utils/auctions";
@@ -8,8 +8,9 @@ import { CX } from "@/app/utils/clay";
 import type { Page } from "@/app/types";
 import AuctionDetail from "@/app/shared/auction/AuctionDetail";
 import AuctionPost from "./AuctionPost";
+import SellingPanel from "./SellingPanel";
 
-type Tab = "live" | "upcoming" | "sold" | "mine";
+type Tab = "live" | "upcoming" | "sold" | "mine" | "selling";
 type Sort = "ending" | "price" | "bids";
 
 const SORTS: { value: Sort; label: string }[] = [
@@ -63,12 +64,12 @@ function monthLabel(value: string) {
   return new Date(value).toLocaleString([], { month: "long", year: "numeric" });
 }
 
-export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) => void }) {
+export default function AuctionHall({ onNavigate, initialTab }: { onNavigate?: (page: Page) => void; initialTab?: "selling" }) {
   const { feed, error, setupRequired, loading, offset, refresh } = useAuctionFeed();
   const closingTick = useClosingTick(feed?.live ?? [], offset);
   const watch = useWatchlist();
   const signedIn = Boolean(authUtils.getToken());
-  const [tab, setTab] = useState<Tab>("live");
+  const [tab, setTab] = useState<Tab>(initialTab && authUtils.getToken() ? initialTab : "live");
   const [sort, setSort] = useState<Sort>("ending");
   const [search, setSearch] = useState("");
   const [onlyWatched, setOnlyWatched] = useState(false);
@@ -116,8 +117,12 @@ export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) 
     { id: "live", label: "Live", count: liveAll.length },
     { id: "upcoming", label: "Upcoming", count: upcomingAll.length },
     { id: "sold", label: "Results", count: feed?.past.length ?? 0 },
-    ...(signedIn ? [{ id: "mine" as Tab, label: "My bids" }] : []),
+    ...(signedIn ? [{ id: "mine" as Tab, label: "My bids" }, { id: "selling" as Tab, label: "Selling" }] : []),
   ];
+  const openById = useCallback((id: string) => {
+    const found = [...(feed?.live ?? []), ...(feed?.past ?? [])].find((a) => a.id === id);
+    if (found) openAuction(found);
+  }, [feed, openAuction]);
 
   return (
     <main className={CX.page}>
@@ -132,7 +137,7 @@ export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) 
               <h1 id="auction-hero" className="mt-4 text-[34px] font-semibold leading-[1.05] tracking-[-0.025em] sm:text-[44px]" style={{ fontFamily: "var(--font-heading)" }}>
                 <span className="text-gradient-gold">Auction Hall</span>
               </h1>
-              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-white/70">Items nobody claimed within a month go up for bidding. Every peso supports the university's lost-and-found service.</p>
+              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-white/70">Items nobody claimed within a month go up for bidding, alongside items UMak members list themselves. The office checks every lot and hands it over in person.</p>
             </div>
             <dl className="grid grid-cols-2 gap-3 rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-md">
               <div><dt className="text-[12.5px] font-medium text-white/55">Live now</dt><dd className="mt-1 flex items-center gap-2 text-3xl font-semibold tabular-nums text-gold-300">{liveAll.length > 0 && <span className="size-2 animate-pulse rounded-full bg-gold-400" aria-hidden="true" />}{liveAll.length}</dd></div>
@@ -232,6 +237,8 @@ export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) 
                     ))}
                   </div>
                 )
+              ) : tab === "selling" ? (
+                <SellingPanel onOpenAuction={openById} onVerify={onNavigate ? () => onNavigate("profile") : undefined} />
               ) : (
                 mineError ? <p role="alert" className={CX.alertError}>{mineError}</p> : mine === null ? <div className={`${CX.card} h-40 animate-pulse`} aria-busy="true" /> : mine.length === 0 ? (
                   <div className={`${CX.card} p-10 text-center text-[14.5px] text-ink-muted`}>You haven't placed any bids yet. Open a live lot to make your first bid.</div>
@@ -266,6 +273,14 @@ export default function AuctionHall({ onNavigate }: { onNavigate?: (page: Page) 
                       </li>
                     ))}
                   </ul>
+                </section>
+              )}
+              {tab !== "selling" && (
+                <section className={`${CX.card} p-5`}>
+                  <h2 className="flex items-center gap-2 text-[15px] font-semibold text-navy-800"><Store size={17} className="text-gold-600" aria-hidden="true" /> Have something to sell?</h2>
+                  <p className="mt-2 text-[13.5px] leading-6 text-ink-muted">List your own item. The office checks it, runs the auction and pays you after pickup, minus a small fee.</p>
+                  {signedIn ? <button type="button" onClick={() => setTab("selling")} className={`${CX.btnGold} mt-3 w-full`}>Sell an item</button>
+                    : <p className="mt-3 text-[13px] font-semibold text-navy-800">Sign in to list an item.</p>}
                 </section>
               )}
               <section className={`${CX.cardNavy} p-5 text-white`}>

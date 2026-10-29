@@ -11,6 +11,8 @@ import { formatDateTime, formatRemaining, serverOffset, useNow } from "../../uti
 import { canDelete } from "../../utils/permissions";
 import { tr } from "../../utils/preferences";
 import AuctionFormModal from "./AuctionFormModal";
+import SellerListings from "./SellerListings";
+import { fetchSellerListings } from "../../utils/sellerApi";
 import AuctionDetailModal, { FINISHED_STAGES, STAGE_TONE, statusLabel } from "./AuctionDetailModal";
 
 const ALL = "__all__";
@@ -58,6 +60,8 @@ export default function Auctions() {
   const [archiveTarget, setArchiveTarget] = useState<AdminAuction | null>(null);
   const [pickupTarget, setPickupTarget] = useState<AdminAuction | null>(null);
   const [busy, setBusy] = useState(false);
+  const [section, setSection] = useState<"auctions" | "sellers">("auctions");
+  const [pendingListings, setPendingListings] = useState<number | undefined>(undefined);
   const isSuperAdmin = canDelete();
   const now = useNow() + offset;
 
@@ -67,6 +71,7 @@ export default function Auctions() {
       setData(list);
       setOffset(serverOffset(list.server_time));
       setEligible(items ? items.recommended_total : null);
+      fetchSellerListings().then((value) => setPendingListings(value.counts.pending)).catch(() => setPendingListings(undefined));
       setSetupError("");
       setLoadError("");
     } catch (reason) {
@@ -212,7 +217,7 @@ export default function Auctions() {
             { label: "Live now", value: String(stats?.live ?? 0), hint: stats?.scheduled ? tr("{0} scheduled", { "0": stats.scheduled }) : tr("Open for bids"), icon: <Gavel size={16} aria-hidden="true" /> },
             { label: "Ready to auction", value: eligible === null ? "—" : String(eligible), hint: tr("Recommended: unclaimed over {0} days", { "0": data?.min_custody_days ?? 30 }), icon: <Timer size={16} aria-hidden="true" /> },
             { label: "Needs your decision", value: String(stats?.awaiting_admin ?? counts.awaiting), hint: stats?.awaiting_pickup ? tr("{0} winners to collect", { "0": stats.awaiting_pickup }) : tr("Closed, not confirmed"), icon: <PackageCheck size={16} aria-hidden="true" /> },
-            { label: "Confirmed sales", value: peso(stats?.sales_total), hint: stats?.payment_tracking === false ? tr("Run the income migrations to count sales") : stats?.awaiting_payment_count ? tr("{0} paid. {1} waiting for payment confirmation ({2})", { "0": stats.sales_count ?? 0, "1": stats.awaiting_payment_count, "2": peso(stats.awaiting_payment_total) }) : tr("{0} paid, {1} bids placed", { "0": stats?.sales_count ?? 0, "1": stats?.total_bids ?? 0 }), icon: <Trophy size={16} aria-hidden="true" /> },
+            { label: "Confirmed sales", value: peso(stats?.sales_total), hint: stats?.payment_tracking === false ? tr("Run the income migrations to count sales") : stats?.seller_sales_total ? tr("Includes {0} commission from {1} in members' sales", { "0": peso(stats.seller_commission_total ?? 0), "1": peso(stats.seller_sales_total) }) : stats?.awaiting_payment_count ? tr("{0} paid. {1} waiting for payment confirmation ({2})", { "0": stats.sales_count ?? 0, "1": stats.awaiting_payment_count, "2": peso(stats.awaiting_payment_total) }) : tr("{0} paid, {1} bids placed", { "0": stats?.sales_count ?? 0, "1": stats?.total_bids ?? 0 }), icon: <Trophy size={16} aria-hidden="true" /> },
           ].map((stat) => (
             <div key={stat.label} className="px-5 py-4 sm:px-6 sm:py-5">
               <dt className="flex items-center gap-2 text-[13px] font-medium text-ink-muted"><span className="text-gold-600">{stat.icon}</span>{tr(stat.label)}</dt>
@@ -225,6 +230,9 @@ export default function Auctions() {
 
       {loadError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] text-rose-800">{loadError}</p>}
 
+      <SegmentedFilter label="Auction sections" value={section} onChange={setSection} options={[{ value: "auctions", label: "Auctions", count: working.length }, { value: "sellers", label: "Seller listings", count: pendingListings }]} />
+
+      {section === "sellers" ? <SellerListings onChanged={() => void load()} /> : (<>
       <SegmentedFilter label="Status" value={filter} onChange={setFilter} options={tabs} />
 
       <Toolbar>
@@ -255,7 +263,7 @@ export default function Auctions() {
                 <Thumb src={auction.image_url} alt={auction.title} />
                 <div className="min-w-0">
                   <div className="truncate font-semibold text-ink">{auction.title}</div>
-                  <div className="text-[13px] tabular-nums text-ink-muted">{auction.reference || "—"}</div>
+                  <div className="text-[13px] tabular-nums text-ink-muted">{auction.reference || "—"}{auction.seller_listing && <span className="ml-1.5 rounded-full bg-gold-50 px-2 py-0.5 text-[11.5px] font-semibold text-gold-800 ring-1 ring-gold-200 dark:bg-gold-500/10 dark:text-gold-200">{tr("Member's item")}</span>}</div>
                 </div>
               </div>
             </td>
@@ -299,6 +307,7 @@ export default function Auctions() {
           </tr>
         ))}
       </DataTable>
+      </>)}
 
       {pickupTarget && (
         <ConfirmActionDialog

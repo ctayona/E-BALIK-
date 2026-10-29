@@ -2,11 +2,13 @@ import { API_URL, adminMutationRequest, getAuthHeaders } from "./api";
 
 /** Revenue and payments: the income ledger plus payment confirmation (migrations 20261022 and 20261024). Reads throw `IncomeSetupError` until the ledger exists. */
 
-export type IncomeSource = "auction" | "smart_tag" | "other";
-export type IncomeKind = "sale" | "refund" | "adjustment";
+/** How income is reported. "commission" is what the office kept from items people listed themselves (a seller's auction). */
+export type IncomeSource = "auction" | "smart_tag" | "commission" | "other";
+/** "payout" is a seller's share of a sale: written with the sale so it never counts as the office's income. */
+export type IncomeKind = "sale" | "refund" | "adjustment" | "payout";
 export type IncomeMethod = "cash" | "gcash" | "maya" | "bank" | "other";
 
-export interface IncomeMonth { month: string; auction: number; smart_tag: number; other: number; total: number }
+export interface IncomeMonth { month: string; auction: number; smart_tag: number; commission?: number; other: number; total: number }
 export interface IncomePending {
   /** Auction wins and registered priced tags whose payment an administrator has not confirmed yet. */
   auction: number; auction_count: number;
@@ -30,12 +32,17 @@ export interface IncomeSummary {
   previous_month: number;
   by_month: IncomeMonth[];
   pending: IncomePending;
+  /** Seller auctions in the period: what buyers paid, what the office kept, what belongs to sellers, and what is still held for them (all time). */
+  seller?: { gross: number; commission: number; shares: number; sales: number; owed: number };
   sources: Record<IncomeSource, string>;
   methods: Record<IncomeMethod, string>;
 }
 export interface IncomeEntry {
   entry_id: string;
   source: IncomeSource;
+  /** Where the row is reported: a seller's auction shows as "commission". */
+  report_source?: IncomeSource;
+  kind_label?: string;
   kind: IncomeKind;
   source_ref: string | null;
   description: string;
@@ -123,6 +130,9 @@ export interface AwaitingItem {
   released: boolean; state: "released" | "awaiting_pickup" | "pending_approval" | "registered"; since: string | null;
   /** The receipt image the payer sent (GCash, Maya or bank), waiting for an administrator to check it. */
   proof: PaymentProof | null;
+  /** A seller's item: what the office keeps and what is paid out to the seller. */
+  seller_listing?: boolean;
+  seller_split?: { commission: number; share: number; rate: number } | null;
 }
 export interface PaymentProof { proof_id: string; method: IncomeMethod; reference: string; note: string; status: "pending" | "accepted" | "rejected" | "replaced"; created_at: string; review_note: string }
 export interface AwaitingData {
@@ -136,17 +146,19 @@ export type PaymentStatus =
 
 /** The receipt of a confirmed payment, as the administrator sees it (the payer sees the same thing in My receipts). */
 export interface PaymentReceipt {
-  kind: "payment" | "claim" | "auction"; receipt_no: string; code: string; released_at: string; item: { name: string; reference: string }; reference: string;
+  kind: "payment" | "claim" | "auction" | "payout"; receipt_no: string; code: string; released_at: string; item: { name: string; reference: string }; reference: string;
   released_to: string; campus_id: string; released_by: string; amount: number | null; method?: IncomeMethod; payment_reference?: string; reversed?: boolean;
   /** Payment receipts: a payment receipt image is kept with it, and the ledger entry it belongs to. */
   has_proof?: boolean; entry_id?: string;
+  /** Payout receipts (money sent to a seller): the sale, the office fee and the payout id. */
+  gross?: number; commission?: number; commission_rate?: number; payout_id?: string;
 }
 /** One line of the receipts register. The verification code is not in the list: open the receipt to see it. */
 export interface ReceiptRow {
-  kind: "payment" | "claim" | "auction"; id: string; receipt_no: string; item: string; person: string; amount: number | null; method: IncomeMethod | null;
+  kind: "payment" | "claim" | "auction" | "payout"; id: string; receipt_no: string; item: string; person: string; amount: number | null; method: IncomeMethod | null;
   has_proof: boolean; issued_by: string; released_at: string | null; status: "valid" | "reversed";
 }
-export interface ReceiptList { receipts: ReceiptRow[]; total: number; counts: Record<"payment" | "claim" | "auction", number>; limit: number; offset: number }
+export interface ReceiptList { receipts: ReceiptRow[]; total: number; counts: Record<"payment" | "claim" | "auction" | "payout", number>; limit: number; offset: number }
 export interface ReceiptHistory { who: string | null; action: string; details: string | null; at: string; result: string }
 export interface ActivityRow { log_id: string; user_name: string; action: string; target_name: string | null; target_id: string | null; result: string; created_at: string }
 
@@ -199,12 +211,15 @@ export function printPaymentReceipt(receipt: PaymentReceipt): boolean {
   const methods: Record<string, string> = { cash: "Cash", gcash: "GCash", maya: "Maya", bank: "Bank transfer", other: "Other" };
   const when = new Date(receipt.released_at).toLocaleString("en-PH", { timeZone: "Asia/Manila", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
   const payment = receipt.kind === "payment";
-  const title = payment ? "Official payment receipt" : receipt.kind === "auction" ? "Auction collection receipt" : "Handover receipt";
+  const payout = receipt.kind === "payout";
+  const title = payment ? "Official payment receipt" : payout ? "Seller payout receipt" : receipt.kind === "auction" ? "Auction collection receipt" : "Handover receipt";
+  const php = (value: number) => peso(value).replace("₱", "PHP ");
   const rows: Array<[string, string]> = [
-    ["Item", receipt.item.name], [payment ? "Received from" : "Released to", receipt.released_to || "-"], ...(receipt.campus_id ? [["Campus ID", receipt.campus_id] as [string, string]] : []),
-    ...(receipt.amount ? [[payment ? "Amount received" : "Amount paid", peso(receipt.amount).replace("₱", "PHP ")] as [string, string]] : []),
-    ...(payment && receipt.method ? [["Paid by", methods[receipt.method] ?? receipt.method] as [string, string]] : []),
-    ...(receipt.payment_reference ? [["Payment reference", receipt.payment_reference] as [string, string]] : []), ["Date and time", when], [payment ? "Received by" : "Released by", receipt.released_by],
+    ["Item", receipt.item.name], [payment ? "Received from" : payout ? "Paid to" : "Released to", receipt.released_to || "-"], ...(receipt.campus_id ? [["Campus ID", receipt.campus_id] as [string, string]] : []),
+    ...(payout && receipt.gross ? [["Sold for", php(receipt.gross)] as [string, string], [`Office fee (${receipt.commission_rate ?? 0}%)`, php(receipt.commission ?? 0)] as [string, string]] : []),
+    ...(receipt.amount ? [[payment ? "Amount received" : payout ? "Amount sent to the seller" : "Amount paid", php(receipt.amount)] as [string, string]] : []),
+    ...((payment || payout) && receipt.method ? [[payout ? "Sent by" : "Paid by", methods[receipt.method] ?? receipt.method] as [string, string]] : []),
+    ...(receipt.payment_reference ? [[payout ? "Transfer reference" : "Payment reference", receipt.payment_reference] as [string, string]] : []), ["Date and time", when], [payment ? "Received by" : payout ? "Paid by" : "Released by", receipt.released_by],
   ];
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(receipt.receipt_no)}</title><style>
     @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Geist:wght@400..700&family=Geist+Mono:wght@500&display=swap');

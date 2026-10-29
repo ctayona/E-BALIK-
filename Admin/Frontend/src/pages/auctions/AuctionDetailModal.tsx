@@ -161,7 +161,9 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
               ["Closes at", formatDateTime(auction.ends_at)],
               ["Anti-snipe", auction.anti_snipe_enabled ? tr("{0} min window, +{1} min", { "0": Math.round(auction.anti_snipe_window_seconds / 60), "1": Math.round(auction.anti_snipe_extension_seconds / 60) }) : tr("Off")],
               ["Extensions used", `${auction.extension_count} / ${auction.max_extensions}`],
+              ...(auction.seller_listing ? [["Listed by (member)", auction.seller_detail ? `${auction.seller_detail.name}${auction.seller_detail.campus_id ? ` (${auction.seller_detail.campus_id})` : ""}` : tr("Former user")] as [string, string]] : []),
             ]} />
+            {auction.seller_listing && <p className="rounded-xl bg-gold-50 px-3.5 py-2.5 text-[13px] text-gold-900 dark:bg-gold-500/10 dark:text-gold-100">{tr("A member's own item. Bidders do not see who listed it. When the buyer pays, only the office fee counts as revenue; the seller is paid under Revenue and payments, Seller payouts, after pickup.")}</p>}
             {awaiting && (
               <div className="rounded-2xl border border-iris-300/70 bg-iris-50 px-4 py-3.5 text-[14px] leading-6 text-ink-soft dark:bg-iris-500/10" role="status">
                 <p className="font-semibold text-ink">{auction.bought_out ? tr("A bidder used Buy Now and the auction ended at once. Confirm the purchase.") : tr("Bidding is closed. The result needs your decision.")}</p>

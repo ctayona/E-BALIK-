@@ -20,7 +20,11 @@ from app.utils.system_ops import csv_safe
 logger = logging.getLogger(__name__)
 
 SOURCES = {'auction': 'Auction Hall', 'smart_tag': 'Smart Tags', 'other': 'Other'}
-KINDS = ('sale', 'refund', 'adjustment')
+# How income is REPORTED: a seller's auction is stored as an Auction Hall sale plus the seller's share (kind 'payout'), and what is left,
+# the office's commission, is shown on its own line.
+REPORT_SOURCES = {'auction': 'Auction Hall', 'smart_tag': 'Smart Tags', 'commission': 'Seller commissions', 'other': 'Other'}
+KINDS = ('sale', 'refund', 'adjustment')           # what an administrator may record by hand
+KIND_LABELS = {'sale': 'Sale', 'refund': 'Refund', 'adjustment': 'Adjustment', 'payout': "Seller's share"}
 METHODS = {'cash': 'Cash', 'gcash': 'GCash', 'maya': 'Maya', 'bank': 'Bank transfer', 'other': 'Other'}
 MAX_AMOUNT = Decimal('1000000')
 MAX_TAG_PRICE = Decimal('100000')
@@ -221,6 +225,27 @@ class IncomeService:
             logger.info('Smart Tag stock value unavailable (price column needs 20261022): %s', str(error)[:120])
         return {key: (float(value) if isinstance(value, Decimal) else value) for key, value in pending.items()}
 
+    @staticmethod
+    def seller_refs(rows: List[Dict[str, Any]]) -> set:
+        """The auctions among these rows that were a seller's item (their sale was written together with the seller's share)."""
+        return {str(r['source_ref']) for r in rows if r.get('kind') == 'payout' and r.get('source') == 'auction' and r.get('source_ref')}
+
+    @staticmethod
+    def bucket(row: Dict[str, Any], seller_refs: set) -> str:
+        if row.get('source') == 'auction' and str(row.get('source_ref') or '') in seller_refs:
+            return 'commission'
+        return row.get('source') if row.get('source') in SOURCES else 'other'
+
+    def _source_rows(self, start: Optional[date], end: Optional[date], source: str) -> List[Dict[str, Any]]:
+        """Rows for one reporting source. 'commission' is every row of a seller's auction; 'auction' is then only the office's own auctions."""
+        if source not in REPORT_SOURCES:
+            return self._rows(start, end)
+        rows = self._rows(start, end, 'auction' if source == 'commission' else source)
+        if source not in ('auction', 'commission'):
+            return rows
+        refs = self.seller_refs(self._rows(start, end, 'auction') if source == 'auction' else rows)
+        return [r for r in rows if (str(r.get('source_ref') or '') in refs) == (source == 'commission')]
+
     def _reversed(self) -> set:
         from app.utils.receipts import _reversed_numbers
         return _reversed_numbers(self.db)
@@ -232,26 +257,33 @@ class IncomeService:
         if first > last:
             raise IncomeError('The start date must be on or before the end date.')
         rows = self._rows(first, last)
-        totals = {key: Decimal('0') for key in SOURCES}
+        seller_refs = self.seller_refs(rows)
+        totals = {key: Decimal('0') for key in REPORT_SOURCES}
         months: Dict[str, Dict[str, Decimal]] = {}
         cursor = first.replace(day=1)
         while cursor <= last:  # every month in the range, so an empty month still shows as zero
-            months[cursor.strftime('%Y-%m')] = {key: Decimal('0') for key in SOURCES}
+            months[cursor.strftime('%Y-%m')] = {key: Decimal('0') for key in REPORT_SOURCES}
             cursor = (cursor + timedelta(days=32)).replace(day=1)
         refunds = Decimal('0')
         sales_count = 0
         sales_total = Decimal('0')
         methods = {key: Decimal('0') for key in METHODS}
         reversals = 0
+        seller = {'gross': Decimal('0'), 'shares': Decimal('0'), 'sales': 0}
         for row in rows:
             amount = Decimal(str(row.get('amount') or 0))
-            source = row.get('source') if row.get('source') in SOURCES else 'other'
+            source = self.bucket(row, seller_refs)
             totals[source] += amount
             moment = _parse_moment(row.get('received_at'))
             if moment:
-                months.setdefault(campus_day(moment).strftime('%Y-%m'), {key: Decimal('0') for key in SOURCES})[source] += amount
-            if amount < 0:
+                months.setdefault(campus_day(moment).strftime('%Y-%m'), {key: Decimal('0') for key in REPORT_SOURCES})[source] += amount
+            if row.get('kind') == 'payout':
+                seller['shares'] -= amount
+            elif amount < 0:
                 refunds += amount
+            if source == 'commission' and row.get('kind') == 'sale':
+                seller['gross'] += amount
+                seller['sales'] += 1
             methods[row.get('method') if row.get('method') in methods else 'other'] += amount
             if row.get('kind') == 'refund' and row.get('receipt_no'):
                 reversals += 1
@@ -275,29 +307,43 @@ class IncomeService:
             'previous_month': month_total(previous_month),
             'by_month': [{'month': key, **{k: float(v) for k, v in value.items()}, 'total': float(sum(value.values(), Decimal('0')))} for key, value in sorted(months.items())],
             'pending': self._pending(),
-            'sources': SOURCES,
+            'seller': {'gross': float(seller['gross']), 'commission': float(totals['commission']), 'shares': float(seller['shares']), 'sales': seller['sales'],
+                       'owed': self._seller_owed()},
+            'sources': REPORT_SOURCES,
             'methods': METHODS,
         }
 
+    def _seller_owed(self) -> float:
+        """Money the office holds for sellers and has not paid out yet (all time). 0 before seller auctions exist."""
+        try:
+            rows = self.client.table('seller_payouts').select('payout_amount').eq('status', 'holding').limit(MAX_ROWS).execute().data or []
+        except Exception:
+            return 0.0
+        return float(sum(Decimal(str(r.get('payout_amount') or 0)) for r in rows))
+
     def entries(self, start: Any = None, end: Any = None, source: str = '', limit: Any = 50, offset: Any = 0) -> Dict[str, Any]:
-        source = source if source in SOURCES else ''
+        source = source if source in REPORT_SOURCES else ''
         try:
             limit, offset = max(1, min(int(limit), 200)), max(0, int(offset))
         except (TypeError, ValueError):
             limit, offset = 50, 0
-        rows = self._rows(_day(start, 'start'), _day(end, 'end'), source)
+        rows = self._source_rows(_day(start, 'start'), _day(end, 'end'), source) if source else self._rows(_day(start, 'start'), _day(end, 'end'))
         page = rows[offset:offset + limit]
+        refs = self.seller_refs(rows)
         names = self._names([r.get('payer_account_id') for r in page] + [r.get('recorded_by') for r in page])
         from app.utils.receipts import payment_number
         reversed_numbers = self._reversed()
         return {
             'entries': [{**row, 'reversed': row.get('kind') == 'sale' and (row.get('receipt_no') or payment_number(row.get('source'), row.get('source_ref'), _parse_moment(row.get('received_at')))) in reversed_numbers, 'amount': float(Decimal(str(row.get('amount') or 0))), 'payer_name': names.get(str(row.get('payer_account_id')), ''),
-                         'recorded_by_name': names.get(str(row.get('recorded_by')), '') or ('System' if not row.get('recorded_by') else '')} for row in page],
+                         'recorded_by_name': names.get(str(row.get('recorded_by')), '') or ('System' if not row.get('recorded_by') else ''),
+                         'kind_label': KIND_LABELS.get(row.get('kind'), row.get('kind')), 'report_source': self.bucket(row, refs)} for row in page],
             'total': len(rows), 'limit': limit, 'offset': offset,
         }
 
     def csv_export(self, start: Any = None, end: Any = None, source: str = '') -> str:
-        rows = self._rows(_day(start, 'start'), _day(end, 'end'), source if source in SOURCES else '')
+        first, last = _day(start, 'start'), _day(end, 'end')
+        rows = self._source_rows(first, last, source) if source in REPORT_SOURCES else self._rows(first, last)
+        refs = self.seller_refs(rows)
         names = self._names([r.get('payer_account_id') for r in rows] + [r.get('recorded_by') for r in rows])
         out = io.StringIO()
         writer = csv.writer(out)
@@ -305,8 +351,8 @@ class IncomeService:
         for row in rows:
             moment = _parse_moment(row.get('received_at'))
             writer.writerow([
-                moment.astimezone(CAMPUS_TZ).strftime('%Y-%m-%d %H:%M') if moment else '', SOURCES.get(row.get('source'), row.get('source')),
-                row.get('kind'), csv_safe(row.get('description')), csv_safe(row.get('source_ref')), f"{Decimal(str(row.get('amount') or 0)):.2f}",
+                moment.astimezone(CAMPUS_TZ).strftime('%Y-%m-%d %H:%M') if moment else '', REPORT_SOURCES.get(self.bucket(row, refs), row.get('source')),
+                KIND_LABELS.get(row.get('kind'), row.get('kind')), csv_safe(row.get('description')), csv_safe(row.get('source_ref')), f"{Decimal(str(row.get('amount') or 0)):.2f}",
                 METHODS.get(row.get('method'), row.get('method')), csv_safe(row.get('receipt_no')), csv_safe(names.get(str(row.get('payer_account_id')), '')),
                 csv_safe(names.get(str(row.get('recorded_by')), '') or ('System' if not row.get('recorded_by') else '')), csv_safe(row.get('notes')),
             ])

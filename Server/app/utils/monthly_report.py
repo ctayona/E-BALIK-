@@ -108,19 +108,22 @@ def _figures(db, first: date) -> Dict[str, Any]:
     }
 
     def income():
-        rows = _rows(db, 'income_ledger', 'source,kind,amount', 'received_at', first, nxt)
-        total = {'auction': Decimal('0'), 'smart_tag': Decimal('0'), 'other': Decimal('0')}
-        sales = {'auction': 0, 'smart_tag': 0}
+        from app.utils.income import IncomeService
+        rows = _rows(db, 'income_ledger', 'source,source_ref,kind,amount', 'received_at', first, nxt)
+        refs = IncomeService.seller_refs(rows)
+        total = {'auction': Decimal('0'), 'smart_tag': Decimal('0'), 'commission': Decimal('0'), 'other': Decimal('0')}
+        sales = {'auction': 0, 'smart_tag': 0, 'commission': 0}
         refunds = Decimal('0')
         for row in rows:
             amount = Decimal(str(row.get('amount') or 0))
-            total[row.get('source') if row.get('source') in total else 'other'] += amount
-            if amount < 0:
+            bucket = IncomeService.bucket(row, refs)
+            total[bucket] += amount
+            if amount < 0 and row.get('kind') != 'payout':     # a seller's share is not a refund
                 refunds += amount
-            if row.get('kind') == 'sale' and row.get('source') in sales:
-                sales[row['source']] += 1
-        return {'total': float(sum(total.values())), 'auction': float(total['auction']), 'smart_tag': float(total['smart_tag']), 'other': float(total['other']),
-                'refunds': float(refunds), 'auctions_sold': sales['auction'], 'tags_sold': sales['smart_tag']}
+            if row.get('kind') == 'sale' and bucket in sales:
+                sales[bucket] += 1
+        return {'total': float(sum(total.values())), 'auction': float(total['auction']), 'smart_tag': float(total['smart_tag']), 'commission': float(total['commission']),
+                'other': float(total['other']), 'refunds': float(refunds), 'auctions_sold': sales['auction'], 'tags_sold': sales['smart_tag'], 'seller_sales': sales['commission']}
     figures['income'] = _section('income', income)
     return figures
 
@@ -225,7 +228,7 @@ def to_csv(report: Dict[str, Any]) -> str:
         writer.writerow(['Overview', label, '' if figures.get(key) is None else figures[key]])
     income = figures.get('income')
     if income:
-        for label, key in (('Total income (PHP)', 'total'), ('Auction Hall (PHP)', 'auction'), ('Smart Tags (PHP)', 'smart_tag'), ('Other (PHP)', 'other'), ('Refunds (PHP)', 'refunds'), ('Auctions sold', 'auctions_sold'), ('Smart Tags sold', 'tags_sold')):
+        for label, key in (('Total income (PHP)', 'total'), ('Auction Hall (PHP)', 'auction'), ('Smart Tags (PHP)', 'smart_tag'), ('Seller commissions (PHP)', 'commission'), ('Other (PHP)', 'other'), ('Refunds (PHP)', 'refunds'), ('Auctions sold', 'auctions_sold'), ('Smart Tags sold', 'tags_sold'), ('Seller items sold', 'seller_sales')):
             writer.writerow(['Income', label, f'{income[key]:.2f}' if isinstance(income[key], float) else income[key]])
     claims = report.get('claims')
     if claims:

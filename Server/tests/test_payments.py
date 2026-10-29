@@ -378,7 +378,7 @@ class RegistryTests(unittest.TestCase):
 
     def test_the_register_lists_every_kind_and_filters_and_searches(self):
         data = receipts.admin_list(self.db)
-        self.assertEqual((data['total'], data['counts']), (3, {'payment': 1, 'claim': 1, 'auction': 1}))
+        self.assertEqual((data['total'], data['counts']), (3, {'payment': 1, 'claim': 1, 'auction': 1, 'payout': 0}))
         self.assertTrue(all('code' not in r for r in data['receipts']))                    # the verification code is only in the opened receipt
         self.assertEqual([r['kind'] for r in receipts.admin_list(self.db, kind='claim')['receipts']], ['claim'])
         self.assertEqual(receipts.admin_list(self.db, q='maria santos')['total'], 3)

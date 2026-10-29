@@ -251,7 +251,7 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
                         {notification.link_label || (notification.link_page === 'matches' ? 'Review matches' : 'View receipt')}
                       </button>
                     )}
-                    {notification.link_page === 'auction-hall' && (
+                    {(notification.link_page === 'auction-hall' || notification.link_page === 'auction-selling') && (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleNotificationClick(notification); }}
                         className={`${CX.btnGold} mt-3 px-4 py-2 text-[12px]`}

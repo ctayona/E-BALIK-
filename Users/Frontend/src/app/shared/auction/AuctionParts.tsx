@@ -57,7 +57,7 @@ export function AuctionTile({ auction, offset, onOpen, tone = "surface" }: {
       <div className="flex flex-1 flex-col gap-2 p-4">
         <h3 className={`line-clamp-1 font-[family-name:var(--font-heading)] text-[16.5px] font-semibold ${night ? "text-white" : "text-navy-800"}`}>{auction.title}</h3>
         <p className={`flex items-center gap-1.5 truncate text-[13px] ${night ? "text-white/60" : "text-ink-muted"}`}>
-          <MapPin size={13} aria-hidden="true" className="shrink-0" /> {[auction.location, auction.category].filter(Boolean).join(" · ") || "UMak Lost and Found"}
+          <MapPin size={13} aria-hidden="true" className="shrink-0" /> {[auction.seller_listing ? "Listed by a UMak member" : auction.location, auction.category].filter(Boolean).join(" · ") || "UMak Lost and Found"}
         </p>
         <div className={`mt-auto flex items-end justify-between gap-3 border-t pt-3 ${night ? "border-white/10" : "border-line"}`}>
           <div>

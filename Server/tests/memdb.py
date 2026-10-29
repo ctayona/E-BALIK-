@@ -10,7 +10,8 @@ from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional
 
 
-_DEFAULT_ID = {'otp_tokens': 'id', 'report_comments': 'comment_id', 'report_reactions': 'reaction_id', 'income_ledger': 'entry_id', 'payment_proofs': 'proof_id'}
+_DEFAULT_ID = {'otp_tokens': 'id', 'report_comments': 'comment_id', 'report_reactions': 'reaction_id', 'income_ledger': 'entry_id', 'payment_proofs': 'proof_id',
+               'auction_submissions': 'submission_id', 'seller_payouts': 'payout_id'}
 
 
 class _Not:
@@ -49,6 +50,10 @@ class MemTable:
 
     def update(self, payload):
         self.op, self.payload = 'update', payload
+        return self
+
+    def upsert(self, payload, **_options):
+        self.op, self.payload = 'upsert', payload
         return self
 
     def delete(self):
@@ -141,6 +146,18 @@ class MemTable:
                         full.setdefault('is_hidden', False)
                 rows.append(full)
                 out.append(dict(full))
+            return SimpleNamespace(data=out, count=len(out))
+        if self.op == 'upsert':   # by the declared unique column (or the table's id): update the row that matches, add the rest
+            key = self.client.unique.get(self.name) or _DEFAULT_ID.get(self.name)
+            out = []
+            for row in (self.payload if isinstance(self.payload, list) else [self.payload]):
+                existing = next((r for r in rows if key and r.get(key) == row.get(key)), None)
+                if existing is not None:
+                    existing.update(row)
+                else:
+                    existing = dict(row)
+                    rows.append(existing)
+                out.append(dict(existing))
             return SimpleNamespace(data=out, count=len(out))
         matched = [r for r in rows if all(f(r) for f in self.filters)]
         if self.op == 'update':

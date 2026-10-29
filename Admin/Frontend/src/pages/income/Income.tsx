@@ -13,6 +13,7 @@ import ActivityLog from "./ActivityLog";
 import InstructionsCard from "./InstructionsCard";
 import ReceiptsRegister from "./ReceiptsRegister";
 import PaymentsQueue from "./PaymentsQueue";
+import SellerPayouts from "./SellerPayouts";
 import { ConfirmPaymentModal, ReceiptModal, ReverseModal, type PayableItem } from "./PaymentModals";
 import {
   IncomeSetupError, addIncomeEntry, downloadIncomeCsv, fetchAwaiting, fetchIncomeEntries, fetchIncomeSummary, peso,
@@ -20,15 +21,16 @@ import {
 } from "../../utils/incomeApi";
 
 type Range = "month" | "quarter" | "year" | "twelve" | "all";
-type Tab = "overview" | "payments" | "ledger" | "receipts" | "activity";
+type Tab = "overview" | "payments" | "payouts" | "ledger" | "receipts" | "activity";
 type SourceFilter = "" | IncomeSource;
 
 const PAGE = 25;
-// Gold for the Auction Hall, mint for Smart Tags, periwinkle for anything else: the same three everywhere on this page.
-const COLOR: Record<IncomeSource, string> = { auction: "#d1a153", smart_tag: "#2fae8e", other: "#6e8ef0" };
-const SOURCE_TONE: Record<IncomeSource, Tone> = { auction: "gold", smart_tag: "mint", other: "iris" };
-const SOURCE_LABEL: Record<IncomeSource, string> = { auction: "Auction Hall", smart_tag: "Smart Tags", other: "Other" };
-const KIND_LABEL: Record<IncomeKind, string> = { sale: "Sale", refund: "Refund", adjustment: "Adjustment" };
+// Gold for the Auction Hall, mint for Smart Tags, copper for seller commissions, periwinkle for anything else: the same everywhere on this page.
+const COLOR: Record<IncomeSource, string> = { auction: "#d1a153", smart_tag: "#2fae8e", commission: "#c9784a", other: "#6e8ef0" };
+const SOURCE_TONE: Record<IncomeSource, Tone> = { auction: "gold", smart_tag: "mint", commission: "slate", other: "iris" };
+const SOURCE_LABEL: Record<IncomeSource, string> = { auction: "Auction Hall", smart_tag: "Smart Tags", commission: "Seller commissions", other: "Other" };
+const SOURCES: IncomeSource[] = ["auction", "smart_tag", "commission", "other"];
+const KIND_LABEL: Record<IncomeKind, string> = { sale: "Sale", refund: "Refund", adjustment: "Adjustment", payout: "Seller's share" };
 const METHOD_LABEL: Record<IncomeMethod, string> = { cash: "Cash", gcash: "GCash", maya: "Maya", bank: "Bank transfer", other: "Other" };
 
 /** Today on campus (Manila, UTC+8) as YYYY-MM-DD. */
@@ -253,7 +255,7 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
   if (setup) return <div className="space-y-6 p-4 sm:p-6"><PageHeader title={tr("Revenue and payments")} /><SetupNotice message={setup} onRetry={() => void load()} /></div>;
 
   const change = summary && summary.previous_month > 0 ? ((summary.this_month - summary.previous_month) / summary.previous_month) * 100 : null;
-  const split = summary ? (["auction", "smart_tag", "other"] as IncomeSource[]).map((key) => ({ key, value: Math.max(0, summary.by_source[key]) })) : [];
+  const split = summary ? SOURCES.filter((key) => key !== "commission" || (summary.by_source.commission ?? 0) !== 0).map((key) => ({ key, value: Math.max(0, summary.by_source[key] ?? 0) })) : [];
   const splitTotal = split.reduce((sum, part) => sum + part.value, 0);
   const chart = (summary?.by_month ?? []).map((row) => ({ ...row, label: monthLabel(row.month) }));
   const owed = summary ? summary.pending.auction + summary.pending.smart_tag : 0;
@@ -277,7 +279,7 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
         label="Revenue sections"
         value={tab}
         onChange={setTab}
-        options={[{ value: "overview", label: "Overview" }, { value: "payments", label: "Payments to confirm", count: waitingCount }, { value: "ledger", label: "Ledger" }, { value: "receipts", label: "Receipts" }, { value: "activity", label: "Activity log" }]}
+        options={[{ value: "overview", label: "Overview" }, { value: "payments", label: "Payments to confirm", count: waitingCount }, { value: "payouts", label: "Seller payouts" }, { value: "ledger", label: "Ledger" }, { value: "receipts", label: "Receipts" }, { value: "activity", label: "Activity log" }]}
       />
 
       {(tab === "overview" || tab === "ledger") && (
@@ -315,14 +317,17 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
               <div className="flex h-3 overflow-hidden rounded-full bg-white/10" role="img" aria-label={tr("How the income splits between sources")}>
                 {splitTotal > 0 && split.map((part) => part.value > 0 && <span key={part.key} style={{ width: `${(part.value / splitTotal) * 100}%`, background: COLOR[part.key] }} />)}
               </div>
-              <ul className="mt-3 grid grid-cols-3 gap-2">
+              <ul className={`mt-3 grid gap-2 ${split.length > 3 ? "grid-cols-2" : "grid-cols-3"}`}>
                 {split.map((part) => (
                   <li key={part.key} className="rounded-2xl bg-white/[0.06] px-3 py-2.5 ring-1 ring-white/10">
                     <span className="flex items-center gap-1.5 text-[12.5px] text-navy-100"><span className="size-2 rounded-full" style={{ background: COLOR[part.key] }} aria-hidden="true" />{tr(SOURCE_LABEL[part.key])}</span>
-                    <span className="mt-0.5 block font-semibold tabular-nums">{peso(summary.by_source[part.key])}</span>
+                    <span className="mt-0.5 block font-semibold tabular-nums">{peso(summary.by_source[part.key] ?? 0)}</span>
                   </li>
                 ))}
               </ul>
+              {summary.seller && summary.seller.sales > 0 && (
+                <p className="mt-3 text-[12.5px] leading-5 text-navy-100">{tr("{0} seller item(s) sold for {1}. The office kept {2}; {3} belongs to the sellers. Still held for sellers: {4}.", { "0": summary.seller.sales, "1": peso(summary.seller.gross), "2": peso(summary.seller.commission), "3": peso(summary.seller.shares), "4": peso(summary.seller.owed) })}</p>
+              )}
             </div>
           </div>
         )}
@@ -360,8 +365,8 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
                 <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: "var(--color-ink-muted)" }} />
                 <YAxis tickLine={false} axisLine={false} width={64} tick={{ fontSize: 12, fill: "var(--color-ink-muted)" }} tickFormatter={(value: number) => `₱${value >= 1000 ? `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k` : value}`} />
                 <Tooltip cursor={{ fill: "rgba(110,142,240,0.08)" }} formatter={(value, name) => [peso(Number(value)), tr(SOURCE_LABEL[name as IncomeSource] ?? String(name))]} contentStyle={{ borderRadius: 14, border: "1px solid var(--color-line)", background: "var(--surface)" }} />
-                {(["auction", "smart_tag", "other"] as IncomeSource[]).map((key, index) => (
-                  <Bar key={key} dataKey={key} stackId="income" fill={COLOR[key]} radius={index === 2 ? [6, 6, 0, 0] : [0, 0, 0, 0]} maxBarSize={44} />
+                {SOURCES.map((key, index) => (
+                  <Bar key={key} dataKey={key} stackId="income" fill={COLOR[key]} radius={index === SOURCES.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]} maxBarSize={44} />
                 ))}
               </BarChart>
             </ResponsiveContainer>
@@ -391,6 +396,7 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
       </>)}
 
       {tab === "payments" && <div className="space-y-4"><InstructionsCard /><PaymentsQueue data={awaiting} loading={loading} error={awaitError} onConfirm={setConfirming} /></div>}
+      {tab === "payouts" && <SellerPayouts onChanged={refreshAll} />}
       {tab === "receipts" && <ReceiptsRegister />}
       {tab === "activity" && <ActivityLog refreshKey={logKey} />}
 
@@ -402,7 +408,7 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
             label="Source"
             value={source}
             onChange={setSource}
-            options={[{ value: "", label: "All" }, { value: "auction", label: "Auction Hall" }, { value: "smart_tag", label: "Smart Tags" }, { value: "other", label: "Other" }]}
+            options={[{ value: "", label: "All" }, { value: "auction", label: "Auction Hall" }, { value: "smart_tag", label: "Smart Tags" }, { value: "commission", label: "Seller commissions" }, { value: "other", label: "Other" }]}
           />
         </div>
         {loading && !entries.length ? <AdminTableSkeleton rows={6} /> : (
@@ -428,12 +434,12 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
                 <td>
                   <span className="block font-semibold text-ink">{entry.description}</span>
                   <span className="block text-[12.5px] text-ink-muted">
-                    {entry.kind !== "sale" && <>{tr(KIND_LABEL[entry.kind])}{entry.notes ? `: ${entry.notes}` : ""} · </>}
+                    {entry.kind !== "sale" && <>{tr(KIND_LABEL[entry.kind] ?? entry.kind_label ?? entry.kind)}{entry.notes ? `: ${entry.notes}` : ""} · </>}
                     {entry.receipt_no ? tr("Receipt {0}", { "0": entry.receipt_no }) + " · " : ""}{entry.payment_reference ? tr("Ref {0}", { "0": entry.payment_reference }) + " · " : ""}{tr("Recorded by {0}", { "0": entry.recorded_by_name || tr("System") })}
                     {entry.reversed && <> · <span className="font-semibold text-rose-700 dark:text-rose-300">{tr("Reversed")}</span></>}
                   </span>
                 </td>
-                <td><StatusPill tone={SOURCE_TONE[entry.source] ?? "slate"}>{tr(SOURCE_LABEL[entry.source] ?? entry.source)}</StatusPill></td>
+                <td><StatusPill tone={SOURCE_TONE[entry.report_source ?? entry.source] ?? "slate"}>{tr(SOURCE_LABEL[entry.report_source ?? entry.source] ?? entry.source)}</StatusPill></td>
                 <td className="text-[13.5px]">{tr(METHOD_LABEL[entry.method] ?? entry.method)}</td>
                 <td className="text-[13.5px]">{entry.payer_name || "—"}</td>
                 <td className={`text-right font-semibold tabular-nums ${entry.amount < 0 ? "text-rose-700 dark:text-rose-300" : "text-ink"} ${entry.reversed ? "line-through opacity-60" : ""}`}>

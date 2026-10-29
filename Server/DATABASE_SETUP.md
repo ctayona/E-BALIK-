@@ -429,3 +429,12 @@ SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.income_ledger'::regclass A
 ```
 
 If you ever have to correct the ledger by hand, drop the two triggers (the last lines of the file), make the fix, and run the file again.
+
+## 20261027: seller auctions
+
+Run `manual_migrations/20261027_seller_auctions.sql` after `20261026`. It adds `auction_submissions` (what people ask to sell, with the fee they accepted and where to pay them; staff only, RLS on), `auctions.seller_account_id` and `auctions.submission_id`, the ledger kind `payout` (the seller's share, written in the same insert as the sale so income counts only the commission), and `seller_payouts` (what the office owes each seller and the PO- receipt once paid). Until it runs, the Selling tab and the admin Seller listings and Seller payouts say "not set up yet"; everything else works as before. Verify with:
+
+```sql
+SELECT to_regclass('public.auction_submissions'), to_regclass('public.seller_payouts');
+SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'income_ledger_kind_check';   -- includes 'payout'
+```

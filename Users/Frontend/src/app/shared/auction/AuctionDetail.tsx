@@ -303,6 +303,7 @@ export default function AuctionDetail({ auction: summary, signedIn, focus, onClo
               </p>
               <h2 id={titleId} className="mt-1 font-[family-name:var(--font-heading)] text-[26px] font-semibold leading-tight tracking-[-0.01em] text-navy-800 sm:text-[30px]">{a.title}</h2>
               {a.location && <p className="mt-1.5 flex items-center gap-1.5 text-[14px] text-ink-muted"><MapPin size={14} aria-hidden="true" /> Found at {a.location}</p>}
+              {a.seller_listing && <p className="mt-1.5 flex items-center gap-1.5 text-[14px] text-ink-muted"><ShieldCheck size={14} aria-hidden="true" className="text-tide-600" /> Listed by a UMak member. The Lost and Found Office checked the item and holds it until pickup.</p>}
             </header>
 
             <dl className="grid grid-cols-3 gap-2.5">

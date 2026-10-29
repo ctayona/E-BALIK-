@@ -48,14 +48,14 @@ export default function PaymentsQueue({ data, loading, error, onConfirm }: { dat
           <tr key={`${item.source}-${item.source_ref}`}>
             <td>
               <span className="block font-semibold text-ink">{item.title}</span>
-              <span className="block text-[12.5px] text-ink-muted">{item.source === "auction" ? tr("Auction Hall") : tr("Smart Tag")}{item.reference ? ` · ${item.reference}` : ""}</span>
+              <span className="block text-[12.5px] text-ink-muted">{item.source === "auction" ? (item.seller_listing ? tr("Seller's item") : tr("Auction Hall")) : tr("Smart Tag")}{item.reference ? ` · ${item.reference}` : ""}</span>
             </td>
             <td className="text-[13.5px]">{item.payer_name || "—"}</td>
             <td><StatusPill tone={STATE[item.state].tone}>{tr(STATE[item.state].label)}</StatusPill>{item.proof && <span className="mt-1 flex"><StatusPill tone="gold">{tr("Receipt sent: check it")}</StatusPill></span>}</td>
             <td className="whitespace-nowrap text-[13.5px] text-ink-muted">{item.since ? formatDateTime(item.since) : "—"}</td>
-            <td className="text-right font-semibold tabular-nums text-ink">{peso(item.amount)}</td>
+            <td className="text-right font-semibold tabular-nums text-ink">{peso(item.amount)}{item.seller_split && <span className="block text-[12px] font-medium text-ink-muted">{tr("office keeps {0}", { "0": peso(item.seller_split.commission) })}</span>}</td>
             <td className="mgmt-actions text-right">
-              <button type="button" onClick={() => onConfirm({ source: item.source, source_ref: item.source_ref, title: item.title, amount: item.amount, payer_name: item.payer_name, released: item.released, proof: item.proof })} className={`${BTN.gold} !min-h-[38px]`}>
+              <button type="button" onClick={() => onConfirm({ source: item.source, source_ref: item.source_ref, title: item.title, amount: item.amount, payer_name: item.payer_name, released: item.released, proof: item.proof, seller_split: item.seller_split })} className={`${BTN.gold} !min-h-[38px]`}>
                 <Banknote size={15} aria-hidden="true" />{item.proof ? tr("Review and confirm") : tr("Confirm payment")}
               </button>
             </td>

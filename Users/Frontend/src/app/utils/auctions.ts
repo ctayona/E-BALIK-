@@ -39,6 +39,8 @@ export interface Auction {
   winning_amount: number | null;
   sold: boolean;
   cancel_reason: string | null;
+  /** A member of the UMak community listed it through the Office (not unclaimed found property). The seller is never named. */
+  seller_listing?: boolean;
   reaction_count?: number;
   my_state?: "leading" | "outbid" | "awaiting" | "won" | "lost" | "cancelled";
   my_best_bid?: number | null;

@@ -65,11 +65,17 @@ export interface AdminAuction {
   stage: AuctionStage;
   archived?: boolean;
   archived_at?: string | null;
+  /** A member listed it (not found property). Staff see who; bidders never do. */
+  seller_listing?: boolean;
+  seller_detail?: AuctionPerson | null;
+  submission_id?: string | null;
 }
 
 export interface AuctionStats { live: number; scheduled: number; ended: number; awaiting_admin?: number; awaiting_pickup: number; completed?: number; archived?: number; reauction_ready?: number; total_bids: number;
   /** Only payments an administrator confirmed count as sales. */
-  sales_total: number; sales_count?: number; awaiting_payment_total?: number; awaiting_payment_count?: number; payment_tracking?: boolean }
+  sales_total: number; sales_count?: number; awaiting_payment_total?: number; awaiting_payment_count?: number; payment_tracking?: boolean;
+  /** Seller auctions: what buyers paid for members' items and the commission the office kept (only the commission is in sales_total). */
+  office_sales_total?: number; seller_sales_total?: number; seller_commission_total?: number; seller_listings?: number }
 export interface AuctionList { auctions: AdminAuction[]; stats: AuctionStats; server_time: string; min_custody_days: number }
 
 export interface EligibleItem {
