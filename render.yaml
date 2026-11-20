@@ -19,6 +19,12 @@ services:
         value: production
       - key: AUCTION_EMAIL_MODE
         value: auto
+      # University event pilot and NFC are included in the reviewed production release.
+      # Per-event portal switches, staff permissions and approval remain enforced.
+      - key: EBALIK_EVENTS_FOUNDATION_ENABLED
+        value: "true"
+      - key: SMART_TAG_TYPES_ENABLED
+        value: "qr,nfc"
       - key: OTP_EXPIRATION_MINUTES
         value: "10"
       - key: JWT_SECRET_KEY
