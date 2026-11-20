@@ -18,3 +18,16 @@
 /* The live board uses app-theme text, so it needs an opaque app-theme surface. */
 .ebalik-landing .landing-live-board{background:var(--color-page,#f8fafc)}
 .ebalik-landing .landing-community-band>p{color:#53617a}
+/* Keep the original editorial photo frame and overlapping return card. */
+.landing-campus-photo>img{animation:landing-photo-reveal .7s ease-out}
+.landing-campus-shade{background:linear-gradient(180deg,#10243f29,transparent 22%,#10243f66 40%,#10243fcc 55%,#10243fe6)}
+.landing-photo-kicker{background:#172b52e6;padding:8px 10px;border-radius:6px}
+@keyframes landing-photo-reveal{from{opacity:.55}to{opacity:1}}
+.landing-slideshow-controls{position:absolute;right:20px;bottom:164px;display:flex;align-items:center;gap:0;border:1px solid #ffffff55;border-radius:999px;background:#172b52;color:#fff;box-shadow:0 4px 20px #10243f33;padding:3px}
+.landing-slideshow-controls button{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;color:#fff;cursor:pointer;flex-shrink:0;background:transparent}
+.landing-slideshow-controls button:hover{background:#30476c}
+.landing-slideshow-controls button:disabled{cursor:default;opacity:.65}
+.landing-slideshow-controls>span{min-width:42px;text-align:center;font-size:10px;letter-spacing:.06em;font-variant-numeric:tabular-nums;color:#fff}
+.landing-slideshow-credit{margin:12px 0 0;font-size:9px;line-height:1.7;color:#53617a;text-align:right;overflow-wrap:anywhere}
+.landing-slideshow-credit a{text-decoration:underline;text-underline-offset:2px}
+@media(max-width:700px){.landing-slideshow-controls{right:16px;bottom:190px}.landing-slideshow-credit{text-align:left;font-size:9px}}

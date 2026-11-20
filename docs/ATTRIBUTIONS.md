@@ -10,3 +10,10 @@ The campus gallery additionally uses two archival Wikimedia Commons photographs,
 - **University of Makati Stadium Aug 16 2017.jpg**, by **Hariboneagle927**, August 16, 2017 — [source](https://commons.wikimedia.org/wiki/File:University_of_Makati_Stadium_Aug_16_2017.jpg), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Local file: `Users/Frontend/src/assets/campus/umak-stadium.jpg`, 1280 × 720 rendition of the 4160 × 2340 original.
 
 These gallery images are resized renditions displayed with responsive CSS cropping. Adaptations retain their respective ShareAlike licenses. No endorsement or current-building-condition claim is implied.
+
+The landing hero slideshow also uses the following archival campus photographs, bundled locally with source and license links shown below the slideshow:
+
+- **University of Makati (J.P. Rizal Avenue, Makati)(2018-04-24) cropped.jpg**, by **Patrick Roque**, April 24, 2018 — [source](https://commons.wikimedia.org/wiki/File:University_of_Makati_(J.P._Rizal_Avenue,_Makati)(2018-04-24)_cropped.jpg), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Local file: `Users/Frontend/src/assets/campus/umak-campus-aerial.jpg`, 1280 × 720 rendition of the 3644 × 2050 cropped original.
+- **HPSB Lecture Room in New Normal.jpg**, by **Umakcorpcomm**, June 9, 2022 — [source](https://commons.wikimedia.org/wiki/File:HPSB_Lecture_Room_in_New_Normal.jpg), [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Local file: `Users/Frontend/src/assets/campus/umak-classroom.jpg`, 1280 × 682 rendition of the 2048 × 1091 original. This archival photo shows a lecture room during the limited face-to-face teaching period.
+
+Both images are resized and displayed with responsive CSS cropping and overlays; image adaptations retain CC BY-SA 4.0. The slideshow reuses the three previously credited campus photographs as well. No endorsement or current-room-layout claim is implied.
