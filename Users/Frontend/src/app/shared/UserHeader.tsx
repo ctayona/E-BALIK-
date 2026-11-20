@@ -10,6 +10,7 @@ import { playNotificationChime } from "@/app/utils/notificationSound";
 import NotificationMenu from "@/app/shared/NotificationMenu";
 import UserSettingsModal, { OPEN_SETTINGS_EVENT, type SettingsTab } from "@/app/shared/settings/UserSettingsModal";
 import { usePreferences } from "@/app/utils/preferences";
+import "./user-header.css";
 
 const NAV_LINKS: { label: string; page: Page; icon: ReactNode }[] = [
   { label: "Dashboard",    page: "dashboard",    icon: <LayoutDashboard size={16} aria-hidden="true" /> },
@@ -171,11 +172,8 @@ export default function UserHeader({
       </a>
 
       <header
-        className={`app-chrome sticky top-0 z-30 w-full shrink-0 border-b pt-[env(safe-area-inset-top)] text-white backdrop-blur-2xl backdrop-saturate-150 transition-[background-color,box-shadow,border-color] duration-300 ${
-          scrolled
-            ? "border-white/15 bg-navy-900/90 shadow-[0_16px_40px_-20px_rgba(5,10,30,0.95)]"
-            : "border-white/10 bg-navy-900/70 shadow-[0_10px_30px_-22px_rgba(5,10,30,0.8)]"
-        }`}
+        data-scrolled={scrolled}
+        className="app-chrome user-header sticky top-0 z-30 w-full shrink-0 border-b pt-[env(safe-area-inset-top)] backdrop-blur-2xl backdrop-saturate-150 transition-[background-color,box-shadow,border-color] duration-300"
       >
         <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.22),transparent)]" aria-hidden="true" />
         <span className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,transparent,rgba(209,161,83,0.6),transparent)]" aria-hidden="true" />
@@ -187,7 +185,7 @@ export default function UserHeader({
             </span>
             <span className="hidden text-left leading-tight sm:block">
               <span className="block font-[family-name:var(--font-heading)] text-[15px] font-semibold tracking-[-0.01em]">E-Balik</span>
-              <span className="block whitespace-nowrap text-[11px] font-medium text-gold-300">University of Makati · Lost &amp; Found</span>
+              <span className="user-header-subtitle block whitespace-nowrap text-[11px] font-medium">University of Makati · Lost &amp; Found</span>
             </span>
           </button>
 
@@ -210,7 +208,7 @@ export default function UserHeader({
               onClick={toggleTheme}
               aria-label={themeLabel}
               title={themeLabel}
-              className="flex size-11 items-center justify-center rounded-xl text-navy-100 transition-[background-color,color,transform] duration-200 hover:bg-white/10 hover:text-gold-300 active:scale-90"
+              className="user-header-control flex size-11 items-center justify-center rounded-xl transition-[background-color,color,transform] duration-200 active:scale-90"
             >
               {theme === "dark" ? <Sun size={19} aria-hidden="true" /> : <Moon size={19} aria-hidden="true" />}
             </button>
@@ -224,11 +222,12 @@ export default function UserHeader({
                 aria-haspopup="menu"
                 aria-expanded={accountOpen}
                 onClick={() => setAccountOpen((open) => !open)}
-                className={`flex items-center gap-2 rounded-xl border py-1.5 pl-1.5 pr-2 transition-[background-color,border-color] duration-200 ${accountOpen || currentPage === "profile" ? "border-white/15 bg-white/15" : "border-transparent hover:border-white/10 hover:bg-white/10"}`}
+                data-active={currentPage === "profile" || undefined}
+                className="user-header-control flex items-center gap-2 rounded-xl border border-transparent py-1.5 pl-1.5 pr-2 transition-[background-color,border-color] duration-200"
               >
                 <span className="flex size-8 items-center justify-center rounded-lg bg-gold-500 text-[13px] font-bold text-navy-950">{initials(user)}</span>
                 <span className="sr-only">{user?.fname || "Account"}</span>
-                <ChevronDown size={15} className={`text-navy-200 transition-transform ${accountOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+                <ChevronDown size={15} className={`transition-transform ${accountOpen ? "rotate-180" : ""}`} aria-hidden="true" />
               </button>
               <AnimatePresence>
                 {accountOpen && (
@@ -238,7 +237,7 @@ export default function UserHeader({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.12 }}
-                    className="absolute right-0 top-[calc(100%+10px)] z-50 w-64 overflow-hidden rounded-2xl border border-line bg-white/95 text-ink shadow-raised backdrop-blur-xl"
+                    className="user-header-popover absolute right-0 top-[calc(100%+10px)] z-50 w-64 overflow-hidden rounded-2xl border border-line bg-white/95 text-ink shadow-raised backdrop-blur-xl"
                   >
                     <div className="border-b border-line px-4 py-3">
                       <p className="truncate text-[14px] font-semibold">{profileLabel}</p>
@@ -246,6 +245,7 @@ export default function UserHeader({
                       <p className="mt-1 font-mono text-[12px] text-gold-700">{campusIdLabel}</p>
                     </div>
                     <div className="p-1.5">
+                      <a href="/event-desk" role="menuitem" className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] font-medium text-ink-soft hover:bg-navy-50"><KeyRound size={16} className="text-navy-500" aria-hidden="true" /> Event desk</a>
                       {consoleLabel && (
                         <button type="button" role="menuitem" onClick={openStaffConsole} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[14px] font-medium text-ink-soft hover:bg-navy-50">
                           <KeyRound size={16} className="text-navy-500" aria-hidden="true" /> {consoleLabel}
@@ -268,7 +268,7 @@ export default function UserHeader({
 
             <button
               type="button"
-              className="flex size-11 items-center justify-center rounded-xl text-white transition-[background-color,transform] duration-200 hover:bg-white/10 active:scale-90 lg:hidden"
+              className="user-header-control flex size-11 items-center justify-center rounded-xl transition-[background-color,transform] duration-200 active:scale-90 lg:hidden"
               onClick={() => setSidebarOpen(true)}
               aria-label="Open menu"
               aria-expanded={sidebarOpen}
@@ -279,7 +279,7 @@ export default function UserHeader({
         </div>
         {/* Desktop: the pages in a second row. Each tab has an icon and a label; the open page gets a navy fill and a gold underline that slides
             between tabs. Between 1024 and 1280 px the row scrolls sideways (with soft edges) instead of squeezing the labels. */}
-        <nav className="relative hidden border-t border-white/10 bg-white/[0.025] lg:block" aria-label="Main navigation">
+        <nav className="user-header-pages relative hidden border-t lg:block" aria-label="Main navigation">
           <div className="mx-auto w-full max-w-[1440px] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))]">
             <ul ref={stripRef} className="no-scrollbar -mx-2 flex h-[52px] items-center gap-1 overflow-x-auto scroll-smooth px-2 [mask-image:linear-gradient(90deg,transparent,#000_20px,#000_calc(100%-20px),transparent)] xl:justify-center xl:[mask-image:none]">
               {NAV_LINKS.map((link) => {
@@ -291,9 +291,7 @@ export default function UserHeader({
                       onClick={() => navigate(link.page)}
                       aria-current={active ? "page" : undefined}
                       data-active={active ? "true" : undefined}
-                      className={`group relative flex h-10 items-center rounded-xl px-3 text-[13.5px] font-medium transition-[color,background-color] duration-200 xl:px-4 xl:text-[14px] ${
-                        active ? "text-white" : "text-navy-200 hover:bg-white/[0.07] hover:text-white"
-                      }`}
+                      className="user-header-page group relative flex h-10 items-center rounded-xl px-3 text-[13.5px] font-medium transition-[color,background-color] duration-200 xl:px-4 xl:text-[14px]"
                     >
                       {active && (
                         <motion.span
@@ -311,7 +309,7 @@ export default function UserHeader({
                         />
                       )}
                       <span className="relative flex items-center gap-2 whitespace-nowrap">
-                        <span className={`transition-[color,transform] duration-200 ${active ? "text-gold-400" : "text-navy-300 group-hover:-translate-y-px group-hover:text-gold-300"}`}>{link.icon}</span>
+                        <span className="user-header-page-icon transition-[color,transform] duration-200 group-hover:-translate-y-px">{link.icon}</span>
                         {link.label}
                       </span>
                     </button>
@@ -383,7 +381,7 @@ export default function UserHeader({
                       <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg transition-colors duration-200 ${active ? "bg-[linear-gradient(180deg,#ecc787,#d1a153)] text-navy-950" : "bg-white/[0.06] text-navy-300 group-hover:text-gold-300"}`}>{link.icon}</span>
                       <span className="flex-1">{link.label}</span>
                       {link.page === "notifications" && unreadCount > 0 && (
-                        <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[12px] font-bold">{badge}</span>
+                        <span className="rounded-full bg-rose-700 px-2 py-0.5 text-[12px] font-bold text-white">{badge}</span>
                       )}
                     </button>
                   );
@@ -403,6 +401,7 @@ export default function UserHeader({
                     <KeyRound size={16} aria-hidden="true" /> {consoleLabel}
                   </button>
                 )}
+                <a href="/event-desk" className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-navy-100 hover:bg-white/[0.06]"><KeyRound size={16} aria-hidden="true" />Event desk</a>
                 <button type="button" onClick={() => { setSidebarOpen(false); setSettingsTab("appearance"); setSettingsOpen(true); }} className="mt-1 flex min-h-[44px] w-full items-center gap-3 rounded-[10px] px-3 text-[14px] font-medium text-navy-100 hover:bg-white/[0.06]">
                   <Settings2 size={16} aria-hidden="true" /> Settings
                 </button>

@@ -1,12 +1,12 @@
 name: CI
 
-# Runs on every push to main and on every pull request: the backend tests, both site builds, the type checks and the text-rule parity check.
+# Runs on main, the event feature branch and pull requests: backend tests, builds, types and utility checks.
 # It only READS the code and uses no secrets, so it can never change production. Render and Vercel deploy on their own; to make a red CI
 # block a merge, turn on branch protection and require the "Backend tests" and "Builds and type checks" checks.
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/event-foundation]
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -106,3 +106,6 @@ jobs:
 
       - name: Check the browser and server text rules still agree
         run: node scripts/check-text-guard-parity.mjs
+
+      - name: Check NFC encoding and event utilities
+        run: node --test scripts/test-nfc.mjs scripts/test-event-dates.mjs scripts/test-event-operator.mjs

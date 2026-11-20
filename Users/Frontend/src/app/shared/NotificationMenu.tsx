@@ -152,13 +152,13 @@ export default function NotificationMenu({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
-        className={`group relative flex size-11 items-center justify-center rounded-xl transition-[background-color,transform] duration-200 active:scale-90 ${
+        className={`user-header-control group relative flex size-11 items-center justify-center rounded-xl transition-[background-color,transform] duration-200 active:scale-90 ${
           open || currentPage === "notifications" ? "bg-white/15 ring-1 ring-white/15" : "hover:bg-white/10"
         }`}
       >
-        <Bell size={19} className="text-navy-100 transition-colors group-hover:text-gold-300" aria-hidden="true" />
+        <Bell size={19} className="transition-colors" aria-hidden="true" />
         {unreadCount > 0 && (
-          <span className="absolute right-1.5 top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[11px] font-bold leading-none text-white ring-2 ring-navy-800" aria-hidden="true">
+          <span className="absolute right-1.5 top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-700 px-1 text-[11px] font-bold leading-none text-white ring-2 ring-navy-800" aria-hidden="true">
             {badge}
           </span>
         )}
@@ -177,14 +177,14 @@ export default function NotificationMenu({
             exit={reduced ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
             transition={spring}
             style={{ transformOrigin: "top right" }}
-            className="absolute inset-x-2 top-[calc(100%+8px)] z-50 flex max-h-[calc(100dvh-8.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/85 text-ink shadow-[0_26px_60px_-18px_rgba(18,31,66,0.6),inset_0_1px_0_rgba(255,255,255,0.7)] outline-none backdrop-blur-2xl backdrop-saturate-150 sm:inset-x-auto sm:right-0 sm:top-[calc(100%+10px)] sm:w-[410px] sm:max-h-[min(36rem,calc(100dvh-11rem))] lg:max-h-[min(36rem,calc(100dvh-6rem))]"
+            className="user-header-popover absolute inset-x-2 top-[calc(100%+8px)] z-50 flex max-h-[calc(100dvh-8.5rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/85 text-ink shadow-[0_26px_60px_-18px_rgba(18,31,66,0.6),inset_0_1px_0_rgba(255,255,255,0.7)] outline-none backdrop-blur-2xl backdrop-saturate-150 sm:inset-x-auto sm:right-0 sm:top-[calc(100%+10px)] sm:w-[410px] sm:max-h-[min(36rem,calc(100dvh-11rem))] lg:max-h-[min(36rem,calc(100dvh-6rem))]"
           >
             <span className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-[linear-gradient(90deg,transparent,#d1a153,transparent)]" aria-hidden="true" />
 
             <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-1 pt-3.5">
               <div className="flex min-w-0 items-center gap-2">
                 <h2 className="font-[family-name:var(--font-heading)] text-[19px] font-semibold tracking-[-0.01em] text-navy-800">Notifications</h2>
-                {unreadCount > 0 && <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[11.5px] font-bold leading-4 text-white">{badge} new</span>}
+                {unreadCount > 0 && <span className="rounded-full bg-rose-700 px-2 py-0.5 text-[11.5px] font-bold leading-4 text-white">{badge} new</span>}
               </div>
               <button
                 type="button"
@@ -203,7 +203,7 @@ export default function NotificationMenu({
                   type="button"
                   onClick={() => setFilter(value)}
                   aria-pressed={filter === value}
-                  className={`min-h-[44px] rounded-full px-4 sm:min-h-[36px] sm:px-3.5 text-[13px] font-semibold transition-colors ${
+                  className={`user-notification-filter min-h-[44px] rounded-full px-4 sm:min-h-[36px] sm:px-3.5 text-[13px] font-semibold transition-colors ${
                     filter === value ? "bg-navy-800 text-white shadow-sm" : "bg-navy-50/80 text-navy-700 hover:bg-navy-100"
                   }`}
                 >
@@ -237,7 +237,7 @@ export default function NotificationMenu({
                 </div>
               ) : shown.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-                  <span className="flex size-14 items-center justify-center rounded-2xl bg-frost-200 text-navy-600"><BellOff size={26} aria-hidden="true" /></span>
+                  <span className="flex size-14 items-center justify-center rounded-2xl bg-frost-200 text-ink-muted"><BellOff size={26} aria-hidden="true" /></span>
                   <p className="text-[15px] font-semibold text-navy-800">{filter === "unread" ? "No unread notifications" : "You're all caught up"}</p>
                   <p className="text-[13px] text-ink-muted">{filter === "unread" ? "Everything has been read." : "New updates about your reports, claims and auctions show up here."}</p>
                 </div>

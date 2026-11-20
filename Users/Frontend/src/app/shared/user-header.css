@@ -1,0 +1,69 @@
+/* Paired surfaces and foregrounds keep navigation legible over every page.
+   Scope these tokens to the header; event branding and page palettes stay independent. */
+.user-header {
+  --header-surface: #f8fafc;
+  --header-text: #162448;
+  --header-muted: #465773;
+  --header-accent: #80591f;
+  --header-hover: #e8edf5;
+  --header-line: #c5d1e8;
+  --header-menu: #ffffff;
+  --header-focus: #46619c;
+}
+:root[data-theme="dark"] .user-header {
+  --header-surface: #0e1830;
+  --header-text: #eef1f8;
+  --header-muted: #c5d1e8;
+  --header-accent: #e9c47c;
+  --header-hover: #253454;
+  --header-line: #455472;
+  --header-menu: #0f172f;
+  --header-focus: #e9c47c;
+}
+:root header.user-header.app-chrome {
+  color: var(--header-text);
+  background-color: var(--header-surface);
+  border-color: var(--header-line);
+  box-shadow: 0 6px 24px -18px #0e183060;
+}
+:root header.user-header[data-scrolled="true"] {
+  box-shadow: 0 12px 30px -20px #0e183080;
+}
+.user-header .user-header-subtitle { color: var(--header-accent); }
+.user-header .user-header-control { color: var(--header-text); }
+.user-header .user-header-control:is(:hover, [aria-expanded="true"], [data-active="true"]) {
+  color: var(--header-text);
+  background: var(--header-hover);
+  border-color: var(--header-line);
+}
+.user-header .user-header-pages { border-color: var(--header-line); }
+.user-header .user-header-page { color: var(--header-muted); }
+.user-header .user-header-page:not([aria-current="page"]):hover {
+  color: var(--header-text);
+  background: var(--header-hover);
+}
+.user-header .user-header-page[aria-current="page"] { color: #ffffff; }
+.user-header .user-header-page-icon { color: inherit; }
+.user-header .user-header-page[aria-current="page"] .user-header-page-icon { color: #e9c47c; }
+:root[data-theme] .user-header .user-header-popover {
+  background: var(--header-menu);
+  border-color: var(--header-line);
+}
+.user-header .user-header-popover [role="menuitem"] svg { color: inherit; }
+.user-header .user-notification-filter[aria-pressed="false"] {
+  color: var(--header-muted);
+  background: transparent;
+}
+.user-header .user-notification-filter[aria-pressed="false"]:hover {
+  color: var(--header-text);
+  background: var(--header-hover);
+}
+.user-header :is(button, a):focus-visible {
+  outline: 2px solid var(--header-focus);
+  outline-offset: 3px;
+}
+:root[data-contrast="high"] .user-header {
+  --header-muted: var(--header-text);
+  --header-line: var(--header-muted);
+}
+:root[data-contrast="high"] .user-header :is(button, a):focus-visible { outline-width: 3px; }

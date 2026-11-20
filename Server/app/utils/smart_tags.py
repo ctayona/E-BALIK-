@@ -272,8 +272,8 @@ def as_bool(value: Any) -> bool:
 
 
 # ----------------------------------------------------------------------------------------- tag types and validity
-# The medium a tag is printed or encoded on. Only QR is switched on today; RFID and NFC are fully supported by the
-# schema and the generator, and are turned on later by setting SMART_TAG_TYPES_ENABLED=qr,rfid,nfc on the server.
+# QR and NFC share the existing lifecycle but each issued item gets its own unique ID.
+# Explicit environment restrictions still apply; generic RFID remains opt-in.
 TAG_TYPES = {'qr': 'QR Code', 'rfid': 'RFID', 'nfc': 'NFC'}
 MAX_VALIDITY_MONTHS = 120
 EXPIRY_WARNING_DAYS = 30
@@ -281,7 +281,7 @@ SCAN_WRITE_INTERVAL_SECONDS = 30
 
 
 def enabled_tag_types() -> List[str]:
-    configured = [t.strip().lower() for t in (os.getenv('SMART_TAG_TYPES_ENABLED') or 'qr').split(',')]
+    configured = [t.strip().lower() for t in (os.getenv('SMART_TAG_TYPES_ENABLED') or 'qr,nfc').split(',')]
     return [t for t in configured if t in TAG_TYPES] or ['qr']
 
 
@@ -1100,18 +1100,24 @@ class SmartTagService:
                 self._guard(error)
         raise TagError('Could not generate unique tags. Try again.', 500)
 
-    def admin_list(self, status: str = 'all', query: str = '') -> Dict[str, Any]:
+    def admin_list(self, status: str = 'all', query: str = '', tag_type: str = 'all') -> Dict[str, Any]:
         status = (status or 'all').lower()
+        if tag_type not in ('all', *TAG_TYPES):
+            raise TagError('Choose a valid tag type.')
         self._expire_due()
         try:
             def count(**flt):
                 q = self._table().select('tag_id', count='exact')
+                if tag_type != 'all':
+                    q = q.eq('tag_type', tag_type)
                 for key, value in flt.items():
                     q = q.in_(key, value) if isinstance(value, list) else q.eq(key, value)
                 return int(q.limit(1).execute().count or 0)
             stats = {'total': count(), 'blank': count(status='blank', is_disabled=False), 'claimed': count(status=['active', 'lost', 'expired', PENDING]),
                      'lost': count(status='lost'), 'expired': count(status='expired'), 'pending': count(status=PENDING), 'disabled': count(is_disabled=True)}
             q = self._table().select('*')
+            if tag_type != 'all':
+                q = q.eq('tag_type', tag_type)
             if status == 'blank':
                 q = q.eq('status', 'blank').eq('is_disabled', False)
             elif status == 'claimed':

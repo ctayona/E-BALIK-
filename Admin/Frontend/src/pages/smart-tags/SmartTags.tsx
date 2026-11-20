@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Banknote, Expand, Trash2, X as CloseIcon, Ban, CalendarClock, Check, ClipboardCheck, Copy, Database, Download, Eye, Hourglass, Layers, Nfc, Package, Pencil, PhilippinePeso, QrCode, Radio, RefreshCw, RotateCw, ShieldCheck, ShieldOff, Tags, TriangleAlert } from "lucide-react";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
@@ -11,6 +11,7 @@ import {
 } from "../../utils/smartTagsApi";
 import AdminTagEditModal from "./AdminTagEditModal";
 import VerificationModal from "./VerificationModal";
+import NfcPanel from "./NfcPanel";
 import { downloadCsv } from "../../utils/csv";
 import { formatDateTime } from "../../utils/countdown";
 import { canDelete } from "../../utils/permissions";
@@ -239,7 +240,7 @@ function BatchModal({ maxBatch, tagTypes, onClose, onCreated }: { maxBatch: numb
             {result.tag_ids.length > 8 && <li className="text-ink-muted">{tr("…and {0} more in the download", { "0": result.tag_ids.length - 8 })}</li>}
           </ul>
           {result.url_check && !result.url_check.ok && <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-[13px] leading-5 text-rose-900">{tr("Do not print yet: these QR codes would open {0}. {1}", { "0": result.url_check.url, "1": result.url_check.reason })}</p>}
-          <p className="text-[13px] leading-5 text-ink-muted">{result.tag_type === "rfid" ? tr("Write each code onto its RFID chip exactly as it appears in the download.") : tr("Each QR code must open {0}/tag/<code>. Anyone with a sticker can scan it, so keep unsold stickers safe.", { "0": result.tag_url_base })}</p>
+          <p className="text-[13px] leading-5 text-ink-muted">{result.tag_type === "nfc" ? "Open each NFC tag from the list and use NFC card setup to write and verify its unique URL. Label each card with its code; keep unsold cards safe. The CSV contains URLs, not proof that a card was written." : result.tag_type === "rfid" ? tr("Write each code onto its RFID chip exactly as it appears in the download.") : tr("Each QR code must open {0}/tag/<code>. Anyone with a sticker can scan it, so keep unsold stickers safe.", { "0": result.tag_url_base })}</p>
           {result.validity_months && <p className="text-[13px] leading-5 text-ink-muted">{tr("The validity period starts when the owner registers the tag, not when it is printed.")}</p>}
         </div>
       ) : (
@@ -380,6 +381,7 @@ function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew, o
         </aside>
 
         <div className="min-w-0 space-y-5">
+          {tag.tag_type === "nfc" && <NfcPanel key={tag.tag_id} tagId={tag.tag_id} />}
           {tag.is_disabled && tag.disabled_reason && <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13.5px] leading-6 text-rose-800 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-200"><TriangleAlert size={15} className="mr-1.5 inline" aria-hidden="true" />{tr("Deactivated: {0}", { "0": tag.disabled_reason })}</p>}
 
           {registered && (
@@ -481,6 +483,8 @@ function RevenueStrip({ revenue }: { revenue: SmartTagRevenue | null | undefined
 export default function SmartTags() {
   const [data, setData] = useState<SmartTagList | null>(null);
   const [filter, setFilter] = useState<TagFilter>("all");
+  const [medium, setMedium] = useState<TagType | "all">("all");
+  const loadVersion = useRef(0);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [setupError, setSetupError] = useState("");
@@ -505,19 +509,23 @@ export default function SmartTags() {
   const superAdmin = canDelete();
 
   const load = useCallback(async () => {
+    const version = ++loadVersion.current;
     try {
-      setData(await fetchSmartTags(filter));
+      const next = await fetchSmartTags(filter, medium);
+      if (version !== loadVersion.current) return;
+      setData(next);
       setSetupError("");
       setLoadError("");
     } catch (reason) {
+      if (version !== loadVersion.current) return;
       if (reason instanceof SmartTagSetupError) setSetupError(reason.message);
       else setLoadError(reason instanceof Error ? reason.message : tr("Unable to load Smart Tags."));
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
-  }, [filter]);
+  }, [filter, medium]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); return () => { loadVersion.current++; }; }, [load]);
 
   // Batches are grouped from every tag, so they load once and again after a change, not on every filter click.
   const loadBatches = useCallback(async () => {
@@ -530,7 +538,7 @@ export default function SmartTags() {
     const query = search.trim().toLowerCase();
     return query ? tags.filter((t) => `${t.tag_id} ${t.item_name} ${t.batch_label} ${t.owner?.name ?? ""} ${t.owner?.email ?? ""}`.toLowerCase().includes(query)) : tags;
   }, [tags, search]);
-  const paging = usePagination(filtered, 12, `${filter}|${search}`);
+  const paging = usePagination(filtered, 12, `${filter}|${search}|${medium}`);
   const stats = data?.stats;
 
   const run = async (action: () => Promise<unknown>) => {
@@ -567,7 +575,7 @@ export default function SmartTags() {
     <div className="space-y-5 p-4 sm:p-6">
       <PageHeader
         title={tr("Smart tags")}
-        description={tr("Generate batches of blank QR tags to print, track which ones are sold and registered, and deactivate misuse.")}
+        description="Issue QR stickers or NFC cards, review registrations, and manage each item's lifecycle."
         meta={<RolePill superAdmin={superAdmin} />}
         actions={<>
           <ExportButton onClick={exportCsv} disabled={!filtered.length} />
@@ -618,7 +626,9 @@ export default function SmartTags() {
         </section>
       )}
 
-      <BatchPanel batches={batches} superAdmin={superAdmin} onDeactivate={(b) => { setBatchReason(""); setBatchBan(b); }} onReactivate={setBatchRevive} onPrice={setBatchPricing} onDelete={setRemovingBatch} />
+      <SegmentedFilter label="Tag medium" value={medium} onChange={setMedium} options={[{ value: "all", label: "All media" }, { value: "qr", label: "QR stickers" }, { value: "nfc", label: "NFC cards" }, ...(data?.tag_types.some(t => t.value === "rfid" && t.enabled) ? [{ value: "rfid" as const, label: "RFID" }] : [])]} />
+      <p className="text-[13px] text-ink-muted">Status counts and the tag list follow the selected medium. Revenue totals cover all Smart Tags.</p>
+      <BatchPanel batches={batches.filter(b => medium === "all" || b.tag_type === medium)} superAdmin={superAdmin} onDeactivate={(b) => { setBatchReason(""); setBatchBan(b); }} onReactivate={setBatchRevive} onPrice={setBatchPricing} onDelete={setRemovingBatch} />
       {batchPricing && <BatchPriceModal batch={batchPricing} onClose={() => setBatchPricing(null)} onSaved={() => { setBatchPricing(null); void loadBatches(); }} />}
 
       {loadError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] text-rose-800">{loadError}</p>}

@@ -181,7 +181,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
 
   const claim = async (values: TagDetailsInput, consent: boolean, photo: File | null) => {
     if (!code) return;
-    if (!photo) { setClaimError("Take a photo of your item with the sticker attached before registering."); return; }
+    if (!photo) { setClaimError("Take a photo of your item with the tag attached before registering."); return; }
     setClaiming(true);
     setClaimError("");
     try {
@@ -226,7 +226,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
     return (
       <Shell>
         <StateCard icon={<QrCode size={32} />} tone="rose" title="We can't find this tag">
-          <p className={muted}>The code does not match any E-Balik Smart Tag. Check that the whole QR code was scanned, or look for the code printed on the sticker.</p>
+          <p className={muted}>The code does not match any E-Balik Smart Tag. Check that the whole QR code was scanned, or look for the code printed on the tag.</p>
           <a href="/" className={homeButton}>Go to E-Balik</a>
         </StateCard>
       </Shell>
@@ -253,7 +253,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
         <StateCard icon={<QrCode size={32} />} tone="gold" title="This E-Balik Smart Tag is unregistered!">
           {signedIn ? (
             <>
-              <p className={muted}>Claim it to link this sticker to your item. If someone finds your item, you will be notified.</p>
+              <p className={muted}>Claim it to link this tag to your item. If someone finds your item, you will be notified.</p>
               {Boolean(tag.price) && <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-gold-500/15 px-3.5 py-1.5 text-[13.5px] font-semibold text-gold-200 ring-1 ring-gold-400/30">Tag price: ₱{tag.price!.toLocaleString("en-PH", { minimumFractionDigits: 2 })}, paid at the office when staff approve it</p>}
               <div className="mt-6 rounded-2xl bg-white p-4 text-left text-ink shadow-card sm:p-5">
                 {claimed ? (
@@ -265,7 +265,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
             </>
           ) : (
             <>
-              <p className={muted}>Log in to claim it and link it to your item. It takes a minute, and the sticker is yours once it is registered.</p>
+              <p className={muted}>Log in to claim it and link it to your item. It takes a minute, and the tag is yours once it is registered.</p>
               <motion.button type="button" onClick={() => setAuth(true)} whileHover={reduced ? undefined : { y: -2 }} whileTap={{ scale: 0.98 }} transition={SPRING} className={`${CX.btnGold} mt-6 min-h-[56px] w-full text-[16px]`}>
                 <Lock size={18} aria-hidden="true" />Log in to claim it
               </motion.button>
@@ -283,7 +283,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
     return (
       <Shell code={tagCode}>
         <StateCard icon={<CalendarX size={32} />} tone="gold" title="This Smart Tag has expired">
-          <p className={muted}>Its validity period has ended, so the owner's details are no longer shown. If you found an item with this sticker, please bring it to the nearest OHSO guard post so it can be checked and returned.</p>
+          <p className={muted}>Its validity period has ended, so the owner's details are no longer shown. If you found an item with this tag, please bring it to the nearest OHSO guard post so it can be checked and returned.</p>
           <p className="mx-auto mt-3 max-w-[42ch] text-[13.5px] leading-6 text-white/60">Are you the owner? Ask the Lost and Found Office to renew this tag.</p>
           <a href="/" className={homeButton}>Go to E-Balik</a>
         </StateCard>
@@ -297,8 +297,8 @@ export default function TagPage({ rawId }: { rawId: string }) {
       <Shell code={tagCode}>
         <StateCard icon={<Hourglass size={32} />} tone="gold" title={tag.is_owner ? "Your tag is waiting for approval" : "This Smart Tag is awaiting approval"}>
           <p className={muted}>{tag.is_owner
-            ? "Bring the item with this sticker on it to the Lost and Found Office. Staff will compare it with the photo you took, then switch the tag on. Until then nobody can see your details."
-            : "This sticker has not been verified by the university yet, so no details are shown. If you found an item with this sticker, please bring it to the nearest OHSO guard post so it can be checked and returned."}</p>
+            ? "Bring the item with this tag on it to the Lost and Found Office. Staff will compare it with the photo you took, then switch the tag on. Until then nobody can see your details."
+            : "This tag has not been verified by the university yet, so no details are shown. If you found an item with this tag, please bring it to the nearest OHSO guard post so it can be checked and returned."}</p>
           <a href="/" className={homeButton}>Go to E-Balik</a>
         </StateCard>
       </Shell>
@@ -310,7 +310,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
     return (
       <Shell code={tagCode}>
         <StateCard icon={<ShieldAlert size={32} />} tone="rose" title={tag.status === "disabled" ? "This Smart Tag was deactivated" : "This Smart Tag is no longer active"}>
-          <p className={muted}>If you found an item with this sticker, please bring it to the nearest OHSO guard post so it can be checked and returned.</p>
+          <p className={muted}>If you found an item with this tag, please bring it to the nearest OHSO guard post so it can be checked and returned.</p>
           <a href="/" className={homeButton}>Go to E-Balik</a>
         </StateCard>
       </Shell>

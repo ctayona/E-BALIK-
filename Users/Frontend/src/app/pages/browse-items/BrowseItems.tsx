@@ -12,13 +12,14 @@ import { useViewMode } from "@/app/shared/view/useViewMode";
 import ItemViewer from "@/app/shared/media/ItemViewer";
 import HeroSlideshow from "@/app/shared/media/HeroSlideshow";
 import PhotoSearchModal from "./PhotoSearchModal";
+import EventHubListings from "../event-desk/EventHubListings";
 
 type Item = {
   mpost_id?: string; fpost_id?: string; item_name: string; category?: string;
   location?: string; last_location?: string; found_date?: string;
   last_seen_date?: string; image_url?: string; status?: string; description?: string;
 };
-type Tab = "missing" | "custody";
+type Tab = "missing" | "custody" | "events";
 const PAGE_SIZE = 12;
 
 const itemId = (item: Item) => item.mpost_id || item.fpost_id || "";
@@ -55,6 +56,7 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
 
   useEffect(() => {
     let active = true;
+    if (tab === "events") { setItems([]); setLoading(false); setViewIndex(null); return () => { active = false; }; }
     setLoading(true);
     const request = tab === "missing" ? getPublicMissingItems() : searchFoundItems({});
     void request.then((result) => {
@@ -120,8 +122,8 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
             <h1 className={`${CX.pageTitle} mt-1`}>Browse items</h1>
             <p className={CX.pageLead}>Check public missing reports, or look through items being held by campus security.</p>
           </div>
-          <div role="tablist" aria-label="Listing type" className="inline-flex shrink-0 rounded-[12px] border border-line bg-white p-1 shadow-card">
-            {([["missing", "Missing reports"], ["custody", "In custody"]] as const).map(([value, label]) => (
+          <div role="tablist" aria-label="Listing type" className="flex flex-wrap shrink-0 rounded-[12px] border border-line bg-white p-1 shadow-card">
+            {([["missing", "Missing reports"], ["custody", "In custody"], ["events", "Event listings"]] as const).map(([value, label]) => (
               <button
                 key={value}
                 type="button"
@@ -136,6 +138,7 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
           </div>
         </header>
 
+        {tab === "events" ? <EventHubListings /> : <>
         {tab === "custody" && !hasFilters && !loading && featured.length > 0 && (
           <HeroSlideshow
             items={featured}
@@ -253,6 +256,7 @@ export default function BrowseItems({ onNavigate }: { onNavigate?: (page: Page, 
           />
         )}
 
+        </>}
       </div>
     </main>
   );

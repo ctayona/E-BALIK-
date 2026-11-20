@@ -34,7 +34,7 @@ export default function MyTagsPage() {
             <div>
               <span className="inline-flex items-center gap-2 rounded-full border border-gold-400/35 bg-gold-500/10 px-3 py-1 text-[13px] font-semibold text-gold-300"><QrCode size={13} aria-hidden="true" /> Smart Tags</span>
               <h1 id="my-tags-hero" className="mt-4 text-3xl font-semibold leading-tight tracking-[-0.02em] sm:text-4xl" style={{ fontFamily: "var(--font-heading)" }}>My Smart Tags</h1>
-              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-white/70">Stick a tag on your laptop, bag or bottle. If someone finds it, they scan the code and you are notified right away. You choose what they can see.</p>
+              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-white/70">Attach a QR sticker or NFC tag to your laptop, bag or bottle. A finder can scan or tap to open your recovery page and notify you. You choose what they can see.</p>
               <button type="button" onClick={() => startRegistration()} className={`${CX.btnGold} mt-5 min-h-[50px] px-7 text-[15.5px] max-sm:hidden`}><Camera size={18} aria-hidden="true" />Register a new tag</button>
               <p className="mt-4 flex items-start gap-2 text-[13.5px] leading-6 text-white/60"><ShieldCheck size={15} className="mt-1 shrink-0 text-gold-300" aria-hidden="true" />Tags work for the validity period they were issued with. You are warned 30 days before one expires.</p>
             </div>

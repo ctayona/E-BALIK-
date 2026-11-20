@@ -10,7 +10,10 @@
       "rewrites": [
         { "source": "/admin/:path*", "destination": "/admin/index.html" },
         { "source": "/tag/:code", "destination": "/index.html" },
-        { "source": "/privacy", "destination": "/index.html" }
+        { "source": "/privacy", "destination": "/index.html" },
+        { "source": "/event-desk", "destination": "/index.html" },
+        { "source": "/events/:slug", "destination": "/index.html" },
+        { "source": "/event-receipts/:claim", "destination": "/index.html" }
       ],
       "headers": [
         {

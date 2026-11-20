@@ -4,6 +4,7 @@ from functools import wraps
 from flask import Blueprint, current_app, jsonify, request, send_file
 from app.utils import get_db
 from app.utils.smart_tags import MAX_BATCH, MAX_PHOTO_BYTES, SmartTagService, TagError, TagsUnavailable, normalize_tag_id, qr_png
+from app.utils.nfc_tags import prepare_nfc
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
 
 smart_tags_bp = Blueprint('admin_smart_tags', __name__)
@@ -40,7 +41,17 @@ def _handled(label):
 def list_tags():
     _require_admin()
     _, service = _service()
-    return jsonify({**service.admin_list(request.args.get('status', 'all'), request.args.get('q', '')), 'max_batch': MAX_BATCH}), 200
+    return jsonify({**service.admin_list(request.args.get('status', 'all'), request.args.get('q', ''), request.args.get('type', 'all')), 'max_batch': MAX_BATCH}), 200
+
+
+@smart_tags_bp.route('/smart-tags/<tag_id>/nfc', methods=['GET'])
+@_handled('prepare the NFC card')
+def nfc_payload(tag_id):
+    _require_admin()
+    _, service = _service()
+    reply = jsonify(prepare_nfc(service, tag_id))
+    reply.headers['Cache-Control'] = 'no-store'
+    return reply
 
 
 @smart_tags_bp.route('/smart-tags/batch', methods=['POST'])

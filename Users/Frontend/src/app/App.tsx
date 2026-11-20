@@ -16,6 +16,9 @@ const AuctionHall = lazy(() => import("@/app/pages/auction-hall/AuctionHall"));
 const MyTagsPage = lazy(() => import("@/app/pages/my-tags/MyTagsPage"));
 const TagPage = lazy(() => import("@/app/pages/tag/TagPage"));
 const PrivacyPage = lazy(() => import("@/app/pages/privacy/PrivacyPage"));
+const EventDesk = lazy(() => import("@/app/pages/event-desk/EventDesk"));
+const EventPortal = lazy(() => import("@/app/pages/event-desk/EventPortal"));
+const EventReceiptVerify = lazy(() => import("@/app/pages/event-desk/EventReceiptVerify"));
 import UserHeader from "@/app/shared/UserHeader";
 import MobileTabBar from "@/app/shared/MobileTabBar";
 import InfoModalHost from "@/app/shared/info-modal/InfoModalHost";
@@ -46,11 +49,20 @@ const PRIVACY_PATH = /^\/privacy\/?$/i;
 export default function App() {
   const tagMatch = window.location.pathname.match(TAG_PATH);
   const privacy = PRIVACY_PATH.test(window.location.pathname);
+  const eventDesk = /^\/event-desk\/?$/i.test(window.location.pathname);
+  const eventPortal = window.location.pathname.match(/^\/events\/([a-z0-9-]+)\/?$/);
+  const eventReceipt = window.location.pathname.match(/^\/event-receipts\/([a-f0-9-]{36})\/?$/i);
   // The announcement banner is the first thing on every page: the landing page, the app, the maintenance screen and the tag page.
   return (
     <>
       <AnnouncementBanner />
-      {privacy ? (
+      {eventReceipt ? (
+        <Suspense fallback={<LandingSkeleton />}><EventReceiptVerify claimId={eventReceipt[1]} /></Suspense>
+      ) : eventPortal ? (
+        <Suspense fallback={<LandingSkeleton />}><EventPortal slug={eventPortal[1]} /></Suspense>
+      ) : eventDesk ? (
+        <Suspense fallback={<LandingSkeleton />}><EventDesk /></Suspense>
+      ) : privacy ? (
         <Suspense fallback={<LandingSkeleton />}><PrivacyPage /></Suspense>
       ) : tagMatch ? (
         <>

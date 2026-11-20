@@ -29,10 +29,11 @@ const SystemControl = lazy(() => import("./pages/system-control/SystemControl"))
 const GuardDesk = lazy(() => import("./pages/guard-desk/GuardDesk"));
 const RecycleBin = lazy(() => import("./pages/recycle-bin/RecycleBin"));
 const Income = lazy(() => import("./pages/income/Income"));
+const Events = lazy(() => import("./pages/events/Events"));
 import { useMyAccess } from "./utils/accessApi";
 import { LockedForOthersBanner, LockedPage, NoAccessPage } from "./components/PageGate";
 
-type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "income" | "admin-profile";
+type Page = "dashboard" | "report-hub" | "release-desk" | "ai-matching" | "auctions" | "smart-tags" | "claims" | "users" | "reports" | "notifications" | "activity-logs" | "system-control" | "recycle-bin" | "income" | "events" | "admin-profile";
 
 const PAGE_META: Record<Page, StringKey> = {
   "dashboard": "nav.dashboard",
@@ -49,6 +50,7 @@ const PAGE_META: Record<Page, StringKey> = {
   "system-control": "nav.systemControl",
   "recycle-bin": "nav.recycleBin",
   "income": "nav.income",
+  "events": "nav.events",
   "admin-profile": "nav.profile",
 };
 
@@ -71,6 +73,7 @@ export default function App() {
     const saved = localStorage.getItem(REPORT_TAB_STORAGE_KEY);
     return (stored && REPORT_TAB_FOR[stored]) || (saved === "found" || saved === "custody" ? saved : "lost");
   });
+  const [eventDirty, setEventDirty] = useState(false);
   const [notifCount, setNotifCount] = useState<number>(() => getUnreadNotificationCount());
   // Numbers on the menu: how many items wait for an approval or verification on each page.
   const [badges, setBadges] = useState<Record<string, number>>({});
@@ -174,6 +177,7 @@ export default function App() {
   }
 
   const navigate = (target: NavTarget) => {
+    if (page === "events" && target !== "events" && eventDirty && !window.confirm("Discard unsaved event changes and leave this page?")) return;
     const tab = REPORT_TAB_FOR[target];
     const next: Page = tab ? "report-hub" : target as Page;
     if (tab) changeReportTab(tab);
@@ -209,6 +213,7 @@ export default function App() {
       case "system-control": return user.access_level === "super_admin" ? <SystemControl /> : <Dashboard onNavigate={(target) => navigate(target)} />;
       case "recycle-bin": return user.access_level === "super_admin" ? <RecycleBin /> : <Dashboard onNavigate={(target) => navigate(target)} />;
       case "income": return <Income onNavigate={(target) => navigate(target)} />;
+      case "events": return user.access_level === "super_admin" ? <Events onDirtyChange={setEventDirty} /> : <NoAccessPage label="Events" onHome={() => navigate("dashboard")} />;
       case "admin-profile": return <AdminProfile />;
       default: return <Dashboard onNavigate={(target) => navigate(target)} />;
     }

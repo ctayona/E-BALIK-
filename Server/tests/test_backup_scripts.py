@@ -119,6 +119,29 @@ class RestoreTests(unittest.TestCase):
         self.assertIn('ignore-duplicates', seen['income_ledger'])        # existing money records are skipped, the database refuses to change them
         self.assertIn('merge-duplicates', seen['claims'])
 
+    def test_event_history_restore_preserves_existing_entries(self):
+        seen = {}
+        with patch.object(restore, 'http', lambda url, key, method, body, headers, timeout=60: seen.setdefault(url.rsplit('/', 1)[-1], headers['Prefer']) and (b'', {})):
+            restore.upsert(ENV, 'event_state_history', [{'history_id': 'history'}])
+        self.assertIn('ignore-duplicates', seen['event_state_history'])
+        self.assertLess(restore.FIRST.index('event_workspaces'), restore.FIRST.index('event_state_history'))
+        self.assertLess(restore.FIRST.index('event_reports'), restore.FIRST.index('event_report_history'))
+        self.assertIn('event_report_history', restore.APPEND_ONLY)
+        self.assertLess(restore.FIRST.index('event_reports'), restore.FIRST.index('event_claims'))
+        self.assertLess(restore.FIRST.index('event_claims'), restore.FIRST.index('event_claim_history'))
+        self.assertIn('event_claim_history', restore.APPEND_ONLY)
+        self.assertLess(restore.FIRST.index('event_reports'), restore.FIRST.index('event_match_alerts'))
+        self.assertLess(restore.FIRST.index('event_match_alerts'), restore.FIRST.index('event_alert_history'))
+        self.assertIn('event_match_alerts', restore.APPEND_ONLY)
+        self.assertIn('event_alert_history', restore.APPEND_ONLY)
+        for table in ('event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history'):
+            with patch.object(restore, 'http', lambda url, key, method, body, headers, timeout=60: seen.setdefault(url.rsplit('/', 1)[-1], headers['Prefer']) and (b'', {})):
+                restore.upsert(ENV, table, [{'synthetic': 'restore option verification'}])
+            self.assertIn('ignore-duplicates', seen[table])
+            self.assertLess(restore.FIRST.index('event_reports'), restore.FIRST.index(table))
+        self.assertLess(restore.FIRST.index('event_custody_transfers'), restore.FIRST.index('event_pilot_history'))
+        self.assertIn('event-report-images', backup.DEFAULT_BUCKETS)
+
     def test_a_table_that_fails_is_retried_in_a_later_pass(self):
         with tempfile.TemporaryDirectory() as folder:
             path = self.make(folder)

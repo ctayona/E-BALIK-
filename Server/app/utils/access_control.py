@@ -31,6 +31,7 @@ ADMIN_PAGES: List[Dict[str, Any]] = [
     {'id': 'notifications', 'label': 'Notifications', 'api': ['/activity-logs', '/claims']},
     {'id': 'activity-logs', 'label': 'Activity logs', 'api': ['/activity-logs', '/admin-activity-logs']},
     {'id': 'system-control', 'label': 'System control', 'api': ['/system'], 'super': True},
+    {'id': 'events', 'label': 'Events', 'api': ['/events'], 'super': True},
     {'id': 'recycle-bin', 'label': 'Recycle bin', 'api': ['/recycle-bin'], 'super': True},
     {'id': 'admin-profile', 'label': 'My profile', 'api': ['/mfa'], 'always': True},
 ]

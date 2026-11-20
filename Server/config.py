@@ -35,6 +35,8 @@ def _secret(name):
 
 class Config:
     """Base configuration"""
+    # Event-module switch. Per-event state, portal settings and permissions still apply.
+    EVENTS_FOUNDATION_ENABLED = os.getenv('EBALIK_EVENTS_FOUNDATION_ENABLED', '').strip().lower() == 'true'
     FLASK_ENV = os.getenv('FLASK_ENV', 'development')
     DEBUG = os.getenv('FLASK_DEBUG', False)
     

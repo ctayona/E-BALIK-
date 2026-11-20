@@ -1,0 +1,11 @@
+import { json, type BoardReport } from './eventApi';
+import type { MatchReport } from './matchingApi';
+
+export interface EventAlertPreview { event_name: string; title: string; message: string; missing_reference: string; listing: BoardReport; missing_report_id: string; found_report_id: string; missing_version: number; found_version: number; already_sent: boolean }
+export interface EventAlert { alert_id: string; event_id: string; title: string; message: string; missing_reference: string; missing_label: string; status: 'active' | 'inactive'; read_at: string | null; dismissed_at: string | null; created_at: string; listing: BoardReport | null; claim_status: string | null; can_claim: boolean; availability_note: string }
+const pair = (missing: MatchReport, found: MatchReport) => ({ found_report_id: found.report_id, missing_version: missing.version, found_version: found.version });
+export const previewEventAlert = (event: string, missing: MatchReport, found: MatchReport, signal?: AbortSignal) => json<{ preview: EventAlertPreview }>(`/${encodeURIComponent(event)}/reports/${encodeURIComponent(missing.report_id)}/alerts?${new URLSearchParams(Object.entries(pair(missing, found)).map(([key, value]) => [key, String(value)]))}`, { signal });
+export const sendEventAlert = (event: string, preview: EventAlertPreview) => json<{ sent: boolean; already_sent: boolean; alert_id: string }>(`/${encodeURIComponent(event)}/reports/${encodeURIComponent(preview.missing_report_id)}/alerts`, { method: 'POST', body: JSON.stringify({ found_report_id: preview.found_report_id, missing_version: preview.missing_version, found_version: preview.found_version }) });
+export const myEventAlerts = (slug: string, offset = 0, view = 'inbox', signal?: AbortSignal) => json<{ alerts: EventAlert[] }>(`/portal/${encodeURIComponent(slug)}/alerts?offset=${offset}&view=${encodeURIComponent(view)}`, { signal });
+export const eventAlertCount = (slug: string, signal?: AbortSignal) => json<{ available: boolean; unread_count: number }>(`/portal/${encodeURIComponent(slug)}/alerts/count`, { signal });
+export const eventAlertAction = (alert: EventAlert, action: 'read' | 'dismiss') => json<{ alert: EventAlert }>(`/${encodeURIComponent(alert.event_id)}/alerts/${encodeURIComponent(alert.alert_id)}/actions`, { method: 'POST', body: JSON.stringify({ action }) });

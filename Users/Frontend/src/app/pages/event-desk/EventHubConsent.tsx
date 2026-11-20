@@ -1,0 +1,13 @@
+import { useEffect, useState } from 'react';
+import { Globe2 } from 'lucide-react';
+import Modal from '@/app/shared/modal/Modal';
+import { hubConsent, setHubConsent } from './pilotApi';
+import type { EventReport } from './eventApi';
+
+export default function EventHubConsent({ report, onClose }: { report: EventReport; onClose: () => void }) {
+  const [value, setValue] = useState<{ allowed: boolean; version: number } | null>(null);
+  const [allowed, setAllowed] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  useEffect(() => { const controller = new AbortController(); hubConsent(report.event_id, report.report_id, controller.signal).then((data) => { if (!controller.signal.aborted) { setValue(data); setAllowed(data.allowed); } }).catch((e) => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : 'Unable to read hub permission.'); }); return () => controller.abort(); }, [report.event_id, report.report_id]);
+  const save = async () => { if (!value) return; setBusy(true); setError(''); try { await setHubConsent(report.event_id, report.report_id, value.version, allowed); onClose(); } catch (e) { setError(e instanceof Error ? e.message : 'Permission changed. Close and reopen to refresh.'); } finally { setBusy(false); } };
+  return <Modal open title="Your hub visibility permission" eyebrow={report.reference} icon={<Globe2 size={23} />} tone="gold" dismissible={!busy} onClose={onClose} footer={<><button className="ev-button" disabled={busy} onClick={onClose}>Close</button><button className="ev-button ev-button-primary" disabled={busy || !value || allowed === value.allowed} onClick={() => void save()}>{busy ? 'Saving…' : 'Save hub permission'}</button></>}><div className="ev-dialog-content">{error && <p role="alert" className="ev-alert">{error}</p>}<p className="ev-help">Your report stays in this event by default. This separate permission lets an E-Balik administrator publish its approved generic label, category, venue, incident time and event name in the main hub.</p><label className="ev-check"><input type="checkbox" disabled={busy || !value} checked={allowed} onChange={(e) => setAllowed(e.target.checked)} /><span>I allow an administrator to publish this generic event listing to the main E-Balik hub.</span></label><p className="ev-help">Permission does not publish automatically. Private descriptions, photos, ownership evidence and contact details stay private. Revoking removes any current hub publication immediately; previously downloaded copies cannot be recalled. Claims and physical custody remain with this event.</p></div></Modal>;
+}

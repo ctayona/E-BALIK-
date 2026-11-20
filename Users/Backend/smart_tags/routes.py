@@ -4,6 +4,7 @@ import io
 from flask import Blueprint, current_app, jsonify, request, send_file
 from app.utils import get_db, rate_limit
 from app.utils.smart_tags import MAX_PHOTO_BYTES, SURRENDER_INSTRUCTIONS, SmartTagService, TagError, TagsUnavailable
+from app.utils.nfc_tags import prepare_nfc
 from Users.Backend.shared.request_auth import _authenticated_account_id
 
 smart_tags_bp = Blueprint('user_smart_tags', __name__)
@@ -99,6 +100,18 @@ def my_tag_qr(tag_id):
     reply = send_file(io.BytesIO(png), mimetype='image/png', max_age=0)
     reply.headers['Cache-Control'] = 'no-store'
     return reply
+
+
+@smart_tags_bp.route('/<tag_id>/nfc', methods=['POST'])
+@_handled('prepare your NFC card')
+def nfc_payload(tag_id):
+    account_id = _authenticated_account_id()
+    if not rate_limit.allow(f'tag-nfc:{account_id}', 30, 60):
+        raise TagError('Too many requests. Wait a minute and try again.', 429)
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict) or type(body.get('offline_contact', False)) is not bool:
+        raise TagError('Choose whether to include offline contact details.')
+    return _private(prepare_nfc(_service(), tag_id, account_id=account_id, offline_contact=body.get('offline_contact', False)))
 
 
 @smart_tags_bp.route('/<tag_id>', methods=['GET'])

@@ -1,48 +1,56 @@
-# Claude Code Constraints & System Context
+# Claude Code Constraints — E-Balik (UMak Lost & Found)
 
-You are working within the E-Balik Project (University of Makati lost-and-found system). 
-The rules below exist **ONLY** to maximize token efficiency and prevent token waste. They are **not** quality limiters. You must maintain the highest standard of code quality, architecture, and problem-solving at all times.
+## 1. Token Efficiency (Non-Negotiable)
+- **Surgical edits only.** Use search-and-replace or targeted diffs. Never rewrite entire files.
+- **Grep before reading.** Before opening any file, grep for the exact symbol/section you need. Use line-range reads, not whole-file reads.
+- **Never guess.** Never assume API endpoints, props, or DB columns. Verify with grep or a targeted file read first.
+- **No filler.** Skip pleasantries, prompt restatements, and explanation paragraphs. Deliver code directly.
+- **Complete code only.** No `// rest of code` placeholders. Every implementation must be production-ready.
 
-## 1. Token Efficiency (Zero Quality Compromise)
-- **High-Signal Output Only:** Skip conversational filler, pleasantries, and restatements of the user's prompt. Deliver high-quality, direct engineering solutions immediately.
-- **Surgical Edits:** Never output entire file contents in your responses when modifying code. ALWAYS use targeted search-and-replace tools or diff-based edits to save tokens.
-- **Zero-Guessing Policy:** To prevent hallucination loops that burn tokens, NEVER guess API endpoints, component props, or database tables. Always use file reading and search tools to fetch the exact context before writing code.
-- **Provide Complete Logic:** "Concise" means no filler words, it does NOT mean skipping code. When you write code, provide fully complete, robust, and production-ready implementations without placeholder comments like `// rest of code`.
+## 2. Project Context — Read Only What You Need
+**Do NOT read PROJECT_CONTEXT.md or database_schema.sql in full.** They are very large. Instead:
+- To find architecture, routing, or endpoints → `grep` PROJECT_CONTEXT.md for the specific section heading.
+- To find a DB table → use the Supabase MCP tool to inspect the live table directly, or grep database_schema.sql for the table name only.
+- To find styling tokens → grep `Users/Frontend/src/styles/theme.css` for the token name.
+- Read a full file **only** if the task touches the entire file's domain and grep is insufficient.
 
-## 2. On-Demand Project Context
-To save tokens on every prompt, the full project context is not dumped here. When you need deep architectural context, **you MUST read the following files:**
-- **`PROJECT_CONTEXT.md`**: Contains the full architecture, frontend state/routing rules, backend endpoints, matching logic, and styling theme. **Read this for any feature work.**
-- **`Server/database_schema.sql`**: The canonical and authoritative Supabase PostgreSQL schema. **Read this before any DB or backend changes.**
-- **`docs/IMPLEMENTATION_CHECKLIST.md`**: Check this if tracking remaining tasks.
+**Key facts (no file read needed):**
+- Stack: React 18 + TypeScript + Vite + Tailwind CSS v4 + Radix UI (frontend); Python + Flask (backend); Supabase PostgreSQL + Storage.
+- Design: "Gallery Glass" — Navy `#1f3160`, Gold `#d1a153`, frost/iris/mint accents. Never flat or generic.
+- Navigation: page-state in `Users/Frontend/src/app/App.tsx`. Not React Router.
+- Structure: `Users/` and `Admin/` each have `Frontend/` and `Backend/`. One folder per page. Shared Flask utilities in `Server/`.
+- Images: buckets `missing-item-images` and `found-item-images`. Preserve `File` objects in multipart uploads.
+- Never expose reporter email or campus ID in public listings.
+- No mock data for real workflows.
 
-## 2b. Documentation Tasks
-- For any paper, report, manual, presentation or spreadsheet request, **read `docs/DOCUMENTATION_GUIDE.md` first** and follow it. Do not edit code during a documentation task.
+## 3. Supabase MCP (Direct DB Access)
+You have read access to the live Supabase database via MCP.
+- Use it to inspect real column types, RLS policies, and table structure **instead of reading schema files**.
+- Query only the tables relevant to the current task.
+- Never use it to infer the full schema — one table at a time.
 
-## 3. Core Tech Stack Constraints
-- **Frontend:** React 18, TypeScript, Vite, Tailwind CSS v4, Radix UI.
-- **Backend:** Python, Flask.
-- **Database/Storage:** Supabase PostgreSQL and Supabase Storage.
-- **Styling:** "Gallery Glass" design system: UMak Navy (#1f3160) and Gold (#d1a153) as the base with iris, mint, and frost accents. Use the tokens in `Users/Frontend/src/styles/theme.css` and the media components in `Users/Frontend/src/app/shared/media/` (see "Theme" in `PROJECT_CONTEXT.md`). Avoid flat, generic designs.
+## 4. Audit Log — Keep It Short
+Append to `Audits/YYYY-MM-DD_Audit.md` (local date) after every interaction.
 
-## 4. Architectural Rules
-- **Repository Structure:** `Users/` and `Admin/` each contain `Frontend/` and `Backend/`, with one folder per page on both sides (see "Repository Layout" in `PROJECT_CONTEXT.md`). Shared Flask core and services live in `Server/`. Put new code in the folder of the page that uses it.
-- **No Mock Data:** The project uses an existing Supabase backend. Do not introduce mock data for core workflows.
-- **Navigation:** The frontend currently relies on page state in `Users/Frontend/src/app/App.tsx`, not React Router.
-- **Images:** Missing and Found items use Supabase storage buckets (`missing-item-images`, `found-item-images`). Preserve multipart `File` objects in form data uploads.
-- **Security:** Do not expose sensitive user data (reporter email, campus ID) in public listings (e.g., Browse Items).
-
-## 5. Daily Audit Log (Mandatory)
-- Maintain `Audits/YYYY-MM-DD_Audit.md` (one file per day, local date). For **every** interaction, append an entry with:
-  - **Prompt Audit:** the user's request.
-  - **Edit Audit:** exact files changed, with lines/sections and what changed.
-  - **Database Audit:** structural or logical database changes (schema, migrations, RLS, data writes), or "None".
+**Format — max 15 lines per entry:**
+```
+## [5-word title of what changed]
+**Changed:** one bullet per file or logical group — filename + one-line description
+**DB:** migration filename, or "None"
+**Status:** "Build passes" / "X tests pass", or nothing
+```
+- No prompt restatement. No paragraph explanations. No verification prose.
+- Group related files into one bullet (e.g. "found_item routes + missing_item routes — date validation").
 - Append only; never rewrite earlier entries.
 
-## 6. Environment Files
-- All env files live in `Environment_Configs/` and are loaded by explicit path: `Environment_Configs/backend/.env` (Flask via `Server/config.py`) and `Environment_Configs/frontend/.env.local` (both Vite apps via `envDir`). Never recreate `.env` files inside `Server/` or the frontends.
+## 5. Environment Files
+All env files live in `Environment_Configs/`.
+- Backend: `Environment_Configs/backend/.env` (loaded by `Server/config.py`)
+- Frontend: `Environment_Configs/frontend/.env.local` (loaded via Vite `envDir`)
+- Never create `.env` files inside `Server/` or the frontend folders.
 
-## 7. Dev Commands
-- Start everything (Frontend, Backend, Admin): `npm run dev`
-- Frontend only: `npm run dev:frontend`
-- Backend only: `npm run dev:backend`
-- Admin only: `npm run dev:admin`
+## 6. Dev Commands
+- All: `npm run dev` · Frontend: `npm run dev:frontend` · Backend: `npm run dev:backend` · Admin: `npm run dev:admin`
+
+## 7. Documentation Tasks
+If the request is a paper, report, manual, or spreadsheet: read `docs/DOCUMENTATION_GUIDE.md` first. Do not edit code during documentation tasks.

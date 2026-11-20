@@ -136,6 +136,41 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(db.options['income_ledger'], [{'ignore_duplicates': True}])         # existing money records are skipped, never overwritten
         self.assertEqual(db.options['claims'], [{}])                                          # every other table merges as before
 
+    def test_event_history_is_restored_after_workspace_without_overwriting(self):
+        self.assertLess(br.FIRST.index('event_workspaces'), br.FIRST.index('event_state_history'))
+        self.assertLess(br.FIRST.index('event_reports'), br.FIRST.index('event_report_history'))
+        self.assertIn('event_report_history', br.APPEND_ONLY)
+        self.assertLess(br.FIRST.index('event_reports'), br.FIRST.index('event_claims'))
+        self.assertLess(br.FIRST.index('event_claims'), br.FIRST.index('event_claim_history'))
+        self.assertIn('event_claim_history', br.APPEND_ONLY)
+        self.assertLess(br.FIRST.index('event_reports'), br.FIRST.index('event_match_alerts'))
+        self.assertLess(br.FIRST.index('event_match_alerts'), br.FIRST.index('event_alert_history'))
+        self.assertIn('event_match_alerts', br.APPEND_ONLY)
+        self.assertIn('event_alert_history', br.APPEND_ONLY)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'up.bin'
+            path.write_bytes(make_backup(folder, {'event_state_history': rows('h', 2)}))
+            archive, _ = br.open_backup(path, PASS, Path(folder))
+            db = FakeDb({'event_state_history': 2})
+            result = br.apply(db, archive, ['event_state_history'], lambda **k: None)
+            archive.close()
+        self.assertEqual(result['failed'], {})
+        self.assertEqual(db.options['event_state_history'], [{'ignore_duplicates': True}])
+
+    def test_pilot_restore_cannot_overwrite_consent_receipts_or_closing_signoff(self):
+        tables = ('event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history')
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'up.bin'
+            path.write_bytes(make_backup(folder, {table: rows('p', 1) for table in tables}))
+            archive, _ = br.open_backup(path, PASS, Path(folder))
+            db = FakeDb({table: 1 for table in tables})
+            result = br.apply(db, archive, list(tables), lambda **k: None)
+            archive.close()
+        self.assertEqual(result['failed'], {})
+        for table in tables:
+            self.assertEqual(db.options[table], [{'ignore_duplicates': True}])
+            self.assertLess(br.FIRST.index('event_reports'), br.FIRST.index(table))
+
     def test_the_table_choice_is_checked_and_ordered_parents_first(self):
         manifest = {'tables': {n: {} for n in ('claims', 'found_items', 'user_profiles', 'admin_mfa', 'otp_tokens', 'income_ledger')}}
         self.assertEqual(br.validate_selection(manifest, ['claims', 'income_ledger', 'found_items'], ''), ['found_items', 'claims', 'income_ledger'])

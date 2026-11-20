@@ -38,7 +38,7 @@ MAGIC = b'EBBK1'
 CHUNK = 1024 * 1024
 PAGE = 1000
 DEFAULT_EXCLUDE = {'otp_tokens', 'admin_mfa_challenges'}
-DEFAULT_BUCKETS = ['found-item-images', 'missing-item-images']
+DEFAULT_BUCKETS = ['found-item-images', 'missing-item-images', 'event-brand-assets', 'event-report-images']
 ROOT = Path(__file__).resolve().parents[2]
 
 

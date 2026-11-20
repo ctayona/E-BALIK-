@@ -13,6 +13,7 @@ Server/venv/
 *.py[cod]
 
 # Local tooling and OS files
+.claude/settings.local.json
 .vscode/
 .DS_Store
 Thumbs.db

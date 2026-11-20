@@ -30,6 +30,8 @@ def register_blueprints(app):
     app.register_blueprint(receipts_bp, url_prefix='/api/receipts')
     app.register_blueprint(payments_bp, url_prefix='/api/payments')
     app.register_blueprint(feed_bp, url_prefix='/api/feed')
+    from Users.Backend.events.routes import event_desk_bp
+    app.register_blueprint(event_desk_bp, url_prefix='/api/events')
 
     from app.utils.scheduler import cron_bp
     app.register_blueprint(cron_bp, url_prefix='/api/cron')
@@ -55,11 +57,12 @@ def register_blueprints(app):
     from Admin.Backend.report_comments.routes import report_comments_bp
     from Admin.Backend.income.routes import income_bp
     from Admin.Backend.seller_auctions.routes import seller_auctions_bp
+    from Admin.Backend.events.routes import events_bp
 
     from Admin.Backend.shared.admin_access import enforce_super_admin_for_deletes
 
     for blueprint in (dashboard_bp, lost_items_bp, found_items_bp, ai_matching_bp, claims_verification_bp,
-                      users_bp, reports_analytics_bp, activity_logs_bp, admin_profile_bp, admin_auctions_bp, system_control_bp, admin_smart_tags_bp, recycle_bin_bp, archive_bp, report_comments_bp, income_bp, seller_auctions_bp):
+                      users_bp, reports_analytics_bp, activity_logs_bp, admin_profile_bp, admin_auctions_bp, system_control_bp, admin_smart_tags_bp, recycle_bin_bp, archive_bp, report_comments_bp, income_bp, seller_auctions_bp, events_bp):
         # Role-based access control: only super administrators may execute DELETE on any admin route.
         if enforce_super_admin_for_deletes not in blueprint.before_request_funcs.get(None, []):
             blueprint.before_request(enforce_super_admin_for_deletes)

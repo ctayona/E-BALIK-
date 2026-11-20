@@ -48,12 +48,12 @@ class ValidityHelperTests(unittest.TestCase):
         self.assertLess(tags.days_left(iso(-2 * DAY)), 0)
         self.assertIsNone(tags.days_left(None))
 
-    def test_tag_types_are_ready_but_only_qr_is_on_by_default(self):
+    def test_qr_and_nfc_are_on_by_default_with_explicit_restrictions_preserved(self):
         with patch.dict('os.environ', {}, clear=False):
             import os
             os.environ.pop('SMART_TAG_TYPES_ENABLED', None)
             options = {o['value']: o for o in tags.tag_type_options()}
-        self.assertEqual({k: v['enabled'] for k, v in options.items()}, {'qr': True, 'rfid': False, 'nfc': False})
+        self.assertEqual({k: v['enabled'] for k, v in options.items()}, {'qr': True, 'rfid': False, 'nfc': True})
         self.assertEqual(options['rfid']['label'], 'RFID')
         with patch.dict('os.environ', {'SMART_TAG_TYPES_ENABLED': 'qr, RFID ,bogus'}):
             self.assertEqual(tags.enabled_tag_types(), ['qr', 'rfid'])
@@ -87,7 +87,8 @@ class BatchGenerationTests(unittest.TestCase):
         service.create_batch(2, 'Forever', ADMIN, 'qr', None)
         self.assertTrue(all(r['validity_months'] is None for r in store['smart_tags']))
 
-    def test_rfid_and_nfc_are_refused_until_they_are_switched_on(self):
+    @patch.dict('os.environ', {'SMART_TAG_TYPES_ENABLED': 'qr'})
+    def test_explicit_qr_only_refuses_rfid_and_nfc(self):
         service, _, store = make_service()
         for kind in ('rfid', 'nfc'):
             with self.assertRaises(TagError) as caught:

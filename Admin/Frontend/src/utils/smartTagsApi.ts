@@ -1,4 +1,5 @@
 import { API_URL, adminMutationRequest, getAuthHeaders } from "./api";
+import type { NfcPayload } from "../../../../Users/Frontend/src/app/utils/nfc";
 
 /** Admin Smart Tags API. Reads throw `SmartTagSetupError` when the Supabase migration has not been applied yet. */
 
@@ -81,14 +82,21 @@ export class SmartTagSetupError extends Error {
   }
 }
 
-export async function fetchSmartTags(status: TagFilter): Promise<SmartTagList> {
-  const response = await fetch(`${API_URL}/api/admin/smart-tags?status=${encodeURIComponent(status)}`, { headers: getAuthHeaders() });
+export async function fetchSmartTags(status: TagFilter, type: TagType | "all" = "all"): Promise<SmartTagList> {
+  const response = await fetch(`${API_URL}/api/admin/smart-tags?status=${encodeURIComponent(status)}&type=${encodeURIComponent(type)}`, { headers: getAuthHeaders() });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 503 && payload.setup_required) throw new SmartTagSetupError(String(payload.error));
     throw new Error(typeof payload.error === "string" ? payload.error : "Unable to load Smart Tags");
   }
   return payload as SmartTagList;
+}
+
+export async function fetchNfcPayload(id: string): Promise<NfcPayload> {
+  const response = await fetch(`${API_URL}/api/admin/smart-tags/${encodeURIComponent(id)}/nfc`, { headers: getAuthHeaders(), cache: "no-store" });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Unable to prepare the NFC card.");
+  return payload as NfcPayload;
 }
 
 async function mutate<T>(path: string, title: string, body?: unknown): Promise<T> {

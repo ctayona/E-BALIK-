@@ -1,4 +1,5 @@
 /** Smart Tags client: the public scan page, registering a tag, and managing your own tags. */
+import type { NfcPayload } from "./nfc";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -128,6 +129,7 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
 }
 
 export const tagsApi = {
+  nfc: (id: string, offlineContact = false) => request<NfcPayload>(`/${encodeURIComponent(id)}/nfc`, { method: "POST", body: { offline_contact: offlineContact } }),
   view: (id: string) => request<PublicTag>(`/${encodeURIComponent(id)}`),
   found: (id: string, input: { message: string; contact: string }) => request<FoundResult>(`/${encodeURIComponent(id)}/found`, { method: "POST", body: input, auth: false }),
   mine: () => request<{ tags: OwnerTag[] }>("/mine"),

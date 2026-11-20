@@ -78,7 +78,7 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
     event.preventDefault();
     if (name.trim().length < 2) { setProblem("Choose what this tag is attached to. If it is not in the list, choose Other and type its name."); return; }
     if (showPhone && !phone.trim()) { setProblem("Add a phone number, or switch \"Show my phone number\" off."); return; }
-    if (mode === "claim" && !photo) { setProblem("Take a photo of your item with the sticker attached before registering."); return; }
+    if (mode === "claim" && !photo) { setProblem("Take a photo of your item with the tag attached before registering."); return; }
     setProblem("");
     const values: TagDetailsInput = { item_name: name.trim(), item_description: description.trim(), show_name: showName, show_email: showEmail, show_phone: showPhone, contact_phone: phone.trim(), shown_contacts: shownContacts };
     // Registering is final for the item name, so the user must confirm before anything is sent.
@@ -133,7 +133,7 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
 
       <div className="rounded-2xl border border-iris-200 bg-iris-50 p-4" aria-live="polite">
         <p className="flex items-center gap-2 text-[13px] font-semibold text-iris-700">{shown.length ? <Eye size={15} aria-hidden="true" /> : <EyeOff size={15} aria-hidden="true" />}What a finder will see</p>
-        {(photo || initial?.photo_url) && <p className="mt-1 text-[13px] text-ink-soft">The photo is shown too, so the finder can match the item to the sticker.</p>}
+        {(photo || initial?.photo_url) && <p className="mt-1 text-[13px] text-ink-soft">The photo is shown too, so the finder can match the item to the tag.</p>}
         <p className="mt-1 text-[14px] font-semibold text-ink">{name.trim() || "Your item"}</p>
         <p className="mt-0.5 text-[13.5px] leading-6 text-ink-soft">{shown.length ? shown.join(" · ") : "No contact details. Finders can still press \"I found this item\" and E-Balik will notify you."}</p>
       </div>
@@ -162,7 +162,7 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
               <img src={URL.createObjectURL(review.photo)} alt="" className="size-16 shrink-0 rounded-xl border border-line object-cover" onLoad={(event) => URL.revokeObjectURL(event.currentTarget.src)} />
               <div className="min-w-0"><p className="text-[12.5px] font-medium text-ink-muted">Item</p><p className="truncate text-[16px] font-semibold text-ink">{review.values.item_name}</p></div>
             </div>
-            <p className="text-[13px] leading-5 text-ink-muted">After you confirm, bring the item and its sticker to the Lost and Found Office. The tag starts working once staff have checked it.</p>
+            <p className="text-[13px] leading-5 text-ink-muted">After you confirm, bring the item and its tag to the Lost and Found Office. The tag starts working once staff have checked it.</p>
           </div>
         )}
       </Modal>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { BellRing, CalendarClock, Camera, Copy, Download, Hourglass, Pencil, QrCode, Settings2, ShieldAlert, ShieldCheck, Sticker, Tag as TagIcon, TriangleAlert } from "lucide-react";
 import Modal from "@/app/shared/modal/Modal";
+import NfcPanel from "./NfcPanel";
 import { SkeletonBlock } from "@/app/shared/LoadingSkeleton";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { showToast } from "@/app/shared/toast/toastStore";
@@ -86,8 +87,8 @@ function EmptyIllustration() {
 
 /** The three steps of a Smart Tag. Shown in the page hero and, for someone with no tags yet, in the empty state. */
 export const TAG_STEPS = [
-  { title: "Register", text: "Scan the sticker's QR code and take a photo of your item with it.", icon: <QrCode size={18} aria-hidden="true" /> },
-  { title: "Stick", text: "Put the sticker somewhere visible: laptop lid, bag, bottle, keys.", icon: <Sticker size={18} aria-hidden="true" /> },
+  { title: "Register", text: "Scan a QR sticker or tap an NFC tag, then take a photo of your item with its tag.", icon: <QrCode size={18} aria-hidden="true" /> },
+  { title: "Stick", text: "Attach your QR sticker or NFC tag securely to your laptop, bag, bottle or keys.", icon: <Sticker size={18} aria-hidden="true" /> },
   { title: "Get notified", text: "Whoever finds it scans the code, and we tell you right away.", icon: <BellRing size={18} aria-hidden="true" /> },
 ];
 
@@ -150,7 +151,7 @@ export default function MyTags({ onLoaded, onRegister, reloadKey = 0 }: {
   const open = (event: React.FormEvent) => {
     event.preventDefault();
     const clean = extractTagCode(code);
-    if (!clean) { setCodeError("That does not look like a tag code. Enter the 10 to 12 characters printed on the sticker, or paste its link."); return; }
+    if (!clean) { setCodeError("That does not look like a tag code. Enter the 10 to 12 characters printed on the tag, or paste its link."); return; }
     if (onRegister) { onRegister(clean); setCode(""); return; }
     window.location.assign(`/tag/${clean}`);
   };
@@ -249,7 +250,7 @@ export default function MyTags({ onLoaded, onRegister, reloadKey = 0 }: {
               <span className="pointer-events-none absolute inset-x-16 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(209,161,83,0.85),transparent)]" aria-hidden="true" />
               <EmptyIllustration />
               <h3 className="mt-4 font-[family-name:var(--font-heading)] text-[24px] font-semibold tracking-[-0.01em] text-ink">Protect something you can't afford to lose</h3>
-              <p className="mx-auto mt-1.5 max-w-[48ch] text-[14.5px] leading-6 text-ink-muted">A Smart Tag is a QR sticker linked to you. Registering one takes about a minute: have the sticker and the item with you.</p>
+              <p className="mx-auto mt-1.5 max-w-[48ch] text-[14.5px] leading-6 text-ink-muted">A Smart Tag is a QR sticker or NFC card linked to your item. Have the tag and item with you to register.</p>
               <ol className="mx-auto mt-6 grid max-w-[760px] gap-3 text-left sm:grid-cols-3">
                 {TAG_STEPS.map((step, index) => (
                   <li key={step.title} className="rounded-2xl border border-line bg-frost-50/80 p-4">
@@ -305,6 +306,7 @@ export default function MyTags({ onLoaded, onRegister, reloadKey = 0 }: {
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <h3 className="truncate text-[16.5px] font-semibold text-ink">{tag.item_name || "Unnamed"}</h3>
+                              <p className="text-[12px] font-semibold text-ink-muted">{tag.tag_type === "nfc" ? "NFC card · QR backup" : tag.tag_type === "rfid" ? "RFID" : "QR sticker"}</p>
                               <p className="font-mono text-[12.5px] tracking-wider text-ink-muted">{spacedCode(tag.tag_id)}</p>
                             </div>
                             <DaysPill tag={tag} />
@@ -325,7 +327,7 @@ export default function MyTags({ onLoaded, onRegister, reloadKey = 0 }: {
               <div className="flex items-start gap-3 lg:w-[36%] lg:shrink-0">
                 <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950" aria-hidden="true"><QrCode size={20} /></span>
                 <div className="min-w-0">
-                  <label htmlFor="tag-code-input" className="block text-[15.5px] font-semibold text-ink">Got a new sticker?</label>
+                  <label htmlFor="tag-code-input" className="block text-[15.5px] font-semibold text-ink">Got a new tag?</label>
                   <p className="text-[13px] leading-5 text-ink-muted">Type the code printed on it or scan its QR code, then take a photo of your item.</p>
                 </div>
               </div>
@@ -357,6 +359,7 @@ export default function MyTags({ onLoaded, onRegister, reloadKey = 0 }: {
       >
         {m && (
           <div className="space-y-5">
+            {m.tag_type === "nfc" && <NfcPanel key={m.tag_id} tagId={m.tag_id} />}
             <div className="flex flex-col items-center gap-3 rounded-2xl bg-[radial-gradient(120%_90%_at_20%_0%,#33497f_0%,#1f3160_55%,#0e1830_100%)] p-5">
               <TagQr tagId={m.tag_id} size="large" />
               <div className="flex flex-wrap justify-center gap-2">
@@ -373,7 +376,7 @@ export default function MyTags({ onLoaded, onRegister, reloadKey = 0 }: {
             {m.status === "pending_verification" && (
               <p className="flex items-start gap-2 rounded-xl border border-[#f5c451] bg-[#fef3c7] px-3 py-2 text-[13px] leading-5 text-[#78350f]">
                 <Hourglass size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-                <span>{m.is_reregistration ? "Your new photo is waiting for staff approval. Your tag is paused until then and finders see nothing." : `Bring this item and its sticker to the Lost and Found Office${m.price && !m.paid ? ` and pay ₱${m.price.toLocaleString("en-PH", { minimumFractionDigits: 2 })} for the tag` : ""}. Staff will check it, then the tag starts working. Finders see nothing until then.`}</span>
+                <span>{m.is_reregistration ? "Your new photo is waiting for staff approval. Your tag is paused until then and finders see nothing." : `Bring this item and its tag to the Lost and Found Office${m.price && !m.paid ? ` and pay ₱${m.price.toLocaleString("en-PH", { minimumFractionDigits: 2 })} for the tag` : ""}. Staff will check it, then the tag starts working. Finders see nothing until then.`}</span>
               </p>
             )}
             {m.status !== "blank" && !m.is_disabled && <PaymentCard source="smart_tag" refId={m.tag_id} />}
@@ -417,7 +420,7 @@ export default function MyTags({ onLoaded, onRegister, reloadKey = 0 }: {
         icon={<Camera size={20} />}
         eyebrow={photoFor ? `Tag ${spacedCode(photoFor.tag_id)}` : undefined}
         title={photoFor?.photo_url ? "Retake the photo" : "Add a photo"}
-        description="Take a new photo of your item with the sticker attached."
+        description="Take a new photo of your item with the tag attached."
         footer={<>
           <button type="button" onClick={() => { setPhotoFor(null); setNewPhoto(null); }} disabled={saving} className={CX.btnGhost}>Cancel</button>
           <button type="button" onClick={() => void savePhoto()} disabled={saving || !newPhoto} className={CX.btnGold}>{saving ? "Sending…" : photoFor?.status === "pending_verification" ? "Replace photo" : "Submit for approval"}</button>
