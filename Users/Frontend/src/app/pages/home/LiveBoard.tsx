@@ -38,7 +38,7 @@ export default function LiveBoard({ board, loading, onLogin }: { board: PublicBo
   ];
 
   return (
-    <section className="flex w-full flex-col items-center gap-10 bg-slate-50 px-8 pb-24 pt-20 md:px-16" aria-labelledby="live-board">
+    <section className="landing-live-board flex w-full flex-col items-center gap-10 px-8 pb-24 pt-20 md:px-16" aria-labelledby="live-board">
       <div className="max-w-[640px] text-center">
         <span className="mb-3 inline-block text-[13px] font-semibold text-gold-700">Live from campus</span>
         <h2 id="live-board" className="text-[32px] font-semibold text-navy-800 md:text-[38px]" style={{ fontFamily: "var(--font-heading)" }}>See what's lost and found right now</h2>

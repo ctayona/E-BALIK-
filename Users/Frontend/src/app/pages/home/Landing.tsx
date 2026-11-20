@@ -39,19 +39,6 @@ function IconShield() {
     </svg>
   );
 }
-// ─── Clay design tokens ───────────────────────────────────────────────────────
-// Outer + inner double-shadow = the claymorphism "puff"
-
-const clay = {
-  card:      "rounded-2xl border border-white/60 bg-white ",
-  cardNavy:  "rounded-2xl border bg-[#1a2d5a] ",
-  cardGold:  "rounded-[20px] border border-[#e8c070]/60 bg-gold-500 hover:bg-gold-400 ",
-  cardYellow:"rounded-[20px] border border-gold-300 bg-gold-500 ",
-  btn:       "rounded-[16px] border bg-navy-800 hover:bg-navy-700  ",
-  btnGold:   "rounded-[16px] border border-[#b8892e]/40 bg-gold-500 hover:bg-gold-400  ",
-  input:     "rounded-xl border border-line-strong bg-slate-50 ",
-};
-
 // spring preset for bouncy clay feel
 const spring = { type: "spring", stiffness: 400, damping: 28 } as const;
 
@@ -67,7 +54,7 @@ function FeatureCard({ icon, title, desc, step, color }: {
       whileHover={{ y: -6, scale: 1.02 }}
       transition={{ ...spring, opacity: { duration: 0.35 } }}
       viewport={{ once: true }}
-      className={`landing-feature-card ${clay.card} flex flex-col gap-5 items-start p-8 flex-1 min-w-0 cursor-default`}
+      className="landing-feature-card flex flex-col gap-5 items-start p-8 flex-1 min-w-0 cursor-default"
     >
       <div className="flex items-start justify-between w-full">
         <div
@@ -76,11 +63,11 @@ function FeatureCard({ icon, title, desc, step, color }: {
         >
           {icon}
         </div>
-        <span className="text-[#e8edf5] font-bold text-[44px] leading-none select-none">{step}</span>
+        <span className="landing-feature-step font-bold text-[44px] leading-none select-none">{step}</span>
       </div>
       <div className="flex flex-col gap-2">
-        <p className="font-bold text-navy-800 text-[18px]" style={{ fontFamily: "var(--font-heading)" }}>{title}</p>
-        <p className="text-ink-muted text-[14px] leading-[22px]">{desc}</p>
+        <p className="landing-feature-title font-bold text-[18px]" style={{ fontFamily: "var(--font-heading)" }}>{title}</p>
+        <p className="landing-feature-description text-[14px] leading-[22px]">{desc}</p>
       </div>
     </motion.div>
   );
@@ -134,7 +121,7 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
 
         {/* ══════════════════════════════════════════════ HOW IT WORKS */}
         <LandingCampusGallery />
-        <section id="how-it-works" className="landing-how bg-white border-t border-[#e8edf5] flex flex-col gap-14 items-center px-8 md:px-16 pt-24 pb-24 w-full">
+        <section id="how-it-works" className="landing-how border-t border-[#e8edf5] flex flex-col gap-14 items-center px-8 md:px-16 pt-24 pb-24 w-full">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
@@ -143,16 +130,16 @@ export default function Landing({ onLoginSuccess }: { onLoginSuccess: () => void
             className="text-center"
           >
             {/* Clay pill label */}
-            <span className="mb-3 inline-block text-[12px] font-semibold text-gold-700">
+            <span className="landing-how-label mb-3 inline-block text-[12px] font-semibold">
               How It Works
             </span>
             <h2
-              className="font-semibold text-navy-800 text-[32px] md:text-[36px]"
+              className="landing-how-title font-semibold text-[32px] md:text-[36px]"
               style={{ fontFamily: "var(--font-heading)" }}
             >
               A simpler way back to you
             </h2>
-            <p className="text-ink-muted text-[15px] mt-3 max-w-[460px] mx-auto leading-relaxed">
+            <p className="landing-how-description text-[15px] mt-3 max-w-[460px] mx-auto leading-relaxed">
               Three simple steps to reunite students and staff with their belongings.
             </p>
           </motion.div>
