@@ -54,7 +54,7 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
   const [showName, setShowName] = useState(initial?.show_name ?? true);
   const [showEmail, setShowEmail] = useState(initial?.show_email ?? true);
   const [showPhone, setShowPhone] = useState(initial?.show_phone ?? false);
-  const [phone, setPhone] = useState(initial?.contact_phone ?? "");
+  const [phone, setPhone] = useState<string | null>(initial?.contact_phone || null);
   const [shownContacts, setShownContacts] = useState<ContactKind[]>(initial?.shown_contacts ?? []);
   const [saved, setSaved] = useState<ContactMethods | null>(null);
   const [consent, setConsent] = useState(mode === "edit");
@@ -70,17 +70,22 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
   }, []);
 
   const fullName = `${user?.fname ?? ""} ${user?.lname ?? ""}`.trim() || "Your name";
-  const shownLabels = CONTACT_KINDS.filter((method) => shownContacts.includes(method.kind)).map((method) => method.label);
-  const shown = [showName && fullName, showEmail && (user?.email || "your email"), showPhone && (phone || "your phone number"), ...shownLabels].filter(Boolean) as string[];
+  const phoneValue = phone ?? saved?.phone2 ?? "";
+  const sharedPhone = showPhone ? phoneValue : shownContacts.includes("phone2") ? saved?.phone2 || "" : "";
+  const sharedEmail = showEmail ? user?.email || "your email" : shownContacts.includes("email") ? saved?.email || "" : "";
+  const otherMethods = CONTACT_KINDS.filter(method => method.kind !== "phone2" && method.kind !== "email");
+  const shownLabels = otherMethods.filter((method) => shownContacts.includes(method.kind)).map((method) => method.label);
+  const shown = [showName && fullName, sharedEmail, sharedPhone, ...shownLabels].filter(Boolean) as string[];
   const toggleContact = (kind: ContactKind, on: boolean) => setShownContacts((current) => (on ? [...current.filter((item) => item !== kind), kind] : current.filter((item) => item !== kind)));
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (name.trim().length < 2) { setProblem("Choose what this tag is attached to. If it is not in the list, choose Other and type its name."); return; }
-    if (showPhone && !phone.trim()) { setProblem("Add a phone number, or switch \"Show my phone number\" off."); return; }
+    if (showPhone && !phoneValue.trim()) { setProblem("Add a phone number, or switch \"Show my phone number\" off."); return; }
     if (mode === "claim" && !photo) { setProblem("Take a photo of your item with the tag attached before registering."); return; }
     setProblem("");
-    const values: TagDetailsInput = { item_name: name.trim(), item_description: description.trim(), show_name: showName, show_email: showEmail, show_phone: showPhone, contact_phone: phone.trim(), shown_contacts: shownContacts };
+    const values: TagDetailsInput = { item_name: name.trim(), item_description: description.trim(), show_name: showName, show_email: showEmail, show_phone: showPhone, contact_phone: phoneValue.trim(),
+      shown_contacts: shownContacts.filter(kind => !(kind === "email" && showEmail) && !(kind === "phone2" && showPhone)) };
     // Registering is final for the item name, so the user must confirm before anything is sent.
     if (mode === "claim" && photo) { setReview({ values, photo }); return; }
     onSubmit(values, consent, photo);
@@ -102,18 +107,20 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
       <fieldset className="space-y-2.5">
         <legend className={CX.label}>What may a finder see?</legend>
         <Switch checked={showName} onChange={setShowName} label="Show my name" hint="So the finder knows who to look for." icon={<UserRound size={18} />} />
-        <Switch checked={showEmail} onChange={setShowEmail} label="Show my email" hint="Lets the finder write to you directly." icon={<Mail size={18} />} />
-        <Switch checked={showPhone} onChange={setShowPhone} label="Show my phone number" hint="Off by default. Only switch it on if you are comfortable with strangers calling." icon={<Phone size={18} />} />
-        {(showPhone || phone) && (
+        <Switch checked={showEmail || shownContacts.includes("email")} onChange={value => { setShowEmail(value); toggleContact("email", false); }} label="Show my email"
+          hint={sharedEmail ? `Email shared with finders: ${sharedEmail}` : `Shares your account email: ${user?.email || "your email"}`} icon={<Mail size={18} />} />
+        <Switch checked={showPhone || shownContacts.includes("phone2")} onChange={value => { setShowPhone(value); toggleContact("phone2", false); }} label="Show my phone number" hint="Share a phone number only if you are comfortable with finders calling." icon={<Phone size={18} />} />
+        {(showPhone || shownContacts.includes("phone2") || phone) && (
           <div>
             <label htmlFor="tag-phone" className={CX.label}>Phone number</label>
-            <input id="tag-phone" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" maxLength={30} placeholder="0917 123 4567" autoComplete="tel" className={`${CX.input} w-full`} />
+            <input id="tag-phone" value={showPhone ? phoneValue : shownContacts.includes("phone2") ? saved?.phone2 || "" : phoneValue}
+              onChange={(e) => { setPhone(e.target.value); setShowPhone(true); toggleContact("phone2", false); }} inputMode="tel" maxLength={30} placeholder="0917 123 4567" autoComplete="tel" className={`${CX.input} w-full`} />
           </div>
         )}
         {saved && (
           <div className="space-y-2.5 pt-1">
             <p className="text-[13px] font-semibold text-ink-muted">Other ways to reach me</p>
-            {CONTACT_KINDS.map((method) => {
+            {otherMethods.map((method) => {
               const has = Boolean(saved[method.kind]);
               return (
                 <Switch

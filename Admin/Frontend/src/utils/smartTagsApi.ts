@@ -82,8 +82,8 @@ export class SmartTagSetupError extends Error {
   }
 }
 
-export async function fetchSmartTags(status: TagFilter, type: TagType | "all" = "all"): Promise<SmartTagList> {
-  const response = await fetch(`${API_URL}/api/admin/smart-tags?status=${encodeURIComponent(status)}&type=${encodeURIComponent(type)}`, { headers: getAuthHeaders() });
+export async function fetchSmartTags(status: TagFilter, type: TagType | "all" = "all", batch = "all"): Promise<SmartTagList> {
+  const response = await fetch(`${API_URL}/api/admin/smart-tags?status=${encodeURIComponent(status)}&type=${encodeURIComponent(type)}&batch=${encodeURIComponent(batch)}`, { headers: getAuthHeaders() });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 503 && payload.setup_required) throw new SmartTagSetupError(String(payload.error));

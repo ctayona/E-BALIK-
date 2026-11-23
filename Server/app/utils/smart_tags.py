@@ -557,7 +557,10 @@ class SmartTagService:
             contact['phone'] = str(tag['contact_phone'])
         saved = stored_contacts(owner)
         links = [{'kind': kind, 'label': CONTACT_LABELS[kind], 'url': contact_url(kind, saved[kind])}
-                 for kind in (tag.get('shown_contacts') if isinstance(tag.get('shown_contacts'), list) else []) if kind in saved and kind in CONTACT_LABELS]
+                 for kind in (tag.get('shown_contacts') if isinstance(tag.get('shown_contacts'), list) else [])
+                 if kind in saved and kind in CONTACT_LABELS
+                 and not (kind == 'email' and contact.get('email'))
+                 and not (kind == 'phone2' and contact.get('phone'))]
         return {
             'tag_id': tag_id,
             'status': 'lost' if tag.get('status') == 'lost' else 'active',
@@ -1115,10 +1118,21 @@ class SmartTagService:
                 self._guard(error)
         raise TagError('Could not generate unique tags. Try again.', 500)
 
-    def admin_list(self, status: str = 'all', query: str = '', tag_type: str = 'all') -> Dict[str, Any]:
+    def admin_list(self, status: str = 'all', query: str = '', tag_type: str = 'all', batch: str = 'all') -> Dict[str, Any]:
         status = (status or 'all').lower()
         if tag_type not in ('all', *TAG_TYPES):
             raise TagError('Choose a valid tag type.')
+        batch_id = None
+        batch_label = None
+        if batch.startswith('id:'):
+            try:
+                batch_id = str(uuid.UUID(batch[3:]))
+            except ValueError:
+                raise TagError('Choose a valid batch.') from None
+        elif batch.startswith('label:') and len(batch[6:]) <= 80:
+            batch_label = batch[6:]
+        elif batch != 'all':
+            raise TagError('Choose a valid batch.')
         self._expire_due()
         try:
             def count(**flt):
@@ -1131,6 +1145,11 @@ class SmartTagService:
             stats = {'total': count(), 'blank': count(status='blank', is_disabled=False), 'claimed': count(status=['active', 'lost', 'expired', PENDING]),
                      'lost': count(status='lost'), 'expired': count(status='expired'), 'pending': count(status=PENDING), 'disabled': count(is_disabled=True)}
             q = self._table().select('*')
+            if batch_id is not None:
+                q = q.eq('batch_id', batch_id)
+            elif batch_label is not None:
+                q = q.is_('batch_id', 'null')
+                q = q.eq('batch_label', batch_label) if batch_label else q.or_('batch_label.is.null,batch_label.eq.')
             if tag_type != 'all':
                 q = q.eq('tag_type', tag_type)
             if status == 'blank':

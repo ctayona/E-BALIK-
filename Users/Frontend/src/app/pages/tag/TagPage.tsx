@@ -133,6 +133,7 @@ function contactPills(tag: PublicTag, words: Words): Pill[] {
   [...(info.links ?? [])].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind)).forEach((link) => {
     const href = safeLink(link.url);
     if (!href) return;
+    if (pills.some(pill => pill.kind === link.kind)) return;
     const label = link.kind === "phone2" ? words.call : link.kind === "email" ? words.email : link.kind === "messenger" ? words.message : link.kind === "twitter" ? "X" : link.label;
     const sub = href.startsWith("tel:") ? href.slice(4) : href.startsWith("mailto:") ? href.slice(7) : link.kind === "messenger" ? "Messenger" : href.replace(/^https:\/\/(www\.)?/, "").replace(/\/$/, "");
     pills.push({ key: link.kind, kind: link.kind, label, sub, href });

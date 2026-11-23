@@ -41,7 +41,7 @@ def _handled(label):
 def list_tags():
     _require_admin()
     _, service = _service()
-    return jsonify({**service.admin_list(request.args.get('status', 'all'), request.args.get('q', ''), request.args.get('type', 'all')), 'max_batch': MAX_BATCH, 'recovery': tag_recovery.enabled(service.client), 'venue_management': campus_catalogue.ready(service.client)}), 200
+    return jsonify({**service.admin_list(request.args.get('status', 'all'), request.args.get('q', ''), request.args.get('type', 'all'), request.args.get('batch', 'all')), 'max_batch': MAX_BATCH, 'recovery': tag_recovery.enabled(service.client), 'venue_management': campus_catalogue.ready(service.client)}), 200
 
 
 @smart_tags_bp.route('/smart-tags/<tag_id>/nfc', methods=['GET'])

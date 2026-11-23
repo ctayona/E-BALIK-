@@ -6,7 +6,7 @@ import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkele
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import AdminModal from "../../components/ui/AdminModal";
 import { BTN, INPUT, PageHeader, RolePill } from "../../components/ui/primitives";
-import { DataTable, DetailGrid, ExportButton, IconAction, RowActions, SearchField, SegmentedFilter, StatusPill, TableFooter, Toolbar, usePagination, type Tone } from "../../components/ui/management";
+import { DataTable, DetailGrid, ExportButton, FilterSelect, IconAction, RowActions, SearchField, SegmentedFilter, StatusPill, TableFooter, Toolbar, usePagination, type Tone } from "../../components/ui/management";
 import {
   SmartTagSetupError, deactivateSmartTag, deactivateTagBatch, fetchSmartTagPhoto, fetchSmartTagQr, fetchSmartTags, fetchTagBatches, generateSmartTagBatch, reactivateSmartTag, reactivateTagBatch, renewSmartTag, setTagBatchPrice, deleteSmartTag, deleteTagBatch, isDeletableTag, type SmartTagRevenue,
   type AdminSmartTag, type GeneratedBatch, type SmartTagList, type TagBatch, type TagFilter, type TagType, type TagTypeOption,
@@ -486,6 +486,7 @@ export default function SmartTags() {
   const [data, setData] = useState<SmartTagList | null>(null);
   const [filter, setFilter] = useState<TagFilter>("all");
   const [medium, setMedium] = useState<TagType | "all">("all");
+  const [batchFilter, setBatchFilter] = useState("all");
   const loadVersion = useRef(0);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -513,7 +514,7 @@ export default function SmartTags() {
   const load = useCallback(async () => {
     const version = ++loadVersion.current;
     try {
-      const next = await fetchSmartTags(filter, medium);
+      const next = await fetchSmartTags(filter, medium, batchFilter);
       if (version !== loadVersion.current) return;
       setData(next);
       setSetupError("");
@@ -525,7 +526,7 @@ export default function SmartTags() {
     } finally {
       if (version === loadVersion.current) setLoading(false);
     }
-  }, [filter, medium]);
+  }, [filter, medium, batchFilter]);
 
   useEffect(() => { void load(); return () => { loadVersion.current++; }; }, [load]);
 
@@ -536,11 +537,24 @@ export default function SmartTags() {
   useEffect(() => { void loadBatches(); }, [loadBatches]);
 
   const tags = data?.tags ?? [];
+  const batchKey = (id: string | null, label: string) => id ? `id:${id}` : `label:${label}`;
+  const batchOptions = new Map<string, string>();
+  for (const batch of batches) {
+    const key = batchKey(batch.batch_id, batch.label === "Unnamed batch" ? "" : batch.label);
+    batchOptions.set(key, `${batch.label} · ${TYPE_LABEL[batch.tag_type] ?? "QR Code"}${batch.batch_id ? " · " + batch.batch_id.slice(0, 8) : ""}`);
+  }
+  for (const tag of tags) {
+    const key = batchKey(tag.batch_id, tag.batch_label || "");
+    if (!batchOptions.has(key)) batchOptions.set(key, tag.batch_label || tr("Unnamed batch"));
+  }
+  if (batchFilter !== "all" && !batchOptions.has(batchFilter)) batchOptions.set(batchFilter, tr("Selected batch (unavailable)"));
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return query ? tags.filter((t) => `${t.tag_id} ${t.item_name} ${t.batch_label} ${t.owner?.name ?? ""} ${t.owner?.email ?? ""}`.toLowerCase().includes(query)) : tags;
-  }, [tags, search]);
-  const paging = usePagination(filtered, 12, `${filter}|${search}|${medium}`);
+    return tags.filter(t =>
+      (batchFilter === "all" || batchKey(t.batch_id, t.batch_label || "") === batchFilter) &&
+      (!query || `${t.tag_id} ${t.item_name} ${t.batch_label} ${t.owner?.name ?? ""} ${t.owner?.email ?? ""}`.toLowerCase().includes(query)));
+  }, [tags, search, batchFilter]);
+  const paging = usePagination(filtered, 12, `${filter}|${search}|${medium}|${batchFilter}`);
   const stats = data?.stats;
 
   const run = async (action: () => Promise<unknown>) => {
@@ -654,6 +668,8 @@ export default function SmartTags() {
 
       <Toolbar>
         <SearchField value={search} onChange={setSearch} placeholder={tr("Search code, item, owner or batch")} />
+        <FilterSelect label="Batch" value={batchFilter} onChange={setBatchFilter}
+          options={[{ value: "all", label: "All batches" }, ...Array.from(batchOptions, ([value, label]) => ({ value, label }))]} />
       </Toolbar>
 
       <DataTable

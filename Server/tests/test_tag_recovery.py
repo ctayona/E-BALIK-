@@ -136,3 +136,18 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn('New Hall / 1F / Room 100', campus_catalogue.available(self.db.client,events=True))
         self.store['campus_venues'][-3]['active'] = False
         self.assertNotIn('New Hall / 1F / Room 100', campus_catalogue.available(self.db.client))
+
+    def test_batch_filter_uses_identity_and_composes_with_status(self):
+        first, second = str(uuid4()), str(uuid4())
+        self.store['smart_tags'] = [
+            tag_row(tag_id='FIRSTTAG0001',batch_id=first,batch_label='Same name'),
+            tag_row(tag_id='SECONDTAG001',batch_id=second,batch_label='Same name',status='lost'),
+            tag_row(tag_id='LEGACYTAG001',batch_id=None,batch_label='Legacy'),
+        ]
+        rows = self.service.admin_list(batch='id:'+first)['tags']
+        self.assertEqual([r['tag_id'] for r in rows],['FIRSTTAG0001'])
+        self.assertEqual(self.service.admin_list('lost',batch='id:'+first)['tags'],[])
+        self.assertEqual(len(self.service.admin_list('lost',batch='id:'+second)['tags']),1)
+        self.assertEqual(len(self.service.admin_list(batch='label:Legacy')['tags']),1)
+        with self.assertRaises(TagError):
+            self.service.admin_list(batch='id:invalid')

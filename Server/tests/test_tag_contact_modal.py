@@ -52,6 +52,18 @@ class Settings(unittest.TestCase):
 
 
 class SavingAndScanning(ContactServiceTests):
+    def test_primary_phone_and_email_do_not_repeat_as_contact_links(self):
+        self.service.save_contacts(OWNER, {'email': 'alternate@example.com', 'phone2': '09171234567'})
+        self.service.update(TAG, OWNER, {'show_email': True, 'show_phone': True, 'contact_phone': '09171234567',
+                                         'shown_contacts': ['email', 'phone2']})
+        contact = self.service.public_view(TAG, None)['contact']
+        self.assertIn('email', contact)
+        self.assertIn('phone', contact)
+        self.assertNotIn('links', contact)
+        self.service.update(TAG, OWNER, {'show_email': False, 'show_phone': False})
+        contact = self.service.public_view(TAG, None)['contact']
+        self.assertEqual({link['kind'] for link in contact['links']}, {'email', 'phone2'})
+
     def test_settings_and_contacts_are_saved_together_and_kept_apart(self):
         self.service.save_contacts(OWNER, {'email': 'maria@umak.edu.ph', 'twitter': '@maria_s'}, {'name_display': 'initials', 'language': 'fil'})
         stored = self.store['user_profiles'][0]['tag_contacts']
