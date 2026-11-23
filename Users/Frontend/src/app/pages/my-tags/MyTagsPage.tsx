@@ -8,7 +8,7 @@ import type { OwnerTag } from "@/app/utils/tags";
 const SOON_DAYS = 30;
 
 /** Dedicated space for the Smart Tags a user owns: register a sticker, edit privacy, mark lost, and see when each tag expires. */
-export default function MyTagsPage() {
+export default function MyTagsPage({tagId, openClaim}: {tagId?: string; openClaim: (reference: string, returned: boolean) => void}) {
   const [tags, setTags] = useState<OwnerTag[] | null>(null);
   const [registering, setRegistering] = useState(false);
   const [startCode, setStartCode] = useState<string | undefined>(undefined);
@@ -69,7 +69,7 @@ export default function MyTagsPage() {
           )}
         </section>
 
-        <MyTags onLoaded={onLoaded} onRegister={startRegistration} reloadKey={reloadKey} />
+        <MyTags initialTag={tagId} openClaim={openClaim} onLoaded={onLoaded} onRegister={startRegistration} reloadKey={reloadKey} />
         <RegisterTagModal open={registering} initialCode={startCode} onClose={() => setRegistering(false)} onRegistered={() => setReloadKey((value) => value + 1)} />
       </div>
 

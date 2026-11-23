@@ -1,3 +1,4 @@
+import CampusVenueSelect from "../../../../../../shared/CampusVenueSelect";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { ArrowLeft, ArrowRight, BadgeCheck, CalendarRange, ChevronDown, ClipboardList, FileStack, Filter, ImagePlus, Lightbulb, MapPin, RefreshCw, Search, SearchCheck, Tag, UserRound, X } from "lucide-react";
@@ -23,7 +24,7 @@ import VerificationGate from "@/app/shared/verification/VerificationGate";
 import { isVerified, useCurrentUser } from "@/app/utils/system";
 
 const CATEGORIES = ["Bags & Luggage", "Electronics", "Accessories", "Personal Effects", "Documents & Cards", "Clothing", "Keys", "Valuables", "Others"];
-const CAMPUS_LOCATIONS = ["Main Building Lobby", "Student Center", "Library", "ICT Building", "Faculty Hall", "Cafeteria", "Gym", "HPSB Building", "Other"];
+import { useCampusVenues } from "../../../../../../shared/useCampusVenues";
 
 type Report = {
   mpost_id: string;
@@ -66,7 +67,8 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [description, setDescription] = useState("");
   const [distinctiveMarks, setDistinctiveMarks] = useState("");
-  const [lastLocation, setLastLocation] = useState(CAMPUS_LOCATIONS[0]);
+  const CAMPUS_LOCATIONS = useCampusVenues();
+  const [lastLocation, setLastLocation] = useState("Main Building Lobby");
   const [lastSeenDate, setLastSeenDate] = useState(campusToday);
   const [authorized, setAuthorized] = useState(false);
   const [image, setImage] = useState<File | undefined>();
@@ -375,7 +377,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
                 <div className="grid gap-5 md:grid-cols-2">
                   <Field label="Item name" value={itemName} onChange={setItemName} placeholder="Black leather wallet" required rule={{ kind: "title", label: "item name" }} forceShow={attempted} maxLength={120} />
                   <SelectField label="Category" value={category} onChange={setCategory} options={CATEGORIES} />
-                  <SelectField label="Last seen location" value={lastLocation} onChange={setLastLocation} options={CAMPUS_LOCATIONS} icon={<MapPin size={15} />} />
+                  <div><FieldLabel htmlFor="report-campus-venue" label="Last seen location" icon={<MapPin size={15} />} /><CampusVenueSelect id="report-campus-venue" label="Last seen location" className={CX.input + " w-full"} venues={CAMPUS_LOCATIONS} value={lastLocation} onChange={setLastLocation} /></div>
                   <DateField label="Last seen date" ruleLabel="last seen date" value={lastSeenDate} onChange={setLastSeenDate} icon={<CalendarRange size={15} />} required forceShow={attempted} />
                   <div className="md:col-span-2"><TextAreaField label="Description" value={description} onChange={setDescription} placeholder="Include brand, color, size, condition, and visible features." required rule={{ kind: "description" }} forceShow={attempted} /></div>
                   <div className="md:col-span-2"><TextAreaField label="Private distinctive marks" value={distinctiveMarks} onChange={setDistinctiveMarks} placeholder="Optional: unique marks or contents to verify a future claim." icon={<Tag size={15} />} rule={{ kind: "marks", label: "distinctive marks", required: false }} forceShow={attempted} /></div>

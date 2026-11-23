@@ -3,6 +3,8 @@ import { AlertTriangle, ArrowRight, BadgeCheck, CalendarX, HandHeart, Hourglass,
 import { motion, useReducedMotion } from "motion/react";
 import umakLogo from "@/imports/umaklogo.webp";
 import Modal from "@/app/shared/modal/Modal";
+import RecoveryFields from "@/app/shared/tags/RecoveryFields";
+import type { FinderDetails } from "@/app/utils/tags";
 import AuthOverlay from "@/app/shared/tags/AuthOverlay";
 import TagDetailsForm from "@/app/shared/tags/TagDetailsForm";
 import { ContactIcon } from "@/app/shared/tags/contactIcons";
@@ -148,6 +150,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState("");
   const [claimed, setClaimed] = useState(false);
+  const [details, setDetails] = useState<FinderDetails | null>(null);
   const [foundOpen, setFoundOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [contact, setContact] = useState("");
@@ -196,12 +199,24 @@ export default function TagPage({ rawId }: { rawId: string }) {
     }
   };
 
+  const openFinder = () => {
+    setResult(null);
+    setSendError("");
+    if (load.state === "ready" && load.tag.recovery) {
+      // getRandomValues also supports a manual-only form on an insecure local LAN.
+      const requestId = typeof crypto.randomUUID === "function" ? crypto.randomUUID()
+        : Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
+      setDetails({ request_id: requestId, venue: "", point: null });
+    } else setDetails(null);
+    setFoundOpen(true);
+  };
+
   const sendFound = async () => {
     if (!code || sending) return;
     setSending(true);
     setSendError("");
     try {
-      setResult(await tagsApi.found(code, { message: message.trim(), contact: contact.trim() }));
+      setResult(await tagsApi.found(code, { message: message.trim(), contact: contact.trim(), ...(details || {}) }));
     } catch (reason) {
       if (reason instanceof TagRequestError && reason.instructions?.length) setResult({ success: true, notified: false, cooldown: true, instructions: reason.instructions });
       else setSendError(reason instanceof Error ? reason.message : "Unable to notify the owner. Please bring the item to the OHSO guard post anyway.");
@@ -392,7 +407,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
 
         <motion.button
           type="button"
-          onClick={() => { setResult(null); setSendError(""); setFoundOpen(true); }}
+          onClick={openFinder}
           whileHover={reduced ? undefined : { y: -3, scale: 1.01 }}
           whileTap={{ scale: 0.98 }}
           transition={SPRING}
@@ -411,8 +426,8 @@ export default function TagPage({ rawId }: { rawId: string }) {
         tone={result ? "mint" : "gold"}
         icon={result ? <ShieldCheck size={21} /> : <HandHeart size={21} />}
         eyebrow={result ? "Thank you" : words.modalEyebrow}
-        title={result ? (result.notified ? "The owner has been notified" : result.cooldown ? "The owner was already notified" : "Next steps") : words.modalTitle}
-        description={result ? "Please follow these steps so the item gets back safely." : words.modalDescription}
+        title={result ? (result.saved ? "Finder report saved" : result.notified ? "The owner has been notified" : result.cooldown ? "Handover instructions" : "Next steps") : words.modalTitle}
+        description={result ? "Please follow these steps so the item gets back safely." : details ? "Your report goes to the tag owner. If the owner flags it, authorized Smart Tag staff can review your message. Your contact and device location stay in the owner’s private view." : words.modalDescription}
         footer={result ? (
           <>
             <button type="button" onClick={() => setFoundOpen(false)} className={CX.btnGhost}>Done</button>
@@ -429,7 +444,8 @@ export default function TagPage({ rawId }: { rawId: string }) {
       >
         {result ? (
           <div className="space-y-4">
-            {result.cooldown && !result.notified && <p className={CX.alertInfo}>The owner was told a moment ago, so we did not send another alert. The steps below still apply.</p>}
+            {result.saved && <p className={CX.alertInfo}>Your report is in the owner’s private Smart Tag history. {result.replayed ? "This submission was already recorded." : result.emailed ? "The email service accepted the notification." : "Email notification could not be confirmed."}</p>}
+            {result.cooldown && !result.notified && <p className={CX.alertInfo}>A reporting limit was reached. Please use the handover steps below.</p>}
             <ol className="space-y-3">
               {result.instructions.map((line, index) => (
                 <li key={line} className="flex gap-3">
@@ -452,6 +468,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
               <input id="found-contact" value={contact} onChange={(e) => setContact(e.target.value)} maxLength={120} placeholder={words.contactPlaceholder} autoComplete="off" className={`${CX.input} w-full`} />
               <p className={CX.helper}>{words.contactHint}</p>
             </div>
+            {details && foundOpen && <RecoveryFields value={details} change={setDetails} />}
             {sendError && <p role="alert" className={CX.alertError}>{sendError}</p>}
           </div>
         )}

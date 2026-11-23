@@ -406,7 +406,8 @@ class PurgeAndExpiryTests(unittest.TestCase):
         db, store, _ = make()
         db.delete_admin_claim(CLAIM, ADMIN)
         store['recycle_bin'][0]['expires_at'] = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-        result = housekeeping.run_housekeeping(db)
+        with patch.object(housekeeping, 'process_admin_digest', return_value={'sent': 0}):
+            result = housekeeping.run_housekeeping(db)
         self.assertEqual(result['recycle_bin']['purged'], 1)
 
     def test_the_period_is_a_setting_with_sane_limits(self):

@@ -1,3 +1,4 @@
+import { useCampusVenues } from "../../../../../../shared/useCampusVenues";
 import { useEffect, useId, useMemo, useState } from "react";
 import { CalendarDays, CheckCircle2, FileStack, GitCompareArrows, Layers, MapPin, Pencil, ShieldCheck, Tag, Trash2, Search, AlertTriangle, Plus, RefreshCw, QrCode } from "lucide-react";
 import type { NavigationOptions, Page } from "@/app/types";
@@ -41,6 +42,7 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
   const [mode] = useViewMode();
   const formId = useId();
 
+  const venueOptions = useCampusVenues();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState<Filter>(initialTab === "completed" ? "completed" : "all");
@@ -214,6 +216,7 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
         {/* Filters + view */}
         <div className="glass sticky top-[calc(var(--app-header-h)+12px+env(safe-area-inset-top))] z-20 mb-5 flex items-center justify-between gap-2 rounded-[20px] p-2">
           <div role="tablist" aria-label="Report type" className="no-scrollbar flex min-w-0 gap-1 overflow-x-auto">
+            <datalist id={formId + "-venues"}>{venueOptions.map(v => <option key={v} value={v} />)}</datalist>
             {(["all", "missing", "found", "completed"] as const).map((tab) => (
               <button
                 key={tab}
@@ -347,6 +350,7 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
                 <label htmlFor={`${formId}-${key}`} className={CX.label}>{label}</label>
                 <input
                   id={`${formId}-${key}`}
+                  list={key === "location" ? formId + "-venues" : undefined}
                   type={type}
                   required={key === "name" || key === "date"}
                   min={key === "date" ? earliestReportDate() : undefined}

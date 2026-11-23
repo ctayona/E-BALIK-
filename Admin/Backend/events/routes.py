@@ -2,7 +2,7 @@
 from functools import wraps
 from flask import Blueprint, current_app, jsonify, request, make_response
 from app.utils import get_db
-from app.utils.events import EventError, EventFoundation, CAMPUS_VENUES
+from app.utils.events import EventError, EventFoundation, available
 from app.utils.event_assets import EventAssets, MAX_BYTES
 from app.utils.event_lifecycle import EventLifecycle
 from app.utils.event_reports import EventReports
@@ -56,7 +56,7 @@ def _handled(view):
 @events_bp.route('/events/options', methods=['GET'])
 @_handled
 def event_options(service, db, actor):
-    return jsonify(venues=list(CAMPUS_VENUES)), 200
+    return jsonify(venues=available(db.client, events=True)), 200
 
 
 @events_bp.route('/events/<identifier>/review', methods=['GET'])

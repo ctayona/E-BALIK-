@@ -187,7 +187,8 @@ class ClaimCollectionTests(unittest.TestCase):
 
     def test_housekeeping_runs_the_report_sync_step(self):
         store = make_store()
-        result = housekeeping.run_housekeeping(make_db(store), NOW)
+        with patch.object(housekeeping, 'process_admin_digest', return_value={'sent': 0}):
+            result = housekeeping.run_housekeeping(make_db(store), NOW)
         self.assertIn('report_sync', result)
         self.assertEqual(status_of(store, 'M1'), 'returned')
 

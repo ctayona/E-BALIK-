@@ -27,7 +27,7 @@ from backup_database import BackupError, decrypt_file, http, load_env  # noqa: E
 BATCH = 500
 PASSES = 4
 # Tables other tables point at come first; anything not listed follows alphabetically and is retried until it fits.
-FIRST = ['user_profiles', 'system_settings', 'migration_log', 'event_workspaces', 'event_memberships', 'event_brand_assets', 'event_state_history', 'event_reports', 'event_report_history', 'event_claims', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history', 'found_items', 'missing_items', 'auction_submissions', 'auctions', 'smart_tags', 'claims']
+FIRST = ['user_profiles', 'system_settings', 'migration_log', 'campus_venues', 'event_workspaces', 'event_memberships', 'event_brand_assets', 'event_state_history', 'event_reports', 'event_report_history', 'event_claims', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history', 'found_items', 'missing_items', 'auction_submissions', 'auctions', 'smart_tags', 'claims', 'tag_recovery_reports']
 
 
 def read_backup(path: Path, passphrase: str, workdir: Path) -> zipfile.ZipFile:
@@ -42,7 +42,7 @@ def ordered(tables: List[str]) -> List[str]:
     return [t for t in FIRST if t in tables] + sorted(t for t in tables if t not in FIRST)
 
 
-APPEND_ONLY = {'income_ledger', 'event_state_history', 'event_report_history', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history'}  # Preserve existing ledger and event audit records.
+APPEND_ONLY = {'tag_recovery_reports', 'income_ledger', 'event_state_history', 'event_report_history', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history'}  # Preserve existing ledger and event audit records.
 
 
 def upsert(env: Dict[str, str], table: str, rows: List[Dict[str, Any]]) -> None:
@@ -52,7 +52,7 @@ def upsert(env: Dict[str, str], table: str, rows: List[Dict[str, Any]]) -> None:
 
 def restore(archive: zipfile.ZipFile, env: Dict[str, str], only: Optional[List[str]], apply: bool, with_files: bool, log=print) -> Dict[str, Any]:
     manifest = json.loads(archive.read('manifest.json'))
-    tables = ordered([t for t in manifest['tables'] if not only or t in only])
+    tables = ordered([t for t in manifest['tables'] if t != 'tag_recovery_points' and (not only or t in only)])
     log(f"Backup of {manifest.get('project')} from {manifest.get('created_at')}: {len(tables)} tables, {sum(manifest['tables'][t]['rows'] for t in tables)} rows.")
     done: Dict[str, int] = {}
     if not apply:

@@ -24,6 +24,7 @@ export const DEFAULT_TAG_SETTINGS: TagSettings = { name_display: "full", languag
 export type PublicTagStatus = "blank" | "pending_verification" | "active" | "lost" | "expired" | "disabled" | "inactive";
 
 export interface PublicTag {
+  recovery?: boolean;
   tag_id: string;
   status: PublicTagStatus;
   /** Blank tags only: what registering it costs, paid at the office when staff approve it (0 = free). */
@@ -40,6 +41,7 @@ export interface PublicTag {
 }
 
 export interface OwnerTag {
+  recovery?: boolean;
   tag_id: string;
   /** Set only on the answer to marking a tag lost: the missing report posted for it. */
   lost_report?: string | null;
@@ -88,7 +90,11 @@ export interface TagDetailsInput {
   shown_contacts?: ContactKind[];
 }
 
-export interface FoundResult { success: boolean; notified: boolean; emailed?: boolean; cooldown: boolean; instructions: string[] }
+export interface SharedPoint { latitude: number; longitude: number; accuracy: number; captured_at: string; consent_version: "finder-v1" }
+export interface FinderDetails { request_id: string; venue: string; point: SharedPoint | null }
+export interface RecoveryReport {reference?: string | null; report_id: string; created_at: string; venue: string | null; note: string; contact: string; received_at: string | null; returned_at: string | null; review: string; point: (Omit<SharedPoint, "consent_version"> & {expires_at: string}) | null}
+
+export interface FoundResult { saved?: boolean; replayed?: boolean; success: boolean; notified: boolean; emailed?: boolean; cooldown: boolean; instructions: string[] }
 
 export class TagRequestError extends Error {
   status: number;
@@ -131,7 +137,9 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
 export const tagsApi = {
   nfc: (id: string, offlineContact = false) => request<NfcPayload>(`/${encodeURIComponent(id)}/nfc`, { method: "POST", body: { offline_contact: offlineContact } }),
   view: (id: string) => request<PublicTag>(`/${encodeURIComponent(id)}`),
-  found: (id: string, input: { message: string; contact: string }) => request<FoundResult>(`/${encodeURIComponent(id)}/found`, { method: "POST", body: input, auth: false }),
+  found: (id: string, input: { message: string; contact: string } & Partial<FinderDetails>) => request<FoundResult>(`/${encodeURIComponent(id)}/found`, { method: "POST", body: input, auth: false }),
+  history: (id: string, offset = 0) => request<{ reports: RecoveryReport[] }>(`/${encodeURIComponent(id)}/recovery?offset=${offset}`),
+  flag: (id: string, report: string) => request(`/${encodeURIComponent(id)}/recovery/${encodeURIComponent(report)}/flag`, {method: "POST"}),
   mine: () => request<{ tags: OwnerTag[] }>("/mine"),
   /** The signed-in owner's saved contact methods. */
   contacts: () => request<{ contacts: ContactMethods; settings?: TagSettings }>("/contacts"),

@@ -1,3 +1,4 @@
+import CampusVenueSelect from "../../../../../shared/CampusVenueSelect";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Eye, Plus, RefreshCw, Save, FolderOpen, ArrowLeft, ArrowRight, ShieldCheck } from "lucide-react";
 import { BTN, INPUT, Field, PageHeader } from "../../components/ui/primitives";
@@ -140,7 +141,7 @@ export default function Events({ onDirtyChange }: { onDirtyChange?: (dirty: bool
             <fieldset disabled={blocked || locked} className="grid gap-4 sm:grid-cols-2 disabled:opacity-60">
               <Field label="Event name" required>{(id) => <input id={id} className={INPUT} required maxLength={120} value={form.name} placeholder="e.g. UMak Foundation Week" onChange={(e) => change("name", e.target.value)} />}</Field>
               <Field label="Organizer">{(id) => <input id={id} className={INPUT} maxLength={160} value={form.organizer_name} onChange={(e) => change("organizer_name", e.target.value)} />}</Field>
-              <Field label="University venue" hint="Using the existing campus list for now.">{(id) => <select id={id} className={INPUT} value={form.venue} onChange={(e) => change("venue", e.target.value)}><option value="">Choose a campus venue</option>{form.venue && !venues.includes(form.venue) && <option value={form.venue} disabled>{form.venue} ? select a campus venue</option>}{venues.map((venue) => <option key={venue} value={venue}>{venue}</option>)}</select>}</Field>
+              <Field label="University venue">{(id) => <CampusVenueSelect id={id} className={INPUT} venues={venues} value={form.venue} onChange={v => change("venue", v)} />}</Field>
               <Field label="Collection desk instructions">{(id) => <textarea id={id} className={INPUT + " py-3"} rows={3} maxLength={1000} value={form.desk_instructions} placeholder="Where should attendees go to collect an item?" onChange={(e) => change("desk_instructions", e.target.value)} />}</Field>
             </fieldset>
             <p className="event-panel-note">{selected ? <>Event reference: <span className="break-all">{selected.slug}</span>. Renaming keeps this reference.</> : 'Your event reference is generated automatically when you save.'}</p>

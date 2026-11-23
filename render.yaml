@@ -25,6 +25,12 @@ services:
         value: "true"
       - key: SMART_TAG_TYPES_ENABLED
         value: "qr,nfc"
+      # Nov 23 venue/recovery migrations have been verified user-applied.
+      # Set either flag to false in Render to suspend its new UI/workflow.
+      - key: CAMPUS_VENUES_ENABLED
+        value: "true"
+      - key: SMART_TAG_RECOVERY_ENABLED
+        value: "true"
       - key: OTP_EXPIRATION_MINUTES
         value: "10"
       - key: JWT_SECRET_KEY

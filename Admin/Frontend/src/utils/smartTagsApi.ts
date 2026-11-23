@@ -68,7 +68,7 @@ export interface TagBatch {
 export interface UrlCheck { url: string; ok: boolean; reason: string }
 /** Smart Tag money from the income ledger (a tag is sold when staff approve its registration). Null before migration 20261022. */
 export interface SmartTagRevenue { total: number; this_month: number; sold: number; average: number; stock_value: number; stock_count: number }
-export interface SmartTagList { tags: AdminSmartTag[]; stats: SmartTagStats; revenue?: SmartTagRevenue | null; tag_url_base: string; max_batch: number; url_check: UrlCheck; tag_types: TagTypeOption[] }
+export interface SmartTagList { venue_management?: boolean; recovery?: boolean; tags: AdminSmartTag[]; stats: SmartTagStats; revenue?: SmartTagRevenue | null; tag_url_base: string; max_batch: number; url_check: UrlCheck; tag_types: TagTypeOption[] }
 export interface GeneratedBatch {
   count: number; batch_label: string; batch_id: string; tag_type: TagType; validity_months: number | null;
   tag_ids: string[]; values: string[]; tag_url_base: string; url_check?: UrlCheck; message?: string;
@@ -179,3 +179,19 @@ export async function fetchSmartTagQr(id: string): Promise<string> {
   if (!response.ok) throw new Error("Unable to create the QR code");
   return URL.createObjectURL(await response.blob());
 }
+
+export interface FlaggedReport { report_id: string; tag_id: string; created_at: string; note: string }
+export async function flaggedReports(): Promise<FlaggedReport[]> {
+  const response = await fetch(API_URL + "/api/admin/smart-tags/recovery/flagged", {headers: getAuthHeaders(), cache: "no-store"});
+  if (!response.ok) throw new Error("Unable to load flagged reports.");
+  return (await response.json()).reports;
+}
+export const resolveReport = (id: string) => mutate("recovery/" + encodeURIComponent(id) + "/review", "Review flagged report");
+export interface VenueRow { label: string; active: boolean; version?: number }
+export async function venueAvailability(): Promise<{ venues: VenueRow[]; editable: boolean }> {
+  const response = await fetch(API_URL + "/api/admin/smart-tags/venues", {headers: getAuthHeaders(), cache: "no-store"});
+  if (!response.ok) throw new Error("Venue catalogue unavailable. Verify the venue migration and your access.");
+  return await response.json();
+}
+export const manageVenue = (input: {action: "create" | "rename" | "availability"; label: string; target: string; active: boolean; version: number}) =>
+  mutate<{label: string}>("venues", "Save campus location", input);

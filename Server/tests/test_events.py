@@ -49,10 +49,10 @@ class FoundationTests(unittest.TestCase):
             validate({'venue': 'Other place'}, self.create())
 
     def test_venues_match_existing_admin_options(self):
-        import re
-        source = (Path(__file__).resolve().parents[2] / 'Admin/Frontend/src/utils/itemOptions.ts').read_text(encoding='utf-8')
-        locations = re.search(r'export const CAMPUS_LOCATIONS = \[(.*?)\];', source).group(1)
-        self.assertEqual(list(CAMPUS_VENUES), re.findall(r'"([^"]+)"', locations))
+        from app.utils.campus_catalogue import CATALOGUE
+        legacy = ['Library', 'Gymnasium', 'Cafeteria', 'Admin Building', 'Oval Track', 'Engineering Building', 'Lost and Found Office']
+        self.assertEqual(list(CAMPUS_VENUES), legacy)
+        self.assertTrue(set(legacy).issubset(CATALOGUE['legacy']))
 
     def test_assignment_does_not_change_campus_role(self):
         self.service.db.get_user_by_account_id = MagicMock(return_value={'is_active': True, 'access_level': 'user'})

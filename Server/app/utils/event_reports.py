@@ -3,7 +3,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from uuid import uuid4
-from app.utils.events import EventError, EventFoundation, event_id, _text, _date, CAMPUS_VENUES
+from app.utils.events import available, EventError, EventFoundation, event_id, _text, _date, CAMPUS_VENUES
 from app.utils.event_lifecycle import EventLifecycle, parse, usable_profile
 from app.utils.event_assets import EventAssets, normalize_artwork
 
@@ -16,14 +16,14 @@ BOARD_FIELDS = ('report_id', 'kind', 'category', 'public_label', 'venue', 'occur
 logger = logging.getLogger(__name__)
 
 
-def report_payload(payload):
+def report_payload(payload, venues=CAMPUS_VENUES):
     keys = {'request_id', 'board_consent', 'kind', 'item_name', 'category', 'description', 'venue', 'location_details', 'occurred_at'}
     if not isinstance(payload, dict) or set(payload) != keys:
         raise EventError('Supply the event report form fields only.')
     if payload['board_consent'] is not True:
         raise EventError('Confirm consent for a generic event-only board listing before submitting.')
     result = {'board_consent': True, 'request_id': event_id(payload['request_id']), 'kind': payload['kind'], 'category': payload['category'], 'venue': payload['venue']}
-    if result['kind'] not in ('missing', 'found') or result['category'] not in CATEGORIES or result['venue'] not in CAMPUS_VENUES:
+    if result['kind'] not in ('missing', 'found') or result['category'] not in CATEGORIES or result['venue'] not in venues:
         raise EventError('Choose an item type, category and university venue from the lists.')
     for key, maximum, minimum in (('item_name', 120, 3), ('description', 2000, 10), ('location_details', 300, 0)):
         result[key] = _text(payload[key], key.replace('_', ' '), maximum)
@@ -91,7 +91,7 @@ class EventReports:
         if not self.open(row):
             raise EventError('This event page is not open. Contact the event organizer.', 404, 'event_unavailable')
         safe = {key: row.get(key) for key in ('event_id', 'name', 'slug', 'organizer_name', 'venue', 'desk_instructions', 'starts_at', 'ends_at', 'recovery_ends_at', 'status', 'branding')}
-        return {'event': safe, 'claims_available': self.recovery_installed(), 'artwork': EventAssets(self.db).list(row['event_id']), 'venues': list(CAMPUS_VENUES), 'categories': list(CATEGORIES), 'claims_available': self.recovery_installed()}
+        return {'event': safe, 'artwork': EventAssets(self.db).list(row['event_id']), 'venues': available(self.client, events=True), 'categories': list(CATEGORIES), 'claims_available': self.recovery_installed()}
 
     def workspace(self, identifier, account_id):
         result = self.lifecycle.authorize_workspace(identifier, account_id)
@@ -99,7 +99,7 @@ class EventReports:
         installed = self.installed()
         result['claims_available'] = self.recovery_installed()
         result['operations_available'] = bool(self.events._execute(self.client.table('migration_log').select('name').eq('name', '20261118_event_pilot_completion').limit(1)))
-        result.update(reports_available=installed, reporting_enabled=self.open(row), portal_url=f'/events/{row["slug"]}', categories=list(CATEGORIES), venues=list(CAMPUS_VENUES))
+        result.update(reports_available=installed, reporting_enabled=self.open(row), portal_url=f'/events/{row["slug"]}', categories=list(CATEGORIES), venues=available(self.client, events=True))
         if installed:
             result['permissions'] += ['view_reports', 'receive_reports', 'add_notes'] + (['review_reports'] if result['role'] == 'manager' else [])
         return result
@@ -152,7 +152,7 @@ class EventReports:
 
     def create(self, identifier, payload, account_id, photo=None):
         self.require_setup()
-        data = report_payload(payload)
+        data = report_payload(payload, available(self.client, events=True))
         row = self.events.get(identifier)
         self.attendee(account_id, row)
         old = self.events._execute(self.client.table('event_reports').select(self.columns()).eq('event_id', row['event_id']).eq('reporter_account_id', account_id).eq('request_id', data['request_id']).limit(1))

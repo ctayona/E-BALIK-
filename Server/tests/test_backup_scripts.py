@@ -23,6 +23,7 @@ class FakeSupabase:
         self.tables = {
             'user_profiles': [{'account_id': 'a', 'email': 'x@umak.edu.ph', 'created_at': '1'}],
             'found_items': [{'item_id': f'f{i}', 'created_at': str(i)} for i in range(2300)],
+            'tag_recovery_points': [{'report_id': 'synthetic', 'latitude': 14.55}],
             'otp_tokens': [{'id': 1, 'created_at': '1'}],
         }
         self.writes = []
@@ -76,6 +77,7 @@ class BackupFlowTests(unittest.TestCase):
                 names = archive.namelist()
                 self.assertIn('tables/found_items.jsonl', names)
                 self.assertNotIn('tables/otp_tokens.jsonl', names)
+                self.assertNotIn('tables/tag_recovery_points.jsonl', names)
                 self.assertEqual(len(archive.read('tables/found_items.jsonl').decode().splitlines()), 2300)    # three pages of 1000
                 self.assertEqual(archive.read('storage/found-item-images/folder/b.jpg'), b'JPEGDATA')
                 manifest = json.loads(archive.read('manifest.json'))

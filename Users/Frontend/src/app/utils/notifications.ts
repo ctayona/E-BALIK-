@@ -33,7 +33,10 @@ export function notificationTarget(notification: UserNotification): { page: Page
   if (notification.link_page === 'auction-hall') return { page: 'auction-hall' };
   if (notification.link_page === 'auction-selling') return { page: 'auction-hall', options: { auctionTab: 'selling' } };
   if (notification.link_page === 'my-reports') return { page: 'my-reports', options: { reportsTab: 'completed' } };
-  if (opensSmartTags(notification)) return { page: 'my-tags' };
+  if (opensSmartTags(notification)) {
+    const tagId = /^my-tags\/([A-Z0-9]{10,12})$/.exec(notification.link_page || '')?.[1];
+    return tagId ? { page: 'my-tags', options: { tagId } } : { page: 'my-tags' };
+  }
   return null;
 }
 

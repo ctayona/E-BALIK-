@@ -5,6 +5,7 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 from app.utils import get_db, rate_limit
 from app.utils.smart_tags import MAX_PHOTO_BYTES, SURRENDER_INSTRUCTIONS, SmartTagService, TagError, TagsUnavailable
 from app.utils.nfc_tags import prepare_nfc
+from app.utils import tag_recovery
 from Users.Backend.shared.request_auth import _authenticated_account_id
 
 smart_tags_bp = Blueprint('user_smart_tags', __name__)
@@ -68,7 +69,19 @@ def _handled(label):
 @smart_tags_bp.route('/mine', methods=['GET'])
 @_handled('load your Smart Tags')
 def my_tags():
-    return _private({'tags': _service().my_tags(_authenticated_account_id())})
+    owner = _authenticated_account_id()
+    service = _service()
+    tags = service.my_tags(owner)
+    if tags and tag_recovery.enabled(service.client):
+        tags = [dict(tag, recovery=True) for tag in tags]
+    return _private({'tags': tags})
+
+
+@smart_tags_bp.get('/venues')
+@_handled('load campus venues')
+def campus_venues():
+    from app.utils.campus_catalogue import available
+    return jsonify(venues=available(_service().client))
 
 
 @smart_tags_bp.route('/contacts', methods=['GET'])
@@ -120,7 +133,11 @@ def tag_page(tag_id):
     # Throttle lookups per address so the tag space cannot be probed quickly (it is also about 60 bits wide).
     if not rate_limit.allow(f'tag-view:{_client_ip()}', 90, 60):
         raise TagError('Too many lookups. Wait a minute and try again.', 429)
-    return _private(_service().public_view(tag_id, _optional_account_id()))
+    service = _service()
+    result = service.public_view(tag_id, _optional_account_id())
+    if result.get('status') in ('active','lost') and tag_recovery.enabled(service.client):
+        result['recovery'] = True
+    return _private(result)
 
 
 @smart_tags_bp.route('/<tag_id>/found', methods=['POST'])
@@ -129,9 +146,35 @@ def found(tag_id):
     ip = _client_ip()
     if not rate_limit.allow(f'tag-found:{ip}', 10, 3600) or not rate_limit.allow(f'tag-found:{ip}:{str(tag_id).upper()}', 3, 3600):
         # The finder still gets the instructions, so a limit never leaves them without guidance.
-        return _private({'error': 'You have already sent several notices. The owner has been told.', 'instructions': SURRENDER_INSTRUCTIONS}, 429)
+        return _private({'error': 'Too many requests. Please follow the handover instructions.', 'instructions': SURRENDER_INSTRUCTIONS}, 429)
     body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        raise TagError('Invalid finder report.')
+    if set(body) - {'message','contact'}:
+        return _private({'success': True, **tag_recovery.submit(_service(),tag_id,body)})
     return _private({'success': True, **_service().report_found(tag_id, body.get('message'), body.get('contact'))})
+
+
+@smart_tags_bp.get('/<tag_id>/recovery')
+@_handled('load recovery activity')
+def recovery_history(tag_id):
+    owner = _authenticated_account_id()
+    offset = request.args.get('offset', '0')
+    if not offset.isascii() or not offset.isdigit() or len(offset) > 6:
+        raise TagError('Invalid history page.')
+    return _private({'reports': tag_recovery.history(_service(), tag_id, owner, int(offset))})
+
+
+@smart_tags_bp.post('/<tag_id>/recovery/<uuid:report_id>/flag')
+@_handled('flag recovery report')
+def flag_report(tag_id,report_id):
+    owner = _authenticated_account_id()
+    table,tag = tag_recovery.owned(_service(),tag_id,owner)
+    rows = table.update({'review':'flagged'}).eq('tag_id',tag).eq('owner_id',owner).eq('report_id',str(report_id)).eq('review','clear').execute().data
+    if not rows:
+        raise TagError('Report unavailable for review.',409)
+    current_app.logger.info('Owner flagged recovery report owner=%s report=%s', owner, report_id)
+    return _private({'success':True})
 
 
 @smart_tags_bp.route('/<tag_id>/claim', methods=['POST'])

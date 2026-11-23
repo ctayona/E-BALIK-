@@ -2,7 +2,7 @@
 import io
 from functools import wraps
 from flask import Blueprint, current_app, jsonify, request, send_file
-from app.utils import get_db
+from app.utils import campus_catalogue, tag_recovery, get_db
 from app.utils.smart_tags import MAX_BATCH, MAX_PHOTO_BYTES, SmartTagService, TagError, TagsUnavailable, normalize_tag_id, qr_png
 from app.utils.nfc_tags import prepare_nfc
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
@@ -41,7 +41,7 @@ def _handled(label):
 def list_tags():
     _require_admin()
     _, service = _service()
-    return jsonify({**service.admin_list(request.args.get('status', 'all'), request.args.get('q', ''), request.args.get('type', 'all')), 'max_batch': MAX_BATCH}), 200
+    return jsonify({**service.admin_list(request.args.get('status', 'all'), request.args.get('q', ''), request.args.get('type', 'all')), 'max_batch': MAX_BATCH, 'recovery': tag_recovery.enabled(service.client), 'venue_management': campus_catalogue.ready(service.client)}), 200
 
 
 @smart_tags_bp.route('/smart-tags/<tag_id>/nfc', methods=['GET'])
@@ -214,3 +214,56 @@ def delete_batch(batch_id):
     _log_admin_action(db, admin, 'Delete Smart Tag Batch', 'Smart Tags', f"{result['deleted']} tags deleted, {result['kept']} kept", result['batch_id'])
     kept = f" {result['kept']} tags still in use were kept." if result['kept'] else ''
     return jsonify({'success': True, **result, 'message': f"{result['deleted']} unused or deactivated tags were deleted.{kept}"}), 200
+
+
+@smart_tags_bp.get('/smart-tags/recovery/flagged')
+@_handled('review flagged reports')
+def flagged_reports():
+    actor = _require_admin()
+    db, service = _service()
+    tag_recovery.require(service.client)
+    rows = service.client.table('tag_recovery_reports').select('report_id,tag_id,created_at,note').eq('review','flagged').order('created_at').limit(50).execute().data
+    _log_admin_action(db, actor, 'Read flagged report queue', 'Smart Tags', 'Flagged reports', None)
+    return jsonify(reports=rows), 200, {'Cache-Control': 'no-store'}
+
+
+@smart_tags_bp.post('/smart-tags/recovery/<uuid:report_id>/review')
+@_handled('resolve flagged report')
+def resolve_report(report_id):
+    actor = _require_admin()
+    db, service = _service()
+    tag_recovery.require(service.client)
+    rows = service.client.table('tag_recovery_reports').update({'review':'reviewed'}).eq('report_id',str(report_id)).eq('review','flagged').execute().data
+    if not rows:
+        raise TagError('Report is no longer awaiting review.',409)
+    _log_admin_action(db, actor, 'Review flagged report', 'Smart Tags', rows[0]['tag_id'], str(report_id))
+    return jsonify(success=True)
+
+
+@smart_tags_bp.route('/smart-tags/venues', methods=['GET', 'POST'])
+@_handled('manage campus venue availability')
+def venue_management():
+    actor = _require_admin('super_admin')
+    db, service = _service()
+    if not campus_catalogue.ready(service.client):
+        raise TagError('Campus venue management is disabled.', 503)
+    table = service.client.table('campus_venues')
+    if request.method == 'GET':
+        editable = campus_catalogue.management_ready(service.client)
+        rows = table.select('label,active,version' if editable else 'label,active').order('label').execute().data
+        return jsonify(venues=rows, editable=editable), 200, {'Cache-Control': 'no-store'}
+    body = request.get_json(silent=True)
+    if not campus_catalogue.management_ready(service.client):
+        raise TagError('Apply the venue management migration before editing locations.', 503)
+    if not isinstance(body, dict) or set(body) != {'action', 'label', 'target', 'active', 'version'}:
+        raise TagError('Supply the venue editing fields.')
+    if body['action'] not in ('create', 'rename', 'availability') or any(not isinstance(body[k],str) for k in ('label','target')):
+        raise TagError('Choose a valid action and location.')
+    if type(body['active']) is not bool or type(body['version']) is not int or body['version']<0:
+        raise TagError('Refresh and choose the current venue version.')
+    result = service.client.rpc('campus_venue_manage', dict(
+        p_actor=actor['account_id'], p_action=body['action'], p_label=body['label'],
+        p_target=body['target'], p_active=body['active'], p_version=body['version'])).execute().data
+    if not isinstance(result,dict) or not result.get('ok'):
+        raise TagError(result.get('error','Unable to edit venue.') if isinstance(result,dict) else 'Unable to edit venue.',409)
+    return jsonify(success=True, label=result['label'])

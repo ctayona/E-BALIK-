@@ -1,3 +1,4 @@
+import CampusVenueSelect from "../../../../../../shared/CampusVenueSelect";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { ArrowLeft, BadgeCheck, CalendarRange, ChevronDown, ClipboardList, FileStack, ImagePlus, MapPin, PackageSearch, RefreshCw, ShieldCheck, Tag, UserRound, X } from "lucide-react";
@@ -23,7 +24,7 @@ import VerificationGate from "@/app/shared/verification/VerificationGate";
 import { isVerified, useCurrentUser } from "@/app/utils/system";
 
 const CATEGORIES = ["Bags & Luggage", "Electronics", "Accessories", "Personal Effects", "Documents & Cards", "Clothing", "Keys", "Valuables", "Others"];
-const FOUND_LOCATIONS = ["Main Building Lobby", "Student Center", "Library", "ICT Building", "Faculty Hall", "Cafeteria", "Gym", "Other"];
+import { useCampusVenues } from "../../../../../../shared/useCampusVenues";
 const OTHER_GUARD = "__other__";
 const TURNOVER_LOCATIONS = ["Main Security Office", "Main Building Security Desk", "Student Center Security Desk", "Library Security Desk", "Gym Security Desk", "Other Security Post"];
 
@@ -54,7 +55,8 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
   const { ensure, prompt } = useVerificationPrompt(onBack, "report a found item");
   const [activeTab, setActiveTab] = useState<"intake" | "reports">("intake");
   const [title, setTitle] = useState("");
-  const [location, setLocation] = useState(FOUND_LOCATIONS[0]);
+  const FOUND_LOCATIONS = useCampusVenues();
+  const [location, setLocation] = useState("Main Building Lobby");
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [dateFound, setDateFound] = useState(campusToday);
   const [description, setDescription] = useState("");
@@ -328,7 +330,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
               <div className="grid gap-5 md:grid-cols-2">
                 <Field label="Item title / short description" value={title} onChange={setTitle} placeholder="Blue backpack with red zipper" required rule={{ kind: "title", label: "item title" }} forceShow={attempted} maxLength={120} />
                 <SelectField label="Category" value={category} onChange={setCategory} options={CATEGORIES} />
-                <SelectField label="Where was it found?" value={location} onChange={setLocation} options={FOUND_LOCATIONS} icon={<MapPin size={15} />} />
+                <div><FieldLabel htmlFor="report-campus-venue" label="Where was it found?" icon={<MapPin size={15} />} /><CampusVenueSelect id="report-campus-venue" label="Where was it found?" className={CX.input + " w-full"} venues={FOUND_LOCATIONS} value={location} onChange={setLocation} /></div>
                 <DateField label="Date found" ruleLabel="date found" value={dateFound} onChange={setDateFound} icon={<CalendarRange size={15} />} required forceShow={attempted} />
                 <div className="md:col-span-2"><TextAreaField label="Description / identifying details" value={description} onChange={setDescription} placeholder="Brand, color, size, and visible details." rule={{ kind: "description", required: false }} forceShow={attempted} /></div>
                 <div className="md:col-span-2"><TextAreaField label="Distinctive marks / proof-of-ownership notes" value={distinctiveMarks} onChange={setDistinctiveMarks} placeholder="Keep private marks useful for later claim verification." icon={<Tag size={15} />} rule={{ kind: "marks", label: "distinctive marks", required: false }} forceShow={attempted} /></div>

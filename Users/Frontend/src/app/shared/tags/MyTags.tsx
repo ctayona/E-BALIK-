@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { BellRing, CalendarClock, Camera, Copy, Download, Hourglass, Pencil, QrCode, Settings2, ShieldAlert, ShieldCheck, Sticker, Tag as TagIcon, TriangleAlert } from "lucide-react";
 import Modal from "@/app/shared/modal/Modal";
@@ -6,6 +6,7 @@ import NfcPanel from "./NfcPanel";
 import { SkeletonBlock } from "@/app/shared/LoadingSkeleton";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { showToast } from "@/app/shared/toast/toastStore";
+import RecoveryHistory from "./RecoveryHistory";
 import LivePhotoField from "@/app/shared/tags/LivePhotoField";
 import ScanCodeButton from "@/app/shared/tags/ScanCodeButton";
 import TagDetailsForm from "@/app/shared/tags/TagDetailsForm";
@@ -93,13 +94,16 @@ export const TAG_STEPS = [
 ];
 
 /** The Smart Tags you own, as a filterable card grid. Manage opens one window with the tag's QR code and every action. */
-export default function MyTags({ onLoaded, onRegister, reloadKey = 0 }: {
+export default function MyTags({ initialTag, openClaim, onLoaded, onRegister, reloadKey = 0 }: {
+  initialTag?: string;
+  openClaim?: (reference: string, returned: boolean) => void;
   onLoaded?: (tags: OwnerTag[]) => void;
   /** Opens the in-page registration dialog (with the live camera), optionally with the code already known. */
   onRegister?: (code?: string) => void;
   /** Change this number to make the list reload, for example after a tag was registered. */
   reloadKey?: number;
 }) {
+  const requestedTag = useRef(initialTag);
   const reduced = useReducedMotion();
   const [tags, setTags] = useState<OwnerTag[] | null>(null);
   const [setup, setSetup] = useState(false);
@@ -117,13 +121,17 @@ export default function MyTags({ onLoaded, onRegister, reloadKey = 0 }: {
   const [photoError, setPhotoError] = useState("");
 
   const replaceTag = useCallback((next: OwnerTag) => {
-    setTags((current) => { const list = (current ?? []).map((t) => (t.tag_id === next.tag_id ? next : t)); onLoaded?.(list); return list; });
-    setManaging((current) => (current && current.tag_id === next.tag_id ? next : current));
+    setTags((current) => { const list = (current ?? []).map((t) => (t.tag_id === next.tag_id ? { ...t, ...next } : t)); onLoaded?.(list); return list; });
+    setManaging((current) => (current && current.tag_id === next.tag_id ? { ...current, ...next } : current));
   }, [onLoaded]);
 
   const load = useCallback(async () => {
     try {
       const loaded = (await tagsApi.mine()).tags;
+      if (requestedTag.current) {
+        setManaging(loaded.find(tag => tag.tag_id === requestedTag.current) ?? null);
+        requestedTag.current = undefined;
+      }
       setTags(loaded);
       onLoaded?.(loaded);
       setSetup(false);
@@ -359,6 +367,7 @@ export default function MyTags({ onLoaded, onRegister, reloadKey = 0 }: {
       >
         {m && (
           <div className="space-y-5">
+            {m.recovery && <RecoveryHistory key={"history-" + m.tag_id} tag={m.tag_id} openClaim={openClaim} />}
             {m.tag_type === "nfc" && <NfcPanel key={m.tag_id} tagId={m.tag_id} />}
             <div className="flex flex-col items-center gap-3 rounded-2xl bg-[radial-gradient(120%_90%_at_20%_0%,#33497f_0%,#1f3160_55%,#0e1830_100%)] p-5">
               <TagQr tagId={m.tag_id} size="large" />

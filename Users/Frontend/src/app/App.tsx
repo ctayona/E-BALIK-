@@ -78,6 +78,9 @@ function MainApp() {
   const { user, isAuthenticated, logout, refreshProfile } = useAuth();
   const [page, setPage] = useState<Page>("home");
   const [navigationOptions, setNavigationOptions] = useState<NavigationOptions>(() => {
+    const link = new URLSearchParams(window.location.search);
+    const tagId = link.get("tag") || "";
+    if (link.get("open") === "my-tags" && /^[A-Z0-9]{10,12}$/.test(tagId)) return {tagId};
     if (!authUtils.getToken() || !authUtils.getUserData()) return {};
     try {
       return JSON.parse(sessionStorage.getItem(USER_NAVIGATION_OPTIONS_KEY) || "{}") as NavigationOptions;
@@ -209,7 +212,14 @@ function MainApp() {
   }, []);
 
   function handleLoginSuccess() {
-    setPage("dashboard");
+    const link = new URLSearchParams(window.location.search);
+    const tagId = link.get("tag") || "";
+    if (link.get("open") === "my-tags" && /^[A-Z0-9]{10,12}$/.test(tagId)) {
+      window.history.replaceState(null, "", window.location.pathname);
+      handleNavigate("my-tags", { tagId });
+      return;
+    }
+    setPage(current => current === "my-tags" ? current : "dashboard");
   }
 
   function handleNavigate(nextPage: Page, options: NavigationOptions = {}) {
@@ -267,7 +277,7 @@ function MainApp() {
         {page === "browse-items" && <BrowseItems onNavigate={handleNavigate} />}
         {page === "claim"        && <Claim key={navigationOptions.openReceipts ? "receipts" : "claims"} foundItemId={navigationOptions.foundItemId} missingReportId={navigationOptions.missingReportId} openReceipts={navigationOptions.openReceipts} onNavigate={handleNavigate} />}
         {page === "auction-hall" && <AuctionHall key={navigationOptions.auctionTab ?? "hall"} initialTab={navigationOptions.auctionTab} onNavigate={handleNavigate} />}
-        {page === "my-tags"      && <MyTagsPage />}
+        {page === "my-tags"      && <MyTagsPage key={navigationOptions.tagId} tagId={navigationOptions.tagId} openClaim={(reference, returned) => handleNavigate("claim", returned ? {openReceipts:true} : {foundItemId:reference})} />}
         {page === "notifications" && <Notifications onNavigate={handleNavigate} />}
         {page === "profile"      && <Profile user={currentUser} onNavigate={handleNavigate} />}
         </>}

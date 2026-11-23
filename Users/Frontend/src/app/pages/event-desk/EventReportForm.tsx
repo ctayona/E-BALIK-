@@ -1,3 +1,4 @@
+import CampusVenueSelect from "../../../../../../shared/CampusVenueSelect";
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Camera, CheckCircle2 } from 'lucide-react';
 import Modal from '@/app/shared/modal/Modal';
@@ -41,7 +42,7 @@ export default function EventReportForm({ event, slug, categories, venues, kind,
         {step === 0 ? <fieldset className="ev-form-grid" disabled={busy}>
           <label className="ev-wide">Item name<input maxLength={120} value={values.item_name} placeholder="e.g. Black backpack" onChange={(e) => setValues({ ...values, item_name: e.target.value })} /></label>
           <label>Category<select value={values.category} onChange={(e) => setValues({ ...values, category: e.target.value })}><option value="">Choose a category</option>{categories.map((c) => <option key={c}>{c}</option>)}</select></label>
-          <label>University venue<select value={values.venue} onChange={(e) => setValues({ ...values, venue: e.target.value })}>{venues.map((v) => <option key={v}>{v}</option>)}</select></label>
+          <div>University venue<CampusVenueSelect venues={venues} value={values.venue} onChange={venue => setValues({ ...values, venue })} /></div>
           <label className="ev-wide">Private description<textarea rows={3} maxLength={2000} value={values.description} placeholder="Describe identifying features. These details are shared with event staff, not the event board." onChange={(e) => setValues({ ...values, description: e.target.value })} /></label>
           <label>Lost / found at · Manila time<input type="datetime-local" min={dateControl(event.starts_at)} max={dateControl(new Date(Math.min(Date.now(), Date.parse(event.ends_at))).toISOString())} value={values.occurred_at} onChange={(e) => setValues({ ...values, occurred_at: e.target.value })} /></label>
           <label>Exact location · optional<input maxLength={300} value={values.location_details} placeholder="e.g. Beside the entrance" onChange={(e) => setValues({ ...values, location_details: e.target.value })} /></label>

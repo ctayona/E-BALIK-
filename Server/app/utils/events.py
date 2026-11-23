@@ -1,4 +1,5 @@
 """Draft event configuration only. No campus report, tag, or finance writes."""
+from app.utils.campus_catalogue import EVENT_LEGACY, available
 import re
 import unicodedata
 from datetime import datetime, timezone, timedelta
@@ -45,8 +46,8 @@ def _date(value):
 
 
 DEFAULT_BRANDING = {'template': 'classic', 'primary': '#1f3160', 'accent': '#d1a153', 'background': '#ffffff'}
-# Same options as Admin/Frontend/src/utils/itemOptions.ts; event UI reads this list.
-CAMPUS_VENUES = ('Library', 'Gymnasium', 'Cafeteria', 'Admin Building', 'Oval Track', 'Engineering Building', 'Lost and Found Office')
+# Compatibility fallback before the campus directory is enabled.
+CAMPUS_VENUES = EVENT_LEGACY
 
 
 def safe_person(profile):
@@ -69,7 +70,7 @@ def branding(value):
 FIELDS = {'name', 'slug', 'organizer_name', 'venue', 'desk_instructions', 'starts_at', 'ends_at', 'recovery_ends_at', 'branding'}
 
 
-def validate(payload, current=None):
+def validate(payload, current=None, venues=CAMPUS_VENUES):
     if not isinstance(payload, dict) or not payload or set(payload) - FIELDS:
         raise EventError('Supply supported event fields only.')
     current = current or {}
@@ -79,7 +80,7 @@ def validate(payload, current=None):
             result[key] = _text(payload[key], key, maximum, key == 'name')
     if not current and 'name' not in result:
         raise EventError('name is required.')
-    if 'venue' in result and result['venue'] and result['venue'] not in CAMPUS_VENUES:
+    if 'venue' in result and result['venue'] and result['venue'] != current.get('venue') and result['venue'] not in venues:
         raise EventError('Choose a university venue from the current campus list.')
     if 'slug' in payload:
         slug = payload['slug']
@@ -196,7 +197,7 @@ class EventFoundation:
 
     def create(self, payload, actor_id):
         row = {'event_id': str(uuid4()), 'status': 'draft', 'version': 1, 'branding': dict(DEFAULT_BRANDING),
-               'created_by': event_id(actor_id), 'created_at': datetime.now(timezone.utc).isoformat(), **validate(payload)}
+               'created_by': event_id(actor_id), 'created_at': datetime.now(timezone.utc).isoformat(), **validate(payload, venues=available(self.client, events=True))}
         rows = self._execute(self.client.table('event_workspaces').insert(row))
         if not rows:
             raise EventError('Event was not saved.', 503, 'save_failed')
@@ -210,7 +211,7 @@ class EventFoundation:
             raise EventError('Only draft events can be edited in this release.', 409, 'event_locked')
         if current['version'] != version:
             raise EventError('The event changed. Reload before saving.', 409, 'version_conflict')
-        changes = {**validate(payload, current), 'version': version + 1, 'updated_at': datetime.now(timezone.utc).isoformat()}
+        changes = {**validate(payload, current, available(self.client, events=True)), 'version': version + 1, 'updated_at': datetime.now(timezone.utc).isoformat()}
         rows = self._execute(self.client.table('event_workspaces').update(changes).eq('event_id', current['event_id']).eq('version', version).eq('status', 'draft'))
         if not rows:
             raise EventError('The event changed. Reload before saving.', 409, 'version_conflict')

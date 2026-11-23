@@ -29,12 +29,12 @@ MAX_UPLOAD_BYTES = 80 * 1024 * 1024
 MAX_UNPACKED_BYTES = 400 * 1024 * 1024
 BATCH = 200
 PASSES = 3
-PROTECTED = frozenset({'admin_mfa', 'admin_mfa_challenges', 'admin_mfa_recovery_codes', 'otp_tokens'})
+PROTECTED = frozenset({'tag_recovery_points', 'admin_mfa', 'admin_mfa_challenges', 'admin_mfa_recovery_codes', 'otp_tokens'})
 SENSITIVE = frozenset({'user_profiles', 'system_settings'})
-FIRST = ['user_profiles', 'system_settings', 'migration_log', 'event_workspaces', 'event_memberships', 'event_brand_assets', 'event_state_history', 'event_reports', 'event_report_history', 'event_claims', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history', 'found_items', 'missing_items', 'auction_submissions', 'auctions', 'smart_tags', 'claims']
+FIRST = ['user_profiles', 'system_settings', 'migration_log', 'campus_venues', 'event_workspaces', 'event_memberships', 'event_brand_assets', 'event_state_history', 'event_reports', 'event_report_history', 'event_claims', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history', 'found_items', 'missing_items', 'auction_submissions', 'auctions', 'smart_tags', 'claims', 'tag_recovery_reports']
 SENSITIVE_PHRASE = 'RESTORE ACCOUNTS AND SETTINGS'
 # Tables the database itself refuses to change (migration 20261026): a restore only adds the entries that are missing and skips the rest.
-APPEND_ONLY = frozenset({'income_ledger', 'event_state_history', 'event_report_history', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history'})
+APPEND_ONLY = frozenset({'tag_recovery_reports', 'income_ledger', 'event_state_history', 'event_report_history', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history'})
 
 _tool: Dict[str, Any] = {}
 
@@ -158,7 +158,7 @@ def preview(db, manifest: Dict[str, Any], sha256: str, supabase_url: str) -> Dic
         kind = kind_of(name)
         current = live_rows(db, name)
         restorable = kind != 'protected' and current is not None
-        note = ('Never restored here: it holds sign-in secrets.' if kind == 'protected'
+        note = ('Precise finder locations expire and cannot be restored.' if name == 'tag_recovery_points' else 'Never restored here: it holds sign-in secrets.' if kind == 'protected'
                 else 'This table does not exist in this database yet. Run the SQL migrations first.' if current is None
                 else 'Accounts, roles and settings. Restoring can undo recent role or access changes.' if kind == 'sensitive'
                 else 'Money records are never changed: only entries that are missing from the database are added.' if name == 'income_ledger'
@@ -179,6 +179,8 @@ def validate_selection(manifest: Dict[str, Any], requested: Any, sensitive_phras
     for table in dict.fromkeys(requested):
         if table not in manifest['tables']:
             raise RestoreError(f'{table} is not in this backup.')
+        if table == 'tag_recovery_points':
+            raise RestoreError('Short-lived finder coordinates cannot be restored.')
         if table in PROTECTED:
             raise RestoreError(f'{table} holds sign-in secrets and can never be restored from the admin console.')
         chosen.append(table)

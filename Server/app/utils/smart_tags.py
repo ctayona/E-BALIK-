@@ -345,13 +345,25 @@ def url_check() -> Dict[str, Any]:
 
 def qr_png(tag_id: str) -> bytes:
     """PNG image of the QR code that points at the tag page."""
+    from urllib.parse import urlsplit
+    from PIL import Image, ImageDraw, ImageFont
     import qrcode
     from qrcode.constants import ERROR_CORRECT_Q
     qr = qrcode.QRCode(error_correction=ERROR_CORRECT_Q, box_size=12, border=4)
     qr.add_data(tag_url(tag_id))
     qr.make(fit=True)
     buffer = io.BytesIO()
-    qr.make_image(fill_color='#1f3160', back_color='white').save(buffer, format='PNG')
+    code = qr.make_image(fill_color='#1f3160', back_color='white').convert('RGB')
+    sticker = Image.new('RGB', (code.width, code.height + 108), 'white')
+    sticker.paste(code)
+    draw = ImageDraw.Draw(sticker)
+    for index, line in enumerate(('Scan to return', tag_id, urlsplit(tag_url(tag_id)).netloc)):
+        try:
+            font = ImageFont.load_default(size=26 if index == 0 else 20)
+        except TypeError:  # Pillow versions before 10.1 have a fixed-size default font.
+            font = ImageFont.load_default()
+        draw.text((code.width // 2, code.height + 30 * index), line, fill='#1f3160', anchor='mt', font=font)
+    sticker.save(buffer, format='PNG')
     return buffer.getvalue()
 
 
@@ -976,25 +988,27 @@ class SmartTagService:
         emailed = self._notify_owner(tag, note, contact)
         return {**result, 'notified': True, 'emailed': emailed}
 
-    def _notify_owner(self, tag: Dict[str, Any], note: str, contact: str) -> bool:
+    def _notify_owner(self, tag: Dict[str, Any], note: str, contact: str, *, private_report=False, venue=''):
         """Tell the owner in the app and by email. Returns whether the mail service accepted the email."""
         item = tag.get('item_name') or 'your item'
-        owner = self._profile(tag.get('owner_account_id')) or {}
         text = f'Someone scanned the Smart Tag on "{item}" and says they found it. They were asked to bring it to the OHSO guard post.'
         if note:
             text += f' Their message: {note}'
         if contact:
             text += f' Contact: {contact}'
+        in_app = False
         try:
             self.db.create_user_notification(
                 str(tag['owner_account_id']), 'Someone found your item', text,
-                notification_type='smart_tag_found', link_label='View my Smart Tags', link_page='my-tags',
+                notification_type='smart_tag_found', link_label='View my Smart Tags', link_page=f"my-tags/{tag['tag_id']}" if private_report else 'my-tags',
             )
+            in_app = True
         except Exception as error:
             logger.warning('Smart tag in-app notice failed: %s', error)
+        owner = self._profile(tag.get('owner_account_id')) or {}
         if not owner.get('email'):
             logger.error('Smart Tag %s: the owner has no email address on file, so no email was sent', tag.get('tag_id'))
-            return False
+            return (in_app, False) if private_report else False
         sent = False
         try:
             from app.utils.email_service import send_reference_email_best_effort
@@ -1003,13 +1017,14 @@ class SmartTagService:
                 subject=f'Someone found your item: {item}',
                 summary='Someone scanned your Smart Tag and says they found your item. They were asked to bring it to the OHSO guard post. Check with the guard post before you go, and do not share your passwords or codes with anyone.',
                 reference_label='Smart Tag code', reference=tag['tag_id'],
-                details={'Item': item, 'Message from the finder': note, 'Finder contact': contact},
+                details=({'Item': item, 'Campus area': venue} if private_report else {'Item': item, 'Message from the finder': note, 'Finder contact': contact}),
+                **({'cta_label':'View recovery activity','cta_path':f"/?open=my-tags&tag={tag['tag_id']}"} if private_report else {}),
             ))
         except Exception as error:
             logger.error('Smart tag email failed: %s', error)
         if not sent:
             logger.error('Smart Tag %s: the "someone found your item" email was NOT delivered (check the email provider key and sender)', tag.get('tag_id'))
-        return sent
+        return (in_app, sent) if private_report else sent
 
     def link_found_item(self, raw_tag_id: Any, reference: str, item_name: str, found_item_id: Any = None) -> Dict[str, Any]:
         """The office registered an item from this Smart Tag: tell the owner it is safe at the office and how to collect it.

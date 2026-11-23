@@ -5,7 +5,8 @@ import { canDelete } from "../../utils/permissions";
 import { ARCHIVED_TAB, setArchived } from "../../utils/archive";
 import { useT, tr } from "../../utils/preferences";
 import { downloadCsv } from "../../utils/csv";
-import { CAMPUS_LOCATIONS, ITEM_CATEGORIES, categoryOptions, uniqueSorted } from "../../utils/itemOptions";
+import { useCampusVenues } from "../../../../../shared/useCampusVenues";
+import { ITEM_CATEGORIES, categoryOptions, uniqueSorted } from "../../utils/itemOptions";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import ConfirmActionDialog from "../../components/ConfirmActionDialog";
 import AdminModal from "../../components/ui/AdminModal";
@@ -52,6 +53,7 @@ function LostItemFormModal({ item, busy, onClose, onSubmit }: { item?: LostItem;
     studentId: item && item.studentId !== "N/A" ? item.studentId : "",
     status: item?.rawStatus ?? "missing",
   });
+  const CAMPUS_LOCATIONS = useCampusVenues();
   const [error, setError] = useState("");
   const set = (key: keyof LostForm, value: string) => setForm((current) => ({ ...current, [key]: value }));
   // The campus day (Manila, UTC+8): the server refuses a later date (Server/app/utils/report_dates.py).

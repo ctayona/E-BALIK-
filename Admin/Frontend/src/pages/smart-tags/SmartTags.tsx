@@ -1,3 +1,5 @@
+import VenueAvailability from "./VenueAvailability";
+import RecoveryReview from "./RecoveryReview";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Banknote, Expand, Trash2, X as CloseIcon, Ban, CalendarClock, Check, ClipboardCheck, Copy, Database, Download, Eye, Hourglass, Layers, Nfc, Package, Pencil, PhilippinePeso, QrCode, Radio, RefreshCw, RotateCw, ShieldCheck, ShieldOff, Tags, TriangleAlert } from "lucide-react";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
@@ -369,7 +371,7 @@ function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew, o
             <span aria-hidden="true" className="pointer-events-none absolute -right-14 -top-16 size-44 rounded-full bg-[radial-gradient(circle,rgba(209,161,83,0.4),transparent_68%)]" />
             <p className="relative mb-3 flex items-center justify-between text-[12px] font-semibold text-gold-300"><span className="inline-flex items-center gap-1.5"><QrCode size={13} aria-hidden="true" />E-Balik Smart Tag</span><span>{TYPE_LABEL[tag.tag_type] ?? "QR Code"}</span></p>
             <div className="relative flex aspect-square items-center justify-center rounded-2xl bg-white p-3 shadow-[inset_0_0_0_1px_rgba(14,24,48,0.06)]">
-              {qr ? <img src={qr} alt={tr("QR code for Smart Tag {0}", { "0": tag.tag_id })} className="size-full" /> : qrError ? <span className="px-3 text-center text-[13px] text-rose-700">{tr("The QR code could not be created.")}</span> : <SkeletonBlock className="size-full rounded-xl" />}
+              {qr ? <img src={qr} alt={tr("QR code for Smart Tag {0}", { "0": tag.tag_id })} className="size-full object-contain" /> : qrError ? <span className="px-3 text-center text-[13px] text-rose-700">{tr("The QR code could not be created.")}</span> : <SkeletonBlock className="size-full rounded-xl" />}
             </div>
             <p className="relative mt-3 text-center font-mono text-[15px] font-semibold tracking-[0.14em] text-white">{SPACED(tag.tag_id)}</p>
           </div>
@@ -583,6 +585,8 @@ export default function SmartTags() {
         </>}
       />
 
+      {superAdmin && data?.venue_management && <VenueAvailability />}
+      {data?.recovery && <RecoveryReview />}
       <section className="glass-panel overflow-hidden" aria-label={tr("Smart tag summary")}>
         <dl className="grid grid-cols-2 lg:grid-cols-6 [&>*]:border-line max-lg:[&>*:nth-child(-n+4)]:border-b max-lg:[&>*:nth-child(odd)]:border-r lg:divide-x lg:divide-line">
           {[

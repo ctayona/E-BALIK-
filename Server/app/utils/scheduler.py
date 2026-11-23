@@ -30,6 +30,7 @@ def run_scheduled_jobs(app) -> Dict[str, Any]:
     """Run every job once inside an app context and return a summary of what changed. Never raises."""
     summary: Dict[str, Any] = {}
     with app.app_context():
+        db = None
         try:
             from app.utils import get_db
             from app.utils.auction_db import AuctionService
@@ -42,6 +43,13 @@ def run_scheduled_jobs(app) -> Dict[str, Any]:
         except Exception as error:
             logger.exception('Scheduled jobs failed: %s', error)
             summary['error'] = str(error)[:200]
+        try:
+            from datetime import datetime, timezone
+            from app.utils.tag_recovery import installed
+            if db is not None and installed(db.client):
+                db.client.table('tag_recovery_points').delete().lte('expires_at', datetime.now(timezone.utc).isoformat()).execute()
+        except Exception:
+            logger.warning('Unable to check recovery location retention')
     if any(value for part in summary.values() if isinstance(part, dict) for key, value in part.items() if key not in ('checked', 'days', 'disabled')):
         logger.info('Scheduled jobs: %s', summary)
     return summary

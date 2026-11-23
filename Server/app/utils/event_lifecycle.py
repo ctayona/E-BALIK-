@@ -1,6 +1,6 @@
 """Private event readiness, explicit lifecycle and fresh membership authorization."""
 from datetime import datetime, timezone
-from app.utils.events import EventError, EventFoundation, CAMPUS_VENUES, event_id
+from app.utils.events import available, EventError, EventFoundation, event_id
 
 MIGRATION = '20261116_event_lifecycle'
 STATES = ('draft', 'scheduled', 'active', 'recovery', 'closed', 'archived', 'cancelled')
@@ -34,7 +34,7 @@ class EventLifecycle:
         manager_ok = any(usable_profile(p, now) for p in profiles)
         checks = [
             {'id': 'identity', 'label': 'Event name and organizer', 'ok': bool(row.get('name', '').strip() and row.get('organizer_name', '').strip()), 'step': 'details'},
-            {'id': 'venue', 'label': 'University venue selected', 'ok': row.get('venue') in CAMPUS_VENUES, 'step': 'details'},
+            {'id': 'venue', 'label': 'University venue selected', 'ok': row.get('venue') in available(self.client, events=True), 'step': 'details'},
             {'id': 'desk', 'label': 'Collection desk instructions', 'ok': bool(row.get('desk_instructions', '').strip()), 'step': 'details'},
             {'id': 'dates', 'label': 'Complete schedule with time remaining before the event ends', 'ok': dates_ok, 'step': 'schedule'},
             {'id': 'manager', 'label': 'Active event manager assigned through the final claiming date', 'ok': manager_ok, 'step': 'team'},

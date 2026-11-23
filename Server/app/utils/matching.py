@@ -174,7 +174,17 @@ def _category(missing: Dict[str, Any], found: Dict[str, Any]) -> Tuple[Optional[
 
 
 def _location(missing: Dict[str, Any], found: Dict[str, Any]) -> Tuple[Optional[float], List[str], List[str]]:
-    a, b = ' '.join(_words(missing.get('last_location'))), ' '.join(_words(found.get('location')))
+    from .campus_catalogue import KNOWN_PATHS, canonical
+    left, right = canonical(missing.get('last_location')), canonical(found.get('location'))
+    structured = lambda value: isinstance(value, str) and (value in KNOWN_PATHS or ' / ' in value)
+    if structured(left) and structured(right) and left != right:
+        a_parts, b_parts = left.split(' / '), right.split(' / ')
+        if a_parts[0] != b_parts[0]:
+            return 0.0, [], []
+        if a_parts == b_parts[:len(a_parts)] or b_parts == a_parts[:len(b_parts)]:
+            return 0.75, ['One place is inside the other'], []
+        return 0.4, ['Same building, different locations'], []
+    a, b = ' '.join(_words(left)), ' '.join(_words(right))
     if not a or not b:
         return None, [], []
     if a == b:
