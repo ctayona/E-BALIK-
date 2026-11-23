@@ -104,7 +104,7 @@ export function DataTable({ columns, children, empty, isEmpty, footer, minWidth 
 }) {
   return (
     <section className="glass-panel overflow-hidden">
-      <div className="mgmt-scroll">
+      <div className="mgmt-scroll" role="region" aria-label={tr(caption)} tabIndex={0}>
         <table className="mgmt-table" style={{ minWidth }}>
           <caption className="sr-only">{caption}</caption>
           <thead>

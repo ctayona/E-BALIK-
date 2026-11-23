@@ -60,7 +60,7 @@ export function useAuth() {
       const token = authUtils.getToken();
       const stored = authUtils.getUserData();
       if (!token || !stored) return;
-      setState((previous) => (JSON.stringify(previous.user) === JSON.stringify(stored) ? previous : { ...previous, user: stored }));
+      setState((previous) => (previous.isAuthenticated && JSON.stringify(previous.user) === JSON.stringify(stored) ? previous : { ...previous, user: stored, isAuthenticated: true }));
     };
     window.addEventListener('ebalik:user-updated', syncFromStorage);
     return () => window.removeEventListener('ebalik:user-updated', syncFromStorage);
@@ -140,9 +140,24 @@ export function useAuth() {
         return { success: false, error: response.error };
       }
 
-      // Registration is complete but the user should remain on the registration page
-      // and complete the flow with an explicit success notification instead of
-      // automatically signing them in.
+      if (!response.data?.token || !response.data?.account_id) {
+        const error = 'Your account was created. Please sign in to continue.';
+        setState(prev => ({ ...prev, isLoading: false, error }));
+        return { success: false, error };
+      }
+      const user: User = {
+        account_id: response.data.account_id,
+        email: response.data.email || email,
+        fname: response.data.fname || '',
+        mname: response.data.mname || '',
+        lname: response.data.lname || '',
+        campus_id: response.data.campus_id || '',
+        user_role: response.data.user_role || 'Others',
+        access_level: 'user',
+        verification_status: response.data.verification_status || 'pending',
+      };
+      authUtils.setToken(response.data.token);
+      authUtils.setUserData({ ...user });
       sessionStorage.removeItem('ebalik_register_email');
       sessionStorage.removeItem('ebalik_register_data');
 
@@ -150,10 +165,11 @@ export function useAuth() {
         ...prev,
         isLoading: false,
         error: null,
-        isAuthenticated: false,
+        user,
+        isAuthenticated: true,
       }));
 
-      return { success: true, user: null };
+      return { success: true, user };
     },
     []
   );

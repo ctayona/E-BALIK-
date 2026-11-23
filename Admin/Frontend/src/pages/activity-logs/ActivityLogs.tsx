@@ -186,6 +186,7 @@ export default function ActivityLogs() {
 
       {/* Table */}
       <div className="bg-white rounded-2xl border border-line shadow-card overflow-hidden">
+        <div className="mgmt-scroll" role="region" aria-label={tr("Activity logs")} tabIndex={0}>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line">
@@ -249,6 +250,7 @@ export default function ActivityLogs() {
             })}
           </tbody>
         </table>
+        </div>
         <div className="px-5 py-3 border-t border-line text-sm text-slate-500">
           Showing {filtered.length} of {logs.length} records
         </div>

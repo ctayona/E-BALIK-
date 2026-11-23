@@ -212,7 +212,8 @@ html {
 
 /* ── Management table: horizontal scroll with a pinned actions column ── */
 /* Long tables scroll inside their card so the column names stay in view (sticky header). */
-.mgmt-scroll { overflow: auto; overscroll-behavior-x: contain; max-height: min(74vh, 54rem); }
+.mgmt-scroll { overflow: auto; overscroll-behavior: contain; max-height: min(56vh, 36rem); max-height: min(56dvh, 36rem); scrollbar-gutter: stable; }
+.mgmt-scroll > table thead th { position: sticky; top: 0; z-index: 2; background-color: var(--sticky-bg); }
 .mgmt-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.875rem; }
 .mgmt-table thead th {
   position: sticky;

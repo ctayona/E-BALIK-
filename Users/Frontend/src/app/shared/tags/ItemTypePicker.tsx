@@ -49,6 +49,10 @@ export default function ItemTypePicker({ value, onChange, label = "What is this 
     return () => document.removeEventListener("mousedown", onPointer);
   }, [open]);
 
+  useEffect(() => {
+    if (open) document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: "nearest" });
+  }, [open, active, listId]);
+
   const openList = () => { setActive(Math.max(0, options.findIndex((option) => option.key === choice))); setOpen(true); };
 
   const pick = (key: string) => {
@@ -116,7 +120,7 @@ export default function ItemTypePicker({ value, onChange, label = "What is this 
       </button>
 
       {open && (
-        <ul id={listId} role="listbox" aria-labelledby={labelId} className="mt-2 grid max-h-[300px] grid-cols-1 gap-1 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-white/90 p-1.5 shadow-raised backdrop-blur-xl sm:grid-cols-2">
+        <ul id={listId} role="listbox" aria-labelledby={labelId} className="mt-2 grid max-h-[min(40dvh,300px)] grid-cols-1 gap-1 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-white/90 p-1.5 shadow-raised backdrop-blur-xl sm:grid-cols-2">
           {options.map((option, index) => {
             const OptionIcon = option.icon;
             const selected = option.key === choice;

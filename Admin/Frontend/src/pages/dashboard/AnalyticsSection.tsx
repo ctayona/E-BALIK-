@@ -93,10 +93,12 @@ function AsTable({ label, headers, rows }: { label: string; headers: string[]; r
   return (
     <details className="mt-3 text-[13px] text-ink-muted">
       <summary className="cursor-pointer select-none font-semibold text-ink-soft">{label}</summary>
+      <div className="mgmt-scroll" role="region" aria-label={label} tabIndex={0}>
       <table className="mt-2 w-full text-left">
         <thead><tr>{headers.map((header) => <th key={header} className="border-b border-line py-1.5 pr-3 font-semibold text-ink-soft">{header}</th>)}</tr></thead>
         <tbody>{rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex} className="border-b border-line/60 py-1.5 pr-3 tabular-nums">{cell}</td>)}</tr>)}</tbody>
       </table>
+      </div>
     </details>
   );
 }

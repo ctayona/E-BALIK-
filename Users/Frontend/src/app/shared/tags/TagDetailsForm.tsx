@@ -174,7 +174,7 @@ export default function TagDetailsForm({ initial, mode, submitLabel, busy, error
         )}
       </Modal>
 
-      <div className="sticky bottom-0 z-10 -mx-1 flex flex-col-reverse gap-2 border-t border-line bg-white/85 px-1 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl sm:flex-row sm:justify-end">
+      <div className="-mx-1 flex flex-col-reverse gap-2 border-t border-line bg-white/85 px-1 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:flex-row sm:justify-end">
         {onCancel && <button type="button" onClick={onCancel} disabled={busy} className={CX.btnGhost}>Cancel</button>}
         <button type="submit" disabled={busy || (mode === "claim" && (!consent || !photo))} className={CX.btnGold}>{busy ? "Saving…" : submitLabel}</button>
       </div>

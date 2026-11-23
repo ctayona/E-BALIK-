@@ -205,7 +205,10 @@ export const authApi = {
     campus_id: string;
     password: string;
   }) {
-    return apiCall('/api/auth/verify-otp', {
+    return apiCall<{
+      account_id: string; token: string; email: string; fname: string; mname?: string;
+      lname: string; campus_id: string; user_role: string; verification_status?: string;
+    }>('/api/auth/verify-otp', {
       method: 'POST',
       body: data,
     });

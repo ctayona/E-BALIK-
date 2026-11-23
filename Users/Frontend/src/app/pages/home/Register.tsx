@@ -177,7 +177,8 @@ export default function Register({
       }
     }
 
-    showInfoModal({ variant: "success", title: "Google account linked", message: "Complete your password setup below to finish registration." });
+    showInfoModal({ variant: "success", title: "Account ready", message: "You are signed in to E-Balik." });
+    onRegisterSuccess();
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -252,7 +253,8 @@ export default function Register({
     setShowSuccessPopup(false);
     setSubmitError("");
     setSuccessMessage("Account successfully registered.");
-    showInfoModal({ variant: "success", title: "Account created", message: "Your E-Balik account is verified and ready. You can now sign in." });
+    showInfoModal({ variant: "success", title: "Account created", message: "Your email is verified and you are now signed in." });
+    onRegisterSuccess();
   }
 
   if (showOtpModal) {

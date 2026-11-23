@@ -52,3 +52,15 @@ Registration and editing now show one email switch and one phone switch. Turning
 This follow-up passed 1,243 network-blocked tests, five browser scenarios, combined Node 22 packaging and admin types. The existing user baseline remains 108. The offline runner explicitly disables ambient feature flags so local development settings cannot activate capabilities in unrelated fixtures.
 
 For rollback of just this follow-up from a clean checkout, run `git revert release/batch-contact-fix-20261123` and push the resulting commit to main. The preceding release is tagged `safety/pre-batch-contact-fix-20261123`; Smart Tag recovery data and its cleanup remain intact.
+
+## Mobile registration and table scrolling
+
+The `release/mobile-registration-table-20261123` follow-up removes the sticky action row inside the tag form, so the item choices remain reachable on phones. The in-flow item list has a viewport-aware height and keeps its active keyboard choice visible.
+
+Email OTP registration consumes the API's existing token, stores the user session, clears temporary registration data and invokes the existing success callback. Other auth-hook instances synchronize the authenticated state, allowing the landing page or scanned tag to resume immediately. Invalid OTPs and missing-token responses stay signed out. Account identity verification remains pending after email verification where required by existing reporting permissions.
+
+All rendered admin table sources were reviewed. Shared DataTable regions have bounded vertical/horizontal scrolling with sticky headers and pagination outside. Activity Logs and dashboard analytics tables now have the same bounded wrapper; Role Access already used it and now has a keyboard-focusable label. Smart Tag batch lists are also height-limited. The user table primitive receives equivalent overflow support. Exported report tables retain their print layout.
+
+Ten mocked browser cases passed for picker visibility, keyboard/custom selection, scrolling/sticky headers and OTP success/error paths at desktop, 390px and 320px. Combined Node 22 production packaging and admin types pass; user type baseline stays at 108. No backend/schema change or migration is required.
+
+To revert only this follow-up from a clean checkout, run `git revert release/mobile-registration-table-20261123` and push main. `safety/pre-mobile-registration-table-20261123` identifies the preceding release.

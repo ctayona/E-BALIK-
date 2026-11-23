@@ -75,7 +75,7 @@ export default function RoleAccessTab() {
       </div>
 
       <div className="glass-panel overflow-hidden">
-        <div className="mgmt-scroll">
+        <div className="mgmt-scroll" role="region" aria-label={tr("Role page access")} tabIndex={0}>
           <table className="w-full min-w-[640px] border-collapse text-left">
             <caption className="sr-only">{tr("Pages each role may open")}</caption>
             <thead>

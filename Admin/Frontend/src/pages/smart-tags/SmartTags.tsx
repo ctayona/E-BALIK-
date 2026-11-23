@@ -73,7 +73,7 @@ function BatchPanel({ batches, superAdmin, onDeactivate, onReactivate, onPrice, 
         </div>
         {batches.length > 4 && <button type="button" onClick={() => setAll((v) => !v)} className="text-[13px] font-semibold text-iris-700 hover:underline dark:text-iris-300">{all ? tr("Show fewer") : tr("Show all {0} batches", { "0": batches.length })}</button>}
       </div>
-      <ul className="divide-y divide-line">
+      <ul className="max-h-[min(48dvh,28rem)] divide-y divide-line overflow-y-auto overscroll-contain" aria-label={tr("Tag batches")} tabIndex={0}>
         {shown.map((batch) => {
           const registered = batch.active + batch.lost + batch.expired;
           const expiry = batch.days_to_expiry;
