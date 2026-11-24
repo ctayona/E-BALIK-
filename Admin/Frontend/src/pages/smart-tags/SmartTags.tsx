@@ -1,3 +1,4 @@
+import { EventBatchPurpose } from '../events/EventTagInventory';
 import VenueAvailability from "./VenueAvailability";
 import RecoveryReview from "./RecoveryReview";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -595,7 +596,7 @@ export default function SmartTags() {
         meta={<RolePill superAdmin={superAdmin} />}
         actions={<>
           <ExportButton onClick={exportCsv} disabled={!filtered.length} />
-          <button type="button" onClick={() => setBatchOpen(true)} className={BTN.primary}><Layers size={17} aria-hidden="true" />{tr("Generate batch")}</button>
+          {superAdmin ? <EventBatchPurpose personal={()=>setBatchOpen(true)}/> : <button type="button" onClick={()=>setBatchOpen(true)} className={BTN.primary}>{tr("Generate batch")}</button>}
         </>}
       />
 

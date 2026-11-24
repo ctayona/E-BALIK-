@@ -8,6 +8,7 @@ import {
   announceNotificationsChanged,
   notificationKind,
   notificationTarget,
+  eventItemPath,
   type NotificationKind,
   type UserNotification,
 } from "@/app/utils/notifications";
@@ -118,6 +119,8 @@ export default function NotificationMenu({
 
   function openNotification(notification: UserNotification) {
     if (!notification.is_read) void markRead(notification);
+    const eventItem = eventItemPath(notification);
+    if (eventItem) { window.location.assign(eventItem); return; }
     const target = notificationTarget(notification);
     if (!target) return;
     setOpen(false);

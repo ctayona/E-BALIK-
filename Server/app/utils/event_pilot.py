@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from app.utils.events import EventError, event_id, _text
 from app.utils.event_lifecycle import usable_profile, parse
 from app.utils.event_reports import EventReports, BOARD_FIELDS
+from app.utils.event_tags import EventTags
 
 MIGRATION = '20261118_event_pilot_completion'
 OFFICE_ROLES = ('guard', 'admin', 'super_admin')
@@ -62,6 +63,8 @@ class EventPilot:
         try:
             value = self.client.rpc(name, params).execute().data
         except Exception as error:
+            if getattr(error,'code',None)=='P0001' and getattr(error,'message','').startswith('Resolve Event items'):
+                raise EventError('Resolve pending check-ins and held event items before final sign-off, archive or deletion.',409) from error
             if str(getattr(error, 'code', '')) in ('42883', 'PGRST202'):
                 raise EventError('Event pilot setup is incomplete.', 503, 'event_pilot_setup_required') from error
             raise
@@ -135,6 +138,9 @@ class EventPilot:
         self.page(offset)
         if view not in ('all', 'unresolved', 'custody'): raise EventError('Choose an event register view.')
         result = self.rpc('event_pilot_snapshot', dict(p_event_id=event['event_id'], p_actor_id=event_id(actor), p_offset=offset, p_limit=limit + 1, p_filter=view))
+        tags = EventTags(self.db)
+        if tags.mode() != 'off':
+            result['counts'].update(self.client.rpc('event_tag_counts',{'p_event':identifier}).execute().data)
         rows = result.get('reports', [])
         result.update(available=True, event={key: event.get(key) for key in ('event_id', 'name', 'slug', 'status', 'deleted_at', 'recovery_ends_at')}, has_more=len(rows) > limit)
         result['reports'] = [{**row, 'reference': 'EV-' + row['report_id'][:8].upper()} for row in rows[:limit]]
@@ -211,6 +217,25 @@ class EventPilot:
         summary += [{'metric': 'closure_signed_off', 'value': (data.get('closure') or {}).get('completed_at') or 'Pending'}]
         output = io.BytesIO()
         with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
+            if 'tag_pending' in data['counts']:
+                tags = EventTags(self.db)
+                fields = ('registration_id','code','status','created_at','received_at','released_at','report_id')
+                records = []
+                for offset in range(0, 5001, 250):
+                    page = tags.rows(tags.table('_registrations').select(','.join(fields)).eq('event_id',identifier).order('created_at').order('registration_id').range(offset,offset+249))
+                    records.extend(page)
+                    if len(records)>5000: raise EventError('Event item export exceeds 5000 registrations.',413)
+                    if len(page)<250: break
+                archive.writestr('event-tag-custody.csv', csv_bytes(fields,records))
+                ids = [r['registration_id'] for r in records]
+                transfers = []
+                for offset in range(0,len(ids),50):
+                    for start in range(0,5001,250):
+                        page = tags.rows(tags.table('_transfers').select('transfer_id,registration_id,destination,created_at,accepted_at,cancelled_at').in_('registration_id',ids[offset:offset+50]).order('transfer_id').range(start,start+249))
+                        transfers.extend(page)
+                        if len(transfers)>5000: raise EventError('Event handover export exceeds 5000 records.',413)
+                        if len(page)<250: break
+                archive.writestr('event-tag-handovers.csv', csv_bytes(('transfer_id','registration_id','destination','created_at','accepted_at','cancelled_at'),transfers))
             archive.writestr('summary.csv', csv_bytes(('metric', 'value'), summary))
             archive.writestr('event-register.csv', csv_bytes(REGISTER_FIELDS, data['reports']))
             archive.writestr('unresolved-custody.csv', csv_bytes(REGISTER_FIELDS, [r for r in data['reports'] if r.get('received_at') and not r.get('released_at')]))

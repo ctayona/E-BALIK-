@@ -17,6 +17,7 @@ const MyTagsPage = lazy(() => import("@/app/pages/my-tags/MyTagsPage"));
 const TagPage = lazy(() => import("@/app/pages/tag/TagPage"));
 const PrivacyPage = lazy(() => import("@/app/pages/privacy/PrivacyPage"));
 const EventDesk = lazy(() => import("@/app/pages/event-desk/EventDesk"));
+const EventTagPage = lazy(() => import("@/app/pages/event-desk/EventTagPage"));
 const EventPortal = lazy(() => import("@/app/pages/event-desk/EventPortal"));
 const EventReceiptVerify = lazy(() => import("@/app/pages/event-desk/EventReceiptVerify"));
 import UserHeader from "@/app/shared/UserHeader";
@@ -48,6 +49,8 @@ const PRIVACY_PATH = /^\/privacy\/?$/i;
 
 export default function App() {
   const tagMatch = window.location.pathname.match(TAG_PATH);
+  const scan = /^\/event-tag\/([a-f0-9-]{36})\/?$/i.exec(window.location.pathname);
+  const checkedItem = /^\/event-items(?:\/([a-f0-9-]{36}))?\/?$/i.exec(window.location.pathname);
   const privacy = PRIVACY_PATH.test(window.location.pathname);
   const eventDesk = /^\/event-desk\/?$/i.test(window.location.pathname);
   const eventPortal = window.location.pathname.match(/^\/events\/([a-z0-9-]+)\/?$/);
@@ -56,7 +59,9 @@ export default function App() {
   return (
     <>
       <AnnouncementBanner />
-      {eventReceipt ? (
+      {scan || checkedItem ? (
+        <><Suspense fallback={<LandingSkeleton />}><EventTagPage code={scan?.[1]} registration={checkedItem?.[1]}/></Suspense><InfoModalHost/></>
+      ) : eventReceipt ? (
         <Suspense fallback={<LandingSkeleton />}><EventReceiptVerify claimId={eventReceipt[1]} /></Suspense>
       ) : eventPortal ? (
         <Suspense fallback={<LandingSkeleton />}><EventPortal slug={eventPortal[1]} /></Suspense>

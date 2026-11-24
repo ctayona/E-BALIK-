@@ -74,6 +74,8 @@ class EventLifecycle:
         try:
             result = self.client.rpc('event_transition', {'p_event_id': event_id(identifier), 'p_actor_id': event_id(actor_id), 'p_version': payload['version'], 'p_target': payload['status'], 'p_note': note.strip()}).execute().data
         except Exception as error:
+            if getattr(error,'code',None)=='P0001' and getattr(error,'message','').startswith('Resolve Event items'):
+                raise EventError('Resolve pending check-ins and held event items before archiving.',409) from error
             if str(getattr(error, 'code', '')) in ('42883', 'PGRST202'):
                 raise EventError('Event lifecycle function is unavailable. Verify the lifecycle migration.', 503, 'lifecycle_setup_required') from error
             raise

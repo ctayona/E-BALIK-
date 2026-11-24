@@ -42,7 +42,7 @@ async function toJpeg(source: CanvasImageSource, width: number, height: number):
   return new File([blob], `smart-tag-${Date.now()}.jpg`, { type: "image/jpeg" });
 }
 
-function CameraSheet({ onCapture, onClose }: { onCapture: (file: File) => void; onClose: () => void }) {
+function CameraSheet({ onCapture, onClose, eventStorage }: { onCapture: (file: File) => void; onClose: () => void; eventStorage: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
@@ -104,7 +104,7 @@ function CameraSheet({ onCapture, onClose }: { onCapture: (file: File) => void; 
           </div>
         )}
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-black/70 to-transparent p-4 pt-[max(1rem,env(safe-area-inset-top))] text-white">
-          <p className="max-w-[70%] text-[14px] leading-5 drop-shadow">Show your item with the Smart Tag sticker attached, then press the shutter.</p>
+          <p className="max-w-[70%] text-[14px] leading-5 drop-shadow">{eventStorage ? "Show the item you are checking in, then press the shutter." : "Show your item with the Smart Tag sticker attached, then press the shutter."}</p>
           <button type="button" onClick={onClose} aria-label="Close the camera" className="pointer-events-auto flex size-11 items-center justify-center rounded-full bg-white/15 backdrop-blur hover:bg-white/25"><X size={20} aria-hidden="true" /></button>
         </div>
       </div>
@@ -122,12 +122,13 @@ function CameraSheet({ onCapture, onClose }: { onCapture: (file: File) => void; 
   );
 }
 
-export default function LivePhotoField({ file, existingUrl, onChange, required = false, label = "Photo of the item with the sticker attached" }: {
+export default function LivePhotoField({ file, existingUrl, onChange, required = false, eventStorage = false, label = "Photo of the item with the sticker attached" }: {
   file: File | null;
   /** The photo already on the tag (edit mode), shown until a new one is taken. */
   existingUrl?: string | null;
   onChange: (file: File | null) => void;
   required?: boolean;
+  eventStorage?: boolean;
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -188,22 +189,22 @@ export default function LivePhotoField({ file, existingUrl, onChange, required =
           type="button"
           onClick={start}
           disabled={!canUse}
-          aria-label="Open the camera to take a photo of your item with the sticker attached"
+          aria-label={eventStorage ? "Open the camera to photograph your event item" : "Open the camera to take a photo of your item with the sticker attached"}
           className="group relative block w-full overflow-hidden rounded-2xl border-2 border-dashed border-gold-400/80 bg-[linear-gradient(160deg,rgba(209,161,83,0.16),rgba(209,161,83,0.04))] px-5 py-7 text-center transition-[border-color,box-shadow,transform] duration-200 hover:border-gold-500 hover:shadow-[0_0_0_4px_rgba(209,161,83,0.16)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:shadow-none"
         >
           <span className="relative mx-auto flex size-14 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#f3dcab,#d1a153)] text-navy-950 shadow-[0_12px_26px_-12px_rgba(209,161,83,0.9)]" aria-hidden="true">
             <Camera size={26} />
             {canUse && <span className="absolute inset-0 animate-ping rounded-2xl bg-gold-400/30 [animation-duration:2.4s]" />}
           </span>
-          <span className="mt-3 block text-[15.5px] font-semibold text-ink">Take a photo of your item with the sticker on it</span>
-          <span className="mx-auto mt-1 block max-w-[44ch] text-[13px] leading-5 text-ink-muted">It helps the finder and the Lost and Found Office know it is really yours. Photos from your gallery are not accepted: the picture must be taken now.</span>
+          <span className="mt-3 block text-[15.5px] font-semibold text-ink">{eventStorage ? "Take a photo of your item" : "Take a photo of your item with the sticker on it"}</span>
+          <span className="mx-auto mt-1 block max-w-[44ch] text-[13px] leading-5 text-ink-muted">{eventStorage ? "Desk staff will compare this photo with the item you hand over." : "It helps the finder and the Lost and Found Office know it is really yours. Photos from your gallery are not accepted: the picture must be taken now."}</span>
           <span className={`${CX.btnGold} pointer-events-none mt-4 min-h-[48px] px-7 text-[15px] ${canUse ? "" : "opacity-60"}`}><Camera size={18} aria-hidden="true" />{canUse ? "Open camera" : "Camera not available"}</span>
         </button>
       )}
       {!canUse && <p className={`${CX.alertError} mt-2`} role="alert">{unavailable}</p>}
       {!live && touch && <input ref={fallbackRef} id={fallbackId} type="file" accept="image/*" capture="environment" onChange={(event) => void fromCameraApp(event)} className="sr-only" tabIndex={-1} aria-hidden="true" />}
       {error && <p role="alert" className="mt-2 text-[13px] text-rose-700">{error}</p>}
-      {open && <CameraSheet onCapture={accept} onClose={() => setOpen(false)} />}
+      {open && <CameraSheet eventStorage={eventStorage} onCapture={accept} onClose={() => setOpen(false)} />}
     </div>
   );
 }

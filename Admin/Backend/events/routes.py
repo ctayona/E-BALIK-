@@ -9,6 +9,7 @@ from app.utils.event_reports import EventReports
 from app.utils.event_recovery import EventRecovery
 from app.utils.event_share import EventShare
 from app.utils.event_pilot import EventPilot
+from app.utils.event_tags import EventTags
 from app.utils import rate_limit
 from Admin.Backend.shared.admin_access import _require_admin, _log_admin_action
 
@@ -51,6 +52,33 @@ def _handled(view):
             current_app.logger.exception('Event foundation request failed')
             return jsonify(error='Unable to process the event request.'), 500
     return wrapped
+
+
+@events_bp.get('/events/event-tags/<section>')
+@_handled
+def event_tag_admin(service,db,actor,section):
+    tags=EventTags(db)
+    if section=='capability': return jsonify(mode=tags.mode())
+    tags.require()
+    if section=='inventory': return jsonify(tags.inventory(request.args.get('batch'),pilot_offset()))
+    if section=='desk':
+        return jsonify(tags.one(tags.table('_desks').select('enabled,version').eq('event_id',request.args.get('event'))) or dict(enabled=False,version=0))
+    if section=='items': return jsonify(tags.listing(actor['account_id'],'staff',pilot_offset(),request.args.get('event'),search=request.args.get('search',''),status=request.args.get('status','')))
+    if section=='qr':
+        return tags.qr(request.args.get('code')),200,{'Content-Type':'image/png'}
+    if section=='photo':
+        return tags.photo(actor['account_id'],request.args.get('registration')),200,{'Content-Type':'image/webp'}
+    if section=='history':
+        row=tags.detail(actor['account_id'],request.args.get('registration'))
+        return jsonify(history=tags.rows(tags.table('_history').select('action,created_at,outcome').eq('registration_id',row['registration_id']).order('created_at',desc=True).range(pilot_offset(),pilot_offset()+23)))
+    raise EventError('Unknown event tag section.',404)
+
+
+@events_bp.post('/events/event-tags/actions')
+@_handled
+def admin_event_tag_action(service,db,actor):
+    if not rate_limit.allow(f"admin-event-tags:{actor['account_id']}",120,60): raise EventError('Please wait before another event tag operation.',429)
+    return jsonify(EventTags(db).action(actor['account_id'],request.get_json(silent=True),admin=True))
 
 
 @events_bp.route('/events/options', methods=['GET'])

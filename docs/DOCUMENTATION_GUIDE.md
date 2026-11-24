@@ -57,9 +57,9 @@ Read this whole file before writing or editing any paper, report, manual, propos
 Append an entry to today's `Audits/YYYY-MM-DD_Audit.md` for each documentation task: Prompt Audit, Edit Audit (files or Google Docs created or changed, which sections), Database Audit ("None"). Append only.
 
 ## 9. Paper requirements (fill in once, then keep updated)
-- Document types needed: _not set_
-- Citation style: _not set_
-- Required chapter/section structure: _not set_
-- Font, spacing, margins, page limit: _not set_
-- Adviser or panel notes: _not set_
-- Names to appear on the title page: _not set_
+- Document types needed: Web System and Technologies (Elective 4) Case Study / E-Balik User Manual; written requirements only, excluding the video component.
+- Citation style: No school citation style specified; short implementation-source notes and direct links to the reviewed repository revision.
+- Required chapter/section structure: Follow supplied Case Study.docx: Introduction (1.1–1.4), System Requirements (2.1–2.3), System Installation (3.1–3.5), System Operation (4.1–4.7), Administrator Guide (5.1–5.6), then GitHub link. Number detailed procedures within the matching subsection.
+- Font, spacing, margins, page limit: User explicitly requested double spacing on 2026-11-21. Use Times New Roman 12 body, double spacing throughout (including tables/lists), A4 and one-inch margins; tables/figure labels use 11 points for readability. Use justified prose with half-inch first-line indents, bold numbered headings, separate title/contents pages and new-page chapter starts. No page limit supplied. Figure placeholders specify screenshots/diagrams; tables contain actual program-aligned information.
+- Adviser or panel notes: Template identifies Engr. Michael C. Olivo as Lab Instructor; no additional adviser/panel requirements supplied.
+- Names to appear on the title page: Group number, leader/members, signatures and performed/submitted dates remain fill-in fields pending actual information; never infer them from hosting/repository account names.

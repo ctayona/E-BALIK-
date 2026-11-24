@@ -31,10 +31,11 @@ BATCH = 200
 PASSES = 3
 PROTECTED = frozenset({'tag_recovery_points', 'admin_mfa', 'admin_mfa_challenges', 'admin_mfa_recovery_codes', 'otp_tokens'})
 SENSITIVE = frozenset({'user_profiles', 'system_settings'})
-FIRST = ['user_profiles', 'system_settings', 'migration_log', 'campus_venues', 'event_workspaces', 'event_memberships', 'event_brand_assets', 'event_state_history', 'event_reports', 'event_report_history', 'event_claims', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history', 'found_items', 'missing_items', 'auction_submissions', 'auctions', 'smart_tags', 'claims', 'tag_recovery_reports']
+EVENT_TAG_TABLES = ['event_tag_batches', 'event_tags', 'event_tag_desks', 'event_tag_allocations', 'event_tag_registrations', 'event_tag_transfers', 'event_tag_history']
+FIRST = ['user_profiles', 'system_settings', 'migration_log', 'campus_venues', 'event_workspaces', 'event_memberships', 'event_brand_assets', 'event_state_history', 'event_reports', 'event_report_history', 'event_claims', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history', *EVENT_TAG_TABLES, 'found_items', 'missing_items', 'auction_submissions', 'auctions', 'smart_tags', 'claims', 'tag_recovery_reports']
 SENSITIVE_PHRASE = 'RESTORE ACCOUNTS AND SETTINGS'
 # Tables the database itself refuses to change (migration 20261026): a restore only adds the entries that are missing and skips the rest.
-APPEND_ONLY = frozenset({'tag_recovery_reports', 'income_ledger', 'event_state_history', 'event_report_history', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history'})
+APPEND_ONLY = frozenset({*EVENT_TAG_TABLES, 'tag_recovery_reports', 'income_ledger', 'event_state_history', 'event_report_history', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history'})
 
 _tool: Dict[str, Any] = {}
 

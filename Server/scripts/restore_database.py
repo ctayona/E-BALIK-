@@ -27,7 +27,8 @@ from backup_database import BackupError, decrypt_file, http, load_env  # noqa: E
 BATCH = 500
 PASSES = 4
 # Tables other tables point at come first; anything not listed follows alphabetically and is retried until it fits.
-FIRST = ['user_profiles', 'system_settings', 'migration_log', 'campus_venues', 'event_workspaces', 'event_memberships', 'event_brand_assets', 'event_state_history', 'event_reports', 'event_report_history', 'event_claims', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history', 'found_items', 'missing_items', 'auction_submissions', 'auctions', 'smart_tags', 'claims', 'tag_recovery_reports']
+EVENT_TAG_TABLES = ['event_tag_batches', 'event_tags', 'event_tag_desks', 'event_tag_allocations', 'event_tag_registrations', 'event_tag_transfers', 'event_tag_history']
+FIRST = ['user_profiles', 'system_settings', 'migration_log', 'campus_venues', 'event_workspaces', 'event_memberships', 'event_brand_assets', 'event_state_history', 'event_reports', 'event_report_history', 'event_claims', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history', *EVENT_TAG_TABLES, 'found_items', 'missing_items', 'auction_submissions', 'auctions', 'smart_tags', 'claims', 'tag_recovery_reports']
 
 
 def read_backup(path: Path, passphrase: str, workdir: Path) -> zipfile.ZipFile:
@@ -42,7 +43,7 @@ def ordered(tables: List[str]) -> List[str]:
     return [t for t in FIRST if t in tables] + sorted(t for t in tables if t not in FIRST)
 
 
-APPEND_ONLY = {'tag_recovery_reports', 'income_ledger', 'event_state_history', 'event_report_history', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history'}  # Preserve existing ledger and event audit records.
+APPEND_ONLY = {*EVENT_TAG_TABLES, 'tag_recovery_reports', 'income_ledger', 'event_state_history', 'event_report_history', 'event_claim_history', 'event_match_alerts', 'event_alert_history', 'event_hub_consents', 'event_hub_publications', 'event_custody_transfers', 'event_closure_plans', 'event_pilot_history'}  # Preserve existing ledger and event audit records.
 
 
 def upsert(env: Dict[str, str], table: str, rows: List[Dict[str, Any]]) -> None:

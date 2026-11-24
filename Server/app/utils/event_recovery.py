@@ -32,6 +32,8 @@ class EventRecovery:
         try:
             result = self.client.rpc(name, params).execute().data
         except Exception as error:
+            if getattr(error,'code',None)=='P0001' and getattr(error,'message','').startswith('Resolve Event items'):
+                raise EventError('Resolve pending check-ins and held event items before final sign-off, archive or deletion.',409) from error
             if str(getattr(error, 'code', '')) in ('42883', 'PGRST202'):
                 raise EventError('Event recovery setup is incomplete.', 503, 'event_recovery_setup_required') from error
             raise

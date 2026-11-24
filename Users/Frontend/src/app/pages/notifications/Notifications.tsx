@@ -6,7 +6,7 @@ import { showInfoModal } from '@/app/shared/info-modal/infoModalStore';
 import { CX, SPRING } from '@/app/utils/clay';
 import type { NavigationOptions, Page } from '@/app/types';
 import { ReportListSkeleton } from '@/app/shared/LoadingSkeleton';
-import { notificationTarget, opensSmartTags } from '@/app/utils/notifications';
+import { eventItemPath, notificationTarget, opensSmartTags } from '@/app/utils/notifications';
 
 interface UserNotification {
   notification_id: string;
@@ -86,6 +86,8 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
 
   const handleNotificationClick = (notification: UserNotification) => {
     if (!notification.is_read) handleMarkAsRead(notification.notification_id);
+    const eventItem = eventItemPath(notification);
+    if (eventItem) { window.location.assign(eventItem); return; }
     const target = notificationTarget(notification);
     if (target && onNavigate) onNavigate(target.page, target.options);
   };
@@ -275,6 +277,7 @@ export default function Notifications({ onNavigate }: NotificationsPageProps) {
                         {notification.link_label || 'View completed reports'}
                       </button>
                     )}
+                    {/^event-items\/[a-f0-9-]{36}$/i.test(notification.link_page || '') && <a href={'/'+notification.link_page} className="font-semibold underline">View event item</a>}
                     {notification.link_page === 'profile' && (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleNotificationClick(notification); }}

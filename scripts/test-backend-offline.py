@@ -15,6 +15,8 @@ if __name__ == '__main__':
     # Fixture tests opt into capabilities individually, independent of local app flags.
     os.environ['CAMPUS_VENUES_ENABLED'] = 'false'
     os.environ['SMART_TAG_RECOVERY_ENABLED'] = 'false'
+    os.environ['EVENT_SMART_TAGS_ENABLED'] = 'false'
+    os.environ['EVENT_SMART_TAGS_RECOVERY_ONLY'] = 'false'
     server = Path(__file__).resolve().parents[1] / 'Server'
     os.chdir(server)
     sys.path[:0] = [str(server), str(server.parent)]

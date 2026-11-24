@@ -18,6 +18,9 @@ export interface UserNotification {
 }
 
 /** Smart Tag notices created before the My Smart Tags page existed point at the dashboard, so they are matched by type too. */
+export const eventItemPath = (notification: UserNotification) =>
+  /^event-items\/[a-f0-9-]{36}$/i.test(notification.link_page || '') ? '/'+notification.link_page : null;
+
 export const opensSmartTags = (notification: UserNotification) =>
   notification.link_page === 'my-tags' || String(notification.notification_type || '').startsWith('smart_tag');
 

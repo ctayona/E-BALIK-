@@ -201,14 +201,16 @@ Gate: no unresolved critical access/data integrity defects, acceptable campus pe
 
 ### Phase 7 — Event Smart Tags and external participation
 
-- [ ] Add event tag allocation/batches while preserving current campus tag behavior.
-- [ ] Decide whether existing permanent tags can participate without transferring ownership; event coverage and tag lifetime are distinct.
-- [ ] Support approved registration, owner privacy choices, scan instructions, event-scoped auto-posting, and notification links.
-- [ ] Define expiry/recovery behavior, batch counts, unsold tags, and ownership protection on any future reuse.
+The university reusable QR/check-in pilot is detailed in [Reusable Event Smart Tags](EVENT_SMART_TAG_PLAN.md). It covers admin batch allocation, per-use history, staff receipt, verified pickup, reuse and unresolved-custody closing. Visitor access and commercial rental billing remain later work.
+
+- [x] Implement separate reusable university QR inventory, batch printing, available-subset allocation and historical custody locally. Operator acceptance is pending.
+- [x] Reserve reusable event inventory for this pilot. Personal tags keep their current ownership and routes.
+- [x] Connect private registration, receipt/collection, scoped reminders and explicit owner-consented recovery escalation. Publication follows the existing moderation and hub consent workflow.
+- [x] Keep unresolved registrations locked through closure and office transfer, preserve history on reuse, and support recovery-only operations. University event tags are issued free.
 - [ ] Implement reviewed visitor onboarding, email verification/recovery, and private tracking for external events without weakening campus authentication.
 - [ ] Establish organizer invitations, event-specific roles, access expiry, and support procedures.
 
-Gate: campus tag registration/scan/renewal still works; event scans and auto-created reports remain correctly scoped; external users cannot reach campus or other-event private data.
+Gate: campus tag registration/scan/renewal still works; event scans, private check-ins and explicitly escalated reports remain correctly scoped; external users cannot reach campus or other-event private data.
 
 ### Phase 8 — Rental booking and financial integration
 

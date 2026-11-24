@@ -1,6 +1,6 @@
 # Event Rentals — Current Roadmap Status
 
-Updated: 2026-11-20 (Asia/Singapore). This is the current status summary; earlier handoff notes are historical.
+Updated November 24, 2026 (Asia/Singapore). The reusable university Event Smart Tag pilot is implemented locally. Its additive migration, operator activation and real-device acceptance are pending. [Rollout and acceptance](EVENT_SMART_TAG_PLAN.md#11-operator-handoff)
 
 ## Implemented university-pilot software
 
@@ -17,7 +17,7 @@ The user selected completion of the university pilot before visitors, event tags
 | 4 — Setup/branding/preview | Saved branding, explicit portal open/pause, canonical event URL, QR/poster sharing and staff desk implemented locally | Manual/hosted/real-phone acceptance and wider accessibility |
 | 5 — Lost-and-found operations | Pilot code complete locally, including explicit hub publication, unresolved register, closing export and acknowledged custody handovers | Full real-account acceptance run |
 | 6 — Internal pilot | In-app admin/staff guide, printable desk/fallback pack, snapshot-based next actions and complete acceptance run prepared; actual pilot not started | Selected event/operator, staff briefing, monitored pilot and completed recovery/closure |
-| 7 — Tags/external participation | Not started | Event tag allocation/scans, visitor onboarding and privacy/expiry integration |
+| 7 — Tags/external participation | University QR pilot implemented locally | Manual SQL and physical pilot pending. External visitor onboarding remains future work. |
 | 8 — Paid rentals | Not started | Packages, booking, event payment/receipt/reversal source and reconciled revenue |
 | 9 — Commercial release | Not started | Acceptance evidence, operational ownership, supported rollout and maintenance |
 
@@ -57,6 +57,6 @@ All work remains on feature/event-foundation, local and uncommitted. No commit/p
 
 ## Next action
 
-Restart the local backend to load the persistent event-module flag, refresh the admin app, then use EVENT_PILOT_COMPLETION.md for one complete real-account acceptance run. All seven event migrations are already applied; no SQL rerun is needed. Record results before operating a real university pilot. Visitors, separate event tags and paid bookings remain outside the selected pilot scope; their later roadmap phases are not complete.
+Restart the local backend to load the persistent event-module flag, refresh the admin app, then use EVENT_PILOT_COMPLETION.md for one complete real-account acceptance run. All seven event migrations are already applied; no SQL rerun is needed. Record results before operating a real university pilot. This November 20 checkpoint preceded the reusable university tag implementation. Visitor access and paid bookings remain future work.
 
 The operator tools and draft-access fix add no migration. Use Review → Open operator guide and Event desk → Staff guide to brief the team and download the printable desk pack. Nov 19 read-only verification confirms saved workspaces still exist, including a non-deleted draft; the missing local event-module flag caused the unavailable screen.

@@ -13,6 +13,7 @@ from app.utils.event_recovery import EventRecovery
 from app.utils.event_matching import EventMatching
 from app.utils.event_alerts import EventAlerts
 from app.utils.event_pilot import EventPilot
+from app.utils.event_tags import EventTags
 from app.utils.event_assets import MAX_BYTES
 from app.utils import rate_limit
 
@@ -57,6 +58,64 @@ def _private(view):
         response.headers['Cache-Control'] = 'no-store'
         return response
     return wrapped
+
+
+@event_desk_bp.get('/event-tags/capability')
+@_private
+def event_tags_capability(service, account_id):
+    return jsonify(mode=EventTags(service.db).mode())
+
+
+@event_desk_bp.get('/event-tags/scan/<code>')
+def event_tag_scan(code):
+    try:
+        if not current_app.config.get('EVENTS_FOUNDATION_ENABLED'):
+            raise EventError('Event tags unavailable.',503)
+        if not rate_limit.allow(f'event-tag-scan:{request.remote_addr}',90,60):
+            raise EventError('Please wait before refreshing.',429)
+        db=get_db(url=current_app.config['SUPABASE_URL'],service_key=current_app.config['SUPABASE_SERVICE_KEY'])
+        response=make_response(jsonify(EventTags(db).scan(code)))
+    except EventError as err:
+        response=make_response(jsonify(error=str(err)),err.status)
+    except Exception:
+        response=make_response(jsonify(error='Event tag unavailable.'),503)
+    response.headers['Cache-Control']='no-store'
+    return response
+
+
+@event_desk_bp.get('/event-tags/items')
+@_private
+def event_tag_items(service, account_id):
+    return jsonify(EventTags(service.db).listing(account_id,request.args.get('scope','mine'),_offset(),request.args.get('event'),request.args.get('registration'),request.args.get('search',''),request.args.get('status','')))
+
+
+@event_desk_bp.get('/event-tags/items/<registration>/<part>')
+@_private
+def event_tag_detail(service,account_id,registration,part):
+    tags=EventTags(service.db)
+    if part=='photo':
+        return send_file(io.BytesIO(tags.photo(account_id,registration)),mimetype='image/webp')
+    if part!='history': raise EventError('Unknown event item detail.',404)
+    tags.detail(account_id,registration)
+    return jsonify(history=tags.rows(tags.table('_history').select('action,created_at,outcome').eq('registration_id',registration).order('created_at',desc=True).range(_offset(),_offset()+23)))
+
+
+@event_desk_bp.post('/event-tags/register')
+@_private
+def register_event_tag(service,account_id):
+    if not rate_limit.allow(f'event-tag-register:{account_id}',12,60): raise EventError('Please wait before registering again.',429)
+    try: body=json.loads(request.form.get('payload',''))
+    except ValueError: raise EventError('Invalid registration form.') from None
+    if not isinstance(body,dict): raise EventError('Invalid registration form.')
+    photo = request.files.get('photo')
+    return jsonify(EventTags(service.db).register(account_id,body,photo.read(MAX_BYTES+1) if photo else None))
+
+
+@event_desk_bp.post('/event-tags/actions')
+@_private
+def event_tag_action(service,account_id):
+    if not rate_limit.allow(f'event-tag-action:{account_id}',40,60): raise EventError('Please wait before trying again.',429)
+    return jsonify(EventTags(service.db).action(account_id,request.get_json(silent=True)))
 
 
 @event_desk_bp.get('/mine')
