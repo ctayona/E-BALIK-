@@ -95,9 +95,10 @@ export const fetchIncomeSummary = (start = "", end = "") => read<IncomeSummary>(
 export const fetchIncomeEntries = (start = "", end = "", source = "", limit = 25, offset = 0) =>
   read<{ entries: IncomeEntry[]; total: number; limit: number; offset: number }>(`entries${query({ start, end, source, limit, offset })}`);
 
-export async function addIncomeEntry(input: ManualEntryInput) {
-  const response = await adminMutationRequest(`${API_URL}/api/admin/income/entries`, {
-    method: "POST", headers: getAuthHeaders(), body: JSON.stringify(input),
+export async function addIncomeEntry(input: ManualEntryInput, authenticatorCode: string, requestId: string) {
+  // An older server cannot accept this request without verifying the code during rollout.
+  const response = await adminMutationRequest(`${API_URL}/api/admin/income/entries/verified`, {
+    method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ ...input, authenticator_code: authenticatorCode, request_id: requestId }),
   }, "Record income entry");
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Unable to record the entry");

@@ -4,6 +4,7 @@ Administrators read it and confirm payments (each confirmation issues a receipt)
 """
 import re
 from functools import wraps
+from uuid import UUID
 from flask import Blueprint, Response, current_app, jsonify, request
 from app.utils import get_db, rate_limit, receipts
 from app.utils.income import IncomeError, IncomeService, IncomeUnavailable
@@ -60,11 +61,27 @@ def entries():
 
 
 @income_bp.route('/income/entries', methods=['POST'])
+@income_bp.route('/income/entries/verified', methods=['POST'])
 @_handled('record the entry')
 def add_entry():
     admin = _require_admin(required_level='super_admin')
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        raise IncomeError('Enter the revenue adjustment details.')
+    code = body.get('authenticator_code')
+    if not isinstance(code, str) or not re.fullmatch(r'[0-9]{6}', code):
+        raise IncomeError('Enter the 6-digit code from Google Authenticator.', 400, 'authenticator_required')
+    try:
+        request_id = UUID(str(body.get('request_id')))
+        if request_id.version != 4:
+            raise ValueError()
+    except ValueError:
+        raise IncomeError('Reopen the revenue form to start a new entry.')
+    if not rate_limit.allow(f"income-manual:{admin['account_id']}", 20, 3600):
+        raise IncomeError('Too many attempts. Try again later.', 429, 'rate_limited')
     db, service = _service()
-    entry = service.record_manual(request.get_json(silent=True) or {}, admin['account_id'])
+    entry = service.record_manual(body, admin['account_id'], entry_id=str(request_id),
+                                  before_commit=lambda: consume_authenticator_code(db, admin['account_id'], code, 'recording revenue'))
     _log_admin_action(db, admin, 'Record Income Entry', 'Income', f"{entry.get('kind')} ₱{float(entry.get('amount') or 0):,.2f}: {entry.get('description')}", str(entry.get('entry_id') or ''))
     return jsonify({'success': True, 'entry': entry, 'message': 'The entry was added to the income ledger.'}), 201
 

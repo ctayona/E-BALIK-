@@ -156,6 +156,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
   const [message, setMessage] = useState("");
   const [contact, setContact] = useState("");
   const [sending, setSending] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [sendError, setSendError] = useState("");
   const [result, setResult] = useState<FoundResult | null>(null);
 
@@ -203,6 +204,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
   const openFinder = () => {
     setResult(null);
     setSendError("");
+    setLocating(false);
     if (load.state === "ready" && load.tag.recovery) {
       // getRandomValues also supports a manual-only form on an insecure local LAN.
       const requestId = typeof crypto.randomUUID === "function" ? crypto.randomUUID()
@@ -213,7 +215,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
   };
 
   const sendFound = async () => {
-    if (!code || sending) return;
+    if (!code || sending || locating) return;
     setSending(true);
     setSendError("");
     try {
@@ -420,6 +422,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
       </Card>
 
       <Modal
+        key={details?.request_id ?? "standard-finder"}
         open={foundOpen}
         onClose={() => { if (!sending) setFoundOpen(false); }}
         dismissible={!sending}
@@ -439,7 +442,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
         ) : (
           <>
             <button type="button" onClick={() => setFoundOpen(false)} disabled={sending} className={CX.btnGhost}>{words.cancel}</button>
-            <button type="button" onClick={() => void sendFound()} disabled={sending} className={CX.btnGold}>{sending ? words.notifying : words.notify}</button>
+            <button type="button" onClick={() => void sendFound()} disabled={sending || locating} className={CX.btnGold}>{sending ? words.notifying : words.notify}</button>
           </>
         )}
       >
@@ -469,7 +472,9 @@ export default function TagPage({ rawId }: { rawId: string }) {
               <input id="found-contact" value={contact} onChange={(e) => setContact(e.target.value)} maxLength={120} placeholder={words.contactPlaceholder} autoComplete="off" className={`${CX.input} w-full`} />
               <p className={CX.helper}>{words.contactHint}</p>
             </div>
-            {details && foundOpen && <RecoveryFields value={details} change={setDetails} />}
+            {details && foundOpen && <RecoveryFields value={details}
+              change={next => setDetails(current => current?.request_id === next.request_id ? next : current)}
+              onLocating={setLocating} disabled={sending} />}
             {sendError && <p role="alert" className={CX.alertError}>{sendError}</p>}
           </div>
         )}

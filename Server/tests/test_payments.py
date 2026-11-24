@@ -214,7 +214,7 @@ class ReceiptTests(unittest.TestCase):
         self.assertTrue(receipts.verify(self.db, self.sale['receipt_no'], code)['reversed'])
 
     def test_a_manual_other_entry_has_no_payment_receipt(self):
-        manual = IncomeService(self.db).record_manual({'kind': 'sale', 'source': 'other', 'amount': '50', 'description': 'Lost ID replacement', 'method': 'cash'}, ADMIN)
+        manual = IncomeService(self.db).record_manual({'kind': 'sale', 'source': 'other', 'amount': '50', 'description': 'Lost ID replacement', 'method': 'cash'}, ADMIN, before_commit=lambda: None)
         self.assertIsNone(receipts.receipt_for_payment(self.db, manual['entry_id']))
 
 

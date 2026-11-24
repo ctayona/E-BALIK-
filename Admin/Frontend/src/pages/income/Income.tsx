@@ -91,13 +91,16 @@ const EMPTY_ENTRY: ManualEntryInput = { kind: "adjustment", source: "auction", a
 /** Super admins: add money the system did not record by itself, or correct it. Nothing is ever edited or deleted afterwards. */
 function EntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState<ManualEntryInput>({ ...EMPTY_ENTRY, received_on: campusToday() });
+  const [direction, setDirection] = useState<"increase" | "decrease">("increase");
+  const [code, setCode] = useState("");
+  const [requestId] = useState(() => crypto.randomUUID());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const set = <K extends keyof ManualEntryInput>(key: K, value: ManualEntryInput[K]) => setForm((current) => ({ ...current, [key]: value }));
   const amountText = form.amount.trim();
-  const amountOk = /^-?\d{1,7}(\.\d{1,2})?$/.test(amountText) && Number(amountText) !== 0 && (form.kind === "adjustment" || !amountText.startsWith("-"));
+  const amountOk = /^\d{1,7}(\.\d{1,2})?$/.test(amountText) && Number(amountText) > 0 && Number(amountText) <= 1_000_000;
   const needsReason = form.kind !== "sale";
-  const valid = amountOk && form.description.trim().length >= 4 && (!needsReason || form.notes.trim().length >= 8) && Boolean(form.received_on) && form.received_on <= campusToday();
+  const valid = amountOk && /^[0-9]{6}$/.test(code) && form.description.trim().length >= 4 && (!needsReason || form.notes.trim().length >= 8) && Boolean(form.received_on) && form.received_on <= campusToday();
   const sourceOptions: IncomeSource[] = form.kind === "sale" ? ["other"] : ["auction", "smart_tag", "other"];
 
   const save = async () => {
@@ -105,9 +108,11 @@ function EntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
     setBusy(true);
     setError("");
     try {
-      await addIncomeEntry(form);
+      const amount = form.kind === "adjustment" && direction === "decrease" ? `-${amountText}` : amountText;
+      await addIncomeEntry({ ...form, amount }, code, requestId);
       onSaved();
     } catch (failure) {
+      setCode("");
       setError(failure instanceof Error ? failure.message : tr("Unable to record the entry."));
     } finally {
       setBusy(false);
@@ -116,7 +121,7 @@ function EntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
 
   return (
     <AdminModal
-      title={tr("Record an income entry")}
+      title={tr("Manage revenue")}
       description={tr("Auction and Smart Tag sales are recorded when you confirm the payment. Use this for other payments, refunds and corrections. Entries cannot be edited later.")}
       icon={<ReceiptText size={19} />}
       tone="gold"
@@ -126,7 +131,7 @@ function EntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
       footer={(
         <>
           <button type="button" onClick={onClose} disabled={busy} className={BTN.ghost}>{tr("Cancel")}</button>
-          <button type="button" onClick={() => void save()} disabled={!valid || busy} className={BTN.primary}>{busy ? tr("Saving…") : tr("Record entry")}</button>
+          <button type="button" onClick={() => void save()} disabled={!valid || busy} className={BTN.primary}>{busy ? tr("Saving…") : tr("Verify and record")}</button>
         </>
       )}
     >
@@ -137,9 +142,11 @@ function EntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
           onChange={(kind) => setForm((current) => ({ ...current, kind, source: kind === "sale" ? "other" : current.source }))}
           options={[{ value: "adjustment", label: "Adjustment" }, { value: "refund", label: "Refund" }, { value: "sale", label: "Other income" }]}
         />
+        {form.kind === "adjustment" && <SegmentedFilter label="Adjustment direction" value={direction} onChange={setDirection}
+          options={[{ value: "increase", label: "Increase revenue" }, { value: "decrease", label: "Decrease revenue" }]} />}
         <p className="rounded-xl bg-frost-50 px-3.5 py-2.5 text-[13px] leading-5 text-ink-muted">
           {form.kind === "refund" ? tr("Money given back. Type the amount without a minus sign: it is subtracted from the totals.")
-            : form.kind === "adjustment" ? tr("A correction. Type a negative amount (for example -50) to lower the totals, or a positive one to raise them.")
+            : form.kind === "adjustment" ? tr("Choose the revenue source and enter the amount of the correction.")
             : tr("Money received for something other than an auction or a Smart Tag, for example a replacement sticker.")}
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -153,9 +160,9 @@ function EntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
             <span className="mb-1.5 block text-[14px] font-semibold text-ink-soft">{tr("Amount")}</span>
             <span className="relative block">
               <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[15px] font-semibold text-ink-muted" aria-hidden="true">₱</span>
-              <input value={form.amount} onChange={(event) => set("amount", event.target.value.replace(/[^0-9.-]/g, ""))} inputMode="decimal" className={`${INPUT} pl-8`} data-autofocus aria-invalid={Boolean(amountText) && !amountOk} />
+              <input value={form.amount} onChange={(event) => set("amount", event.target.value)} inputMode="decimal" className={`${INPUT} pl-8`} data-autofocus aria-invalid={Boolean(amountText) && !amountOk} />
             </span>
-            {Boolean(amountText) && !amountOk && <span className="mt-1 block text-[12.5px] text-rose-600">{form.kind === "adjustment" ? tr("Enter an amount such as 150 or -50 (not zero).") : tr("Enter an amount such as 150 or 150.50.")}</span>}
+            {Boolean(amountText) && !amountOk && <span className="mt-1 block text-[12.5px] text-rose-600">{tr("Enter ₱0.01 to ₱1,000,000 with up to two decimal places.")}</span>}
           </label>
         </div>
         <label className="block">
@@ -182,6 +189,12 @@ function EntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
           <span className="mb-1.5 block text-[14px] font-semibold text-ink-soft">{needsReason ? tr("Reason") : tr("Notes (optional)")}</span>
           <textarea value={form.notes} onChange={(event) => set("notes", event.target.value)} maxLength={500} rows={3} className={`${INPUT} py-2.5`} placeholder={needsReason ? tr("Why this refund or correction is needed. It stays in the record.") : ""} />
           {needsReason && form.notes.trim().length > 0 && form.notes.trim().length < 8 && <span className="mt-1 block text-[12.5px] text-rose-600">{tr("Write at least 8 characters.")}</span>}
+        </label>
+        {amountOk && <p className="text-sm font-semibold text-ink" aria-live="polite">{tr(SOURCE_LABEL[form.source])} · {form.kind === "refund" || (form.kind === "adjustment" && direction === "decrease") ? "−" : "+"}{peso(Number(amountText))}</p>}
+        <label className="block">
+          <span className="mb-1.5 block text-[14px] font-semibold text-ink-soft">{tr("Google Authenticator code")}</span>
+          <input value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ""))} type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} className={INPUT} />
+          <span className="mt-1 block text-[13px] text-ink-muted">{tr("Use a fresh 6-digit code from the authenticator linked to your admin profile.")}</span>
         </label>
         {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[13.5px] text-rose-800">{error}</p>}
       </div>
@@ -270,7 +283,7 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
         actions={(
           <>
             <button type="button" onClick={() => void exportCsv()} disabled={exporting || loading} className={BTN.ghost}><Download size={16} aria-hidden="true" />{exporting ? tr("Exporting…") : tr("Export CSV")}</button>
-            {superAdmin && <button type="button" onClick={() => setAdding(true)} className={BTN.gold}><Plus size={16} aria-hidden="true" />{tr("Record entry")}</button>}
+            {superAdmin && <button type="button" onClick={() => setAdding(true)} className={BTN.gold}><Plus size={16} aria-hidden="true" />{tr("Manage revenue")}</button>}
           </>
         )}
       />

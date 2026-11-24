@@ -3,6 +3,8 @@ import sys
 import unittest
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from functools import partial
+from uuid import uuid4
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -76,6 +78,8 @@ class Table:
         if self.op == 'insert':
             new = self.payload if isinstance(self.payload, list) else [self.payload]
             for row in new:
+                if row.get('entry_id') and any(r.get('entry_id') == row['entry_id'] for r in rows):
+                    raise Exception('duplicate primary key (23505)')
                 if self.name == 'income_ledger' and row.get('kind') == 'sale' and any(
                         r.get('kind') == 'sale' and r.get('source') == row.get('source') and r.get('source_ref') == row.get('source_ref') for r in rows):
                     raise Exception('duplicate key value violates unique constraint "uq_income_one_sale" (23505)')
@@ -131,16 +135,16 @@ class RecordSaleTests(unittest.TestCase):
 class ManualEntryTests(unittest.TestCase):
     def setUp(self):
         self.store = {}
-        self.service = IncomeService(make_db(self.store))
+        self.record = partial(IncomeService(make_db(self.store)).record_manual, before_commit=lambda: None)
 
     def test_a_refund_is_stored_negative_with_its_reason(self):
-        entry = self.service.record_manual({'kind': 'refund', 'source': 'auction', 'amount': '200', 'description': 'Refund for A1', 'notes': 'Item was damaged'}, ADMIN)
+        entry = self.record({'kind': 'refund', 'source': 'auction', 'amount': '200', 'description': 'Refund for A1', 'notes': 'Item was damaged'}, ADMIN)
         self.assertEqual(entry['amount'], '-200.00')
         self.assertEqual(entry['recorded_by'], ADMIN)
 
     def test_an_adjustment_keeps_its_sign(self):
-        self.assertEqual(self.service.record_manual({'kind': 'adjustment', 'source': 'smart_tag', 'amount': '-50', 'description': 'Correction', 'notes': 'Wrong price typed'}, ADMIN)['amount'], '-50.00')
-        self.assertEqual(self.service.record_manual({'kind': 'adjustment', 'source': 'smart_tag', 'amount': '50', 'description': 'Correction', 'notes': 'Price fixed later'}, ADMIN)['amount'], '50.00')
+        self.assertEqual(self.record({'kind': 'adjustment', 'source': 'smart_tag', 'amount': '-50', 'description': 'Correction', 'notes': 'Wrong price typed'}, ADMIN)['amount'], '-50.00')
+        self.assertEqual(self.record({'kind': 'adjustment', 'source': 'smart_tag', 'amount': '50', 'description': 'Correction', 'notes': 'Price fixed later'}, ADMIN)['amount'], '50.00')
 
     def test_rules(self):
         bad = [
@@ -152,9 +156,9 @@ class ManualEntryTests(unittest.TestCase):
         ]
         for payload in bad:
             with self.assertRaises(IncomeError, msg=payload):
-                self.service.record_manual(payload, ADMIN)
+                self.record(payload, ADMIN)
         self.assertNotIn('income_ledger', self.store)
-        self.assertEqual(self.service.record_manual({'kind': 'sale', 'source': 'other', 'amount': '1,250.5', 'description': 'Donation box'}, ADMIN)['amount'], '1250.50')
+        self.assertEqual(self.record({'kind': 'sale', 'source': 'other', 'amount': '1,250.5', 'description': 'Donation box'}, ADMIN)['amount'], '1250.50')
 
 
 class SummaryTests(unittest.TestCase):
@@ -291,7 +295,42 @@ class RouteTests(unittest.TestCase):
         client, auth, db, store = self.client('super_admin')
         with auth, db:
             reply = client.post('/api/admin/income/entries', json={'kind': 'sale', 'source': 'other', 'amount': '10', 'description': 'Donation box'})
-        self.assertEqual(reply.status_code, 201)
+        self.assertEqual((reply.status_code, reply.get_json()['code']), (400, 'authenticator_required'))
+        self.assertFalse(store.get('income_ledger'))
+
+    def test_manual_revenue_requires_a_fresh_code_and_counts_each_request_once(self):
+        from Admin.Backend.income import routes
+        client, auth, db, store = self.client('super_admin')
+        url = '/api/admin/income/entries/verified'
+        body = dict(kind='adjustment', source='smart_tag', amount='30', description='Desk correction',
+                    notes='Corrected receipt amount', authenticator_code='123456', request_id=str(uuid4()))
+        with auth, db as get_db, patch.object(routes.rate_limit, 'allow', return_value=True), patch.object(routes, '_log_admin_action') as log:
+            fixture = get_db.return_value
+            fixture.get_admin_mfa.return_value = None
+            self.assertEqual(client.post(url, json=body).status_code, 403)
+            fixture.get_admin_mfa.return_value = {'enabled_at': 'today', 'locked_until': '2999-01-01T00:00:00+00:00'}
+            self.assertEqual(client.post(url, json=body).status_code, 423)
+            fixture.get_admin_mfa.return_value = {'enabled_at': 'today', 'secret_ciphertext': 'fixture'}
+            with patch('Admin.Backend.shared.authenticator.CryptoService.decrypt', return_value='fixture'), patch('Admin.Backend.shared.authenticator.matched_totp_step') as match:
+                match.return_value = None
+                self.assertEqual(client.post(url, json=body).status_code, 401)
+                fixture.record_admin_mfa_failure.assert_called_once_with(ADMIN)
+                match.reset_mock()
+                self.assertEqual(client.post(url, json={**body, 'amount': '--1'}).status_code, 400)
+                match.assert_not_called()
+                self.assertFalse(store.get('income_ledger'))
+                match.return_value = 100
+                fixture.consume_admin_mfa_step.side_effect = [True, False, True]
+                self.assertEqual(client.post(url, json=body).status_code, 201)
+                debit = {**body, 'request_id': str(uuid4()), 'amount': '-10'}
+                self.assertEqual(client.post(url, json=debit).status_code, 401)
+                self.assertEqual(client.post(url, json={**debit, 'authenticator_code': '654321'}).status_code, 201)
+                retry = client.post(url, json=body)
+                self.assertEqual((retry.status_code, retry.get_json()['code']), (409, 'already_recorded'))
+                self.assertEqual(fixture.consume_admin_mfa_step.call_count, 3)
+            self.assertEqual([row['amount'] for row in store['income_ledger']], ['30.00', '-10.00'])
+            self.assertEqual(log.call_count, 2)
+            self.assertTrue(all(row['recorded_by'] == ADMIN and 'authenticator_code' not in row for row in store['income_ledger']))
 
     def test_setup_required_before_the_migration(self):
         client, auth, db, store = self.client('admin')

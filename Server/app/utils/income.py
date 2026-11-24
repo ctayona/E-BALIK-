@@ -11,6 +11,7 @@ The table comes from migration 20261022_income_ledger.sql; before it runs, recor
 import csv
 import io
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
@@ -143,7 +144,7 @@ class IncomeService:
                 logger.error('Could not record the %s sale %s: %s', source, source_ref, error)
             return None
 
-    def record_manual(self, payload: Dict[str, Any], admin_id: str) -> Dict[str, Any]:
+    def record_manual(self, payload: Dict[str, Any], admin_id: str, *, before_commit, entry_id=None) -> Dict[str, Any]:
         """A super administrator's entry: an "other" sale, a refund (stored negative) or an adjustment (either sign)."""
         kind = str(payload.get('kind') or '').strip().lower()
         if kind not in KINDS:
@@ -163,8 +164,12 @@ class IncomeService:
         if kind != 'sale' and len(reason) < 8:
             raise IncomeError('Give the reason for this refund or adjustment (at least 8 characters). It stays in the record.')
         raw = str(payload.get('amount') or '').strip()
+        if not re.fullmatch(r'-?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.[0-9]{1,2})?', raw):
+            raise IncomeError('Enter a peso amount with up to two decimal places.')
         negative = raw.startswith('-')
-        amount = money(raw.lstrip('-'))
+        if kind == 'sale' and negative:
+            raise IncomeError('Other income must be positive.')
+        amount = money(raw[1:] if negative else raw)
         if kind == 'refund' or (kind == 'adjustment' and negative):
             amount = -amount
         received = _day(payload.get('received_on'), 'received') or campus_day(datetime.now(timezone.utc))
@@ -176,9 +181,23 @@ class IncomeService:
             'receipt_no': (str(payload.get('receipt_no') or '').strip()[:40] or None), 'notes': reason[:500] or None,
             'recorded_by': admin_id, 'received_at': _start_of(received) if received != campus_day(datetime.now(timezone.utc)) else datetime.now(timezone.utc).isoformat(),
         }
+        if entry_id:
+            row['entry_id'] = entry_id
+            duplicate = IncomeError('This entry was already recorded. Close the form and refresh the ledger.', 409, 'already_recorded')
+            existing = self._table().select('entry_id').eq('entry_id', entry_id).eq('recorded_by', admin_id).limit(1)
+            try:
+                already_recorded = existing.execute().data
+            except Exception as error:
+                self._guard(error)
+            if already_recorded:
+                raise duplicate
+        before_commit()
         try:
             return (self._table().insert(row).execute().data or [row])[0]
         except Exception as error:
+            if entry_id and (getattr(error, 'code', None) == '23505' or '23505' in str(error)):
+                if existing.execute().data:
+                    raise duplicate from error
             self._guard(error)
 
     # ------------------------------------------------------------------ reading
