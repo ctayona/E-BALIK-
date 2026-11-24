@@ -7,6 +7,7 @@ from app.utils import PasswordService, get_db
 from app.utils.admin_mfa import matched_totp_step
 from app.utils.crypto_service import CryptoService
 from app.utils.recycle_bin import BinError, retention_days
+from app.utils.account_identity import ebalik_id
 from Admin.Backend.shared.admin_access import _log_admin_action, _require_admin
 
 users_bp = Blueprint('admin_users', __name__)
@@ -249,6 +250,7 @@ def update_user_status(account_id):
 def update_user_access_level(account_id):
     """Change a person's role. Administrators may make someone a guard (or a user again); only super administrators may
     make someone an administrator or change one. The database function enforces the same rules."""
+    access_level = None
     try:
         actor = _require_admin()
         payload = request.get_json(silent=True) or {}
@@ -270,8 +272,13 @@ def update_user_access_level(account_id):
             return jsonify({'error': 'Super administrator access can only be changed manually in the database'}), 403
         if actor['access_level'] != 'super_admin' and (access_level == 'admin' or target_level == 'admin'):
             return jsonify({'error': 'Only a super administrator can make someone an administrator or change an administrator'}), 403
+        if target.get('archived_at'):
+            return jsonify(error='Restore this account from Archived before changing its access role.', code='account_archived'), 409
         if access_level != 'user' and target.get('is_active') is False:
             return jsonify({'error': 'This account is suspended. Reactivate it before giving it staff access.'}), 409
+        if access_level == target_level:
+            return jsonify(user={'account_id': account_id, 'email': target.get('email'), 'access_level': access_level},
+                           profile=_map_admin_user(target)), 200
 
         updated = db.set_user_access_level(account_id, access_level, actor['account_id'])
         db.log_user_activity(
@@ -286,13 +293,17 @@ def update_user_access_level(account_id):
         )
         if access_level == 'guard' and target_level != 'guard':
             _tell_new_guard(db, account_id)
-        return jsonify({'user': updated}), 200
+        profile = {**target, **(db.get_user_by_account_id(account_id) or {}), **updated}
+        return jsonify({'user': updated, 'profile': _map_admin_user(profile)}), 200
     except ValueError as error:
         return jsonify({'error': str(error)}), 401
     except PermissionError as error:
         return jsonify({'error': str(error)}), 403
     except Exception as error:
         message = str(error)
+        if access_level == 'guard' and ('user_profiles_access_level_check' in message or 'Only user or admin' in message):
+            return jsonify(error='Guard permissions need the guard-role database updates. Check migrations 20261013 and 20261015.',
+                           code='guard_role_setup_required'), 503
         if 'Super administrator access' in message or 'Administrator access required' in message:
             return jsonify({'error': 'You are not allowed to make that change'}), 403
         if 'suspended' in message:
@@ -327,8 +338,9 @@ def _map_admin_user(row):
         'name': f"{row.get('fname') or ''} {row.get('lname') or ''}".strip(),
         'initials': (row.get('fname') or 'U')[0].upper() + (row.get('lname') or 'U')[0].upper(),
         'studentId': row.get('campus_id') or 'N/A',
+        'roleId': ebalik_id(row),
         'email': row.get('email') or '',
-        'program': row.get('user_role') or 'Student',
+        'program': row.get('user_category') or row.get('user_role') or 'Student',
         'accessLevel': row.get('access_level') or 'user',
         'status': 'Active' if row.get('is_active') is not False else 'Suspended',
         'verification': str(row.get('verification_status') or 'pending').lower(),
@@ -432,6 +444,8 @@ def update_user_account(account_id):
             return jsonify({'error': 'User not found'}), 404
         if str(target.get('access_level') or '').lower() == 'super_admin' and actor.get('access_level') != 'super_admin':
             return jsonify({'error': 'Only a super administrator can edit a super administrator account'}), 403
+        if 'user_role' in fields and fields['user_role'] != target.get('user_role'):
+            fields['user_category'] = 'Visitor' if fields['user_role'] == 'Others' else fields['user_role']
         if 'email' in fields and fields['email'] != str(target.get('email') or '').lower():
             existing = db.get_user_by_email(fields['email'])
             if existing and str(existing.get('account_id')) != str(account_id):

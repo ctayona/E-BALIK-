@@ -222,6 +222,10 @@ export default function Profile({
                   <IdCard size={14} className="text-[#d1a153]" /> Campus ID
                 </label>
                 <input value={formData.campus_id} readOnly className={clayFieldReadonly} />
+                {user?.ebalik_id && <div className="mt-2">
+                  <label className="text-[12px] font-bold text-navy-800">E-Balik ID</label>
+                  <p className="mt-1 break-all font-mono text-sm text-ink-soft">{user.ebalik_id}</p>
+                </div>}
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-[12px] font-bold text-navy-800">Role</label>

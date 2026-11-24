@@ -89,11 +89,12 @@ class LostAndFoundJourney(unittest.TestCase):
         archive.set_archived(db.client, 'lost', 'MP1001', ADMIN, False)
         self.assertFalse(db.list_admin_missing_items()[0]['archived'])
 
-    def test_nothing_in_progress_can_be_archived_along_the_way(self):
+    def test_archiving_reports_preserves_in_progress_claim_work(self):
         store, db = make_world()
-        for kind, reference in (('lost', 'MP1001'), ('found', 'FP1001'), ('claim', 'C1')):
-            with self.assertRaises(archive.ArchiveError, msg=reference):
-                archive.set_archived(db.client, kind, reference, ADMIN, True)
+        for kind, reference in (('lost', 'MP1001'), ('found', 'FP1001')):
+            archive.set_archived(db.client, kind, reference, ADMIN, True)
+        with self.assertRaises(archive.ArchiveError):
+            archive.set_archived(db.client, 'claim', 'C1', ADMIN, True)
         db.update_claim_status('C1', 'approved_for_pickup', ADMIN)
         with self.assertRaises(archive.ArchiveError):
             archive.set_archived(db.client, 'claim', 'C1', ADMIN, True)   # approved but not collected yet

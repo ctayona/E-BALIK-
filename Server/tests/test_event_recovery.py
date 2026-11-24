@@ -163,6 +163,9 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaises(EventError): self.recovery.verify_receipt(SECOND, receipt['verification_code'])
 
     def test_management_requires_exact_fields_and_atomic_rpc(self):
+        with self.assertRaises(EventError):
+            self.recovery.manage(EVENT, dict(action='delete', version=1, note='Unarchived draft'), ADMIN)
+        self.event['status'] = 'archived'
         handler = MagicMock(return_value={'ok': True, 'event': {**self.event, 'deleted_at': self.event['starts_at']}})
         self.db.client.rpc_handlers['event_manage_workspace'] = handler
         result = self.recovery.manage(EVENT, dict(action='delete', version=1, note='Duplicate event draft'), ADMIN)

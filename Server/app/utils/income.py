@@ -20,10 +20,10 @@ from app.utils.system_ops import csv_safe
 
 logger = logging.getLogger(__name__)
 
-SOURCES = {'auction': 'Auction Hall', 'smart_tag': 'Smart Tags', 'other': 'Other'}
+SOURCES = {'auction': 'Auction Hall', 'smart_tag': 'Smart Tags', 'event_rental': 'Event rentals', 'other': 'Other'}
 # How income is REPORTED: a seller's auction is stored as an Auction Hall sale plus the seller's share (kind 'payout'), and what is left,
 # the office's commission, is shown on its own line.
-REPORT_SOURCES = {'auction': 'Auction Hall', 'smart_tag': 'Smart Tags', 'commission': 'Seller commissions', 'other': 'Other'}
+REPORT_SOURCES = {'auction': 'Auction Hall', 'smart_tag': 'Smart Tags', 'event_rental': 'Event rentals', 'commission': 'Seller commissions', 'other': 'Other'}
 KINDS = ('sale', 'refund', 'adjustment')           # what an administrator may record by hand
 KIND_LABELS = {'sale': 'Sale', 'refund': 'Refund', 'adjustment': 'Adjustment', 'payout': "Seller's share"}
 METHODS = {'cash': 'Cash', 'gcash': 'GCash', 'maya': 'Maya', 'bank': 'Bank transfer', 'other': 'Other'}
@@ -152,8 +152,13 @@ class IncomeService:
         source = str(payload.get('source') or '').strip().lower()
         if source not in SOURCES:
             raise IncomeError('Choose what the money is for: Auction Hall, Smart Tags or Other.')
+        if source == 'event_rental':
+            from app.utils.event_rentals import EventRentals
+            EventRentals(self.db).require()
         if kind == 'sale' and source != 'other':
             raise IncomeError('Auction and Smart Tag sales are recorded automatically. Use an adjustment to correct one.')
+        if source == 'event_rental' and kind == 'refund':
+            raise IncomeError('Use the booking Refund action to reconcile rental payments and receipts.')
         method = str(payload.get('method') or 'cash').strip().lower()
         if method not in METHODS:
             raise IncomeError('Choose how the money was paid.')
@@ -161,9 +166,13 @@ class IncomeService:
         if len(description) < 4:
             raise IncomeError('Describe the entry in a few words (at least 4 characters).')
         reason = str(payload.get('notes') or '').strip()
+        if kind == 'refund' and str(payload.get('receipt_no') or '').strip():
+            raise IncomeError('Use Reverse payment for an existing receipt. Record other corrections as adjustments.')
         if kind != 'sale' and len(reason) < 8:
             raise IncomeError('Give the reason for this refund or adjustment (at least 8 characters). It stays in the record.')
         raw = str(payload.get('amount') or '').strip()
+        if kind == 'refund' and str(payload.get('receipt_no') or '').strip():
+            raise IncomeError('Use Reverse payment for a payment receipt. For a separate correction, use an adjustment.')
         if not re.fullmatch(r'-?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.[0-9]{1,2})?', raw):
             raise IncomeError('Enter a peso amount with up to two decimal places.')
         negative = raw.startswith('-')
@@ -203,14 +212,27 @@ class IncomeService:
     # ------------------------------------------------------------------ reading
     def _rows(self, start: Optional[date], end: Optional[date], source: str = '') -> List[Dict[str, Any]]:
         try:
-            query = self._table().select('*')
+            query = self._table().select('*', count='exact')
             if start:
                 query = query.gte('received_at', _start_of(start))
             if end:
                 query = query.lt('received_at', _start_of(end + timedelta(days=1)))
             if source:
                 query = query.eq('source', source)
-            return query.order('received_at', desc=True).limit(MAX_ROWS).execute().data or []
+            query = query.order('received_at', desc=True).order('entry_id')
+            result = query.limit(1000).execute()
+            count = getattr(result, 'count', None)
+            if count is None:
+                return result.data or []
+            if count > MAX_ROWS:
+                raise IncomeError('Choose a shorter date range to report or export more than 20,000 entries.', 413, 'report_too_large')
+            rows = list(result.data or [])
+            while len(rows) < count:
+                page = query.range(len(rows), min(len(rows) + 999, count - 1)).execute().data or []
+                if not page:
+                    raise IncomeError('Ledger changed during reporting. Refresh and retry.', 409)
+                rows.extend(page)
+            return rows
         except Exception as error:
             self._guard(error)
 
@@ -231,6 +253,7 @@ class IncomeService:
         try:
             from app.utils.payments import PaymentDesk
             totals = PaymentDesk(self.db).awaiting()['totals']
+            pending['event_rental'] = totals.get('event_rental', 0)
             pending.update({key: totals[key] for key in ('auction', 'auction_count', 'smart_tag', 'smart_tag_count', 'released_unpaid', 'released_unpaid_count')})
         except Exception as error:
             logger.info('Awaiting payments unavailable: %s', str(error)[:120])
@@ -253,7 +276,7 @@ class IncomeService:
     def bucket(row: Dict[str, Any], seller_refs: set) -> str:
         if row.get('source') == 'auction' and str(row.get('source_ref') or '') in seller_refs:
             return 'commission'
-        return row.get('source') if row.get('source') in SOURCES else 'other'
+        return row.get('source') if row.get('source') in REPORT_SOURCES else 'other'
 
     def _source_rows(self, start: Optional[date], end: Optional[date], source: str) -> List[Dict[str, Any]]:
         """Rows for one reporting source. 'commission' is every row of a seller's auction; 'auction' is then only the office's own auctions."""

@@ -1,3 +1,4 @@
+from app.utils.report_publication import public_table
 """
 Supabase Database Connection Handler
 """
@@ -13,6 +14,7 @@ from app.utils.matching import match_percentage
 from app.utils.report_lifecycle import ReportLifecycle
 from app.utils import custody_log
 from app.utils.archive import flag_archived
+from app.utils.account_identity import ebalik_id
 from app.utils.paging import fetch_all
 from app.utils.crypto_service import CryptoService
 from app.utils.claim_status import normalize_claim_status
@@ -557,7 +559,7 @@ class SupabaseDB:
 
     def get_unclaimed_found_items_for_matching(self) -> List[Dict[str, Any]]:
         """Return non-private found fields for server-side matching."""
-        response = self.client.table('found_items').select(
+        response = public_table(self.client, 'found_items').select(
             'fpost_id,item_name,category,description,location,found_date,image_url,status,created_at'
         ).eq('status', 'unclaimed').order('created_at', desc=True).limit(1000).execute()
         return response.data or []
@@ -565,7 +567,7 @@ class SupabaseDB:
     def search_found_items(self, category: str = '', location: str = '', found_date: str = '', query: str = '') -> List[Dict[str, Any]]:
         """Return searchable, non-private found reports for matching and discovery."""
         try:
-            request = self.client.table('found_items').select(
+            request = public_table(self.client, 'found_items').select(
                 'fpost_id,item_name,category,description,location,found_date,image_url,status,created_at'
             ).eq('status', 'unclaimed')
             if category:
@@ -644,14 +646,14 @@ class SupabaseDB:
 
     def get_public_missing_items(self) -> List[Dict[str, Any]]:
         """Return safe public fields for active missing-item reports."""
-        response = self.client.table('missing_items').select(
+        response = public_table(self.client, 'missing_items').select(
             'mpost_id,item_name,category,description,last_location,last_seen_date,image_url,status,created_at'
         ).eq('status', 'missing').order('created_at', desc=True).limit(1000).execute()
         return response.data or []
 
     def get_public_found_items(self, limit: int = 4) -> List[Dict[str, Any]]:
         """Return safe fields for recent found-item cards on the public landing page."""
-        response = self.client.table('found_items').select(
+        response = public_table(self.client, 'found_items').select(
             'fpost_id,item_name,category,location,found_date,image_url,created_at'
         ).eq('status', 'unclaimed').order('created_at', desc=True).limit(limit).execute()
         return response.data or []
@@ -661,10 +663,10 @@ class SupabaseDB:
 
         Only fields already shown on public lists are returned: no reporter name, email, campus ID, description or marks.
         """
-        missing = self.client.table('missing_items').select(
+        missing = public_table(self.client, 'missing_items').select(
             'mpost_id,item_name,category,last_location,last_seen_date,image_url,created_at', count='exact'
         ).eq('status', 'missing').order('created_at', desc=True).limit(missing_limit).execute()
-        found = self.client.table('found_items').select(
+        found = public_table(self.client, 'found_items').select(
             'fpost_id,item_name,category,location,found_date,image_url,created_at', count='exact'
         ).eq('status', 'unclaimed').order('created_at', desc=True).limit(found_limit).execute()
         return {
@@ -675,7 +677,7 @@ class SupabaseDB:
 
     def get_missing_items_for_matching(self) -> List[Dict[str, Any]]:
         """Return missing fields needed for private server-side matching."""
-        response = self.client.table('missing_items').select(
+        response = public_table(self.client, 'missing_items').select(
             'mpost_id,item_name,category,description,distinctive_marks,last_location,last_seen_date,status'
         ).in_('status', ['missing', 'found']).order('created_at', desc=True).limit(1000).execute()
         return response.data or []
@@ -1037,6 +1039,7 @@ class SupabaseDB:
                     'name': f"{user.get('fname') or ''} {user.get('lname') or ''}".strip(),
                     'initials': (user.get('fname') or 'U')[0].upper() + (user.get('lname') or 'U')[0].upper(),
                     'studentId': user.get('campus_id') or 'N/A',
+                    'roleId': ebalik_id(user),
                     'email': user.get('email') or '',
                     'program': user.get('user_category') or user.get('user_role') or 'Student',
                     'category': user.get('user_category'),
@@ -1302,7 +1305,19 @@ class SupabaseDB:
 
     def _archive_before_delete(self, entity_type: str, reference: str, admin_account_id: str) -> str:
         """Copy what is about to be deleted into the recycle bin. Raises BinError (and the caller deletes nothing) if that fails."""
-        from app.utils.recycle_bin import RecycleBin
+        from app.utils.recycle_bin import RecycleBin, BinError
+        from app.utils.archive import require_archived, ArchiveError
+        kind = {'missing_item': 'lost', 'found_item': 'found', 'claim': 'claim', 'user': 'user'}[entity_type]
+        try:
+            require_archived(self.client, kind, reference)
+        except ArchiveError as error:
+            raise BinError(error.message, error.status, error.code) from None
+        try:
+            ready = self.client.table('migration_log').select('name').eq('name', '20261124c_admin_archive_first').limit(1).execute().data
+        except Exception:
+            ready = None
+        if not ready:
+            raise BinError('Run 20261124c_admin_archive_first.sql before deleting archived admin records.', 503, 'setup_required')
         actor = self.get_user_by_account_id(admin_account_id) or {}
         return RecycleBin(self).archive_entity(entity_type, reference, admin_account_id, actor.get('email') or 'Admin')
 
@@ -1371,7 +1386,7 @@ class SupabaseDB:
 
         archive_id = self._archive_before_delete('user', target_account_id, admin_account_id)
         try:
-            response = self.client.rpc('admin_delete_user', {
+            response = self.client.rpc('admin_delete_archived_user', {
                 'p_target_account_id': target_account_id,
                 'p_admin_id': admin_account_id,
                 'p_totp_step': int(totp_step),
@@ -1437,7 +1452,7 @@ class SupabaseDB:
                 return False   # nothing to delete: the route answers "not found"
             raise
         try:
-            response = self.client.rpc('admin_delete_missing_item', {
+            response = self.client.rpc('admin_delete_archived_missing_item', {
                 'p_item_reference': reference,
                 'p_admin_id': admin_account_id,
             }).execute()
@@ -1489,7 +1504,7 @@ class SupabaseDB:
                 return False
             raise
         try:
-            response = self.client.rpc('admin_delete_found_item', {
+            response = self.client.rpc('admin_delete_archived_found_item', {
                 'p_item_reference': reference,
                 'p_admin_id': admin_account_id,
             }).execute()
@@ -1763,7 +1778,7 @@ class SupabaseDB:
         """Archive a claim in the recycle bin, delete it through the Superadmin-validated database RPC, then remove the stored originals."""
         archive_id = self._archive_before_delete('claim', claim_id, admin_account_id)
         try:
-            response = self.client.rpc('admin_delete_claim', {
+            response = self.client.rpc('admin_delete_archived_claim', {
                 'p_claim_id': claim_id,
                 'p_admin_id': admin_account_id,
             }).execute()

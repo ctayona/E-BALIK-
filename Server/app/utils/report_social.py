@@ -5,6 +5,7 @@ Posts carry only the fields already shown on the public lists (no reporter name,
 are refused (contact goes through a claim or a Smart Tag, not a public thread). Rate limits live in the routes; the rules that need the
 database (an open report, a duplicate, ownership) live here.
 """
+from .report_publication import public_table
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -108,7 +109,7 @@ class ReportSocial:
 
     def _report(self, kind: str, reference: str, open_only: bool = True) -> Dict[str, Any]:
         table, ref_col, fk, open_status, _ = self._kind(kind)
-        rows = self.client.table(table).select(f'item_id,{ref_col},item_name,status,account_id,reporter_account_id').eq(ref_col, str(reference or '').strip().upper()).limit(1).execute().data or []
+        rows = public_table(self.client, table).select(f'item_id,{ref_col},item_name,status,account_id,reporter_account_id').eq(ref_col, str(reference or '').strip().upper()).limit(1).execute().data or []
         if not rows:
             raise SocialError('That report was not found.', 404, 'not_found')
         row = rows[0]
@@ -120,7 +121,7 @@ class ReportSocial:
     def post(self, kind: str, reference: str, viewer_id: Optional[str]) -> Dict[str, Any]:
         """One open report as a feed post (the target of a shared link). Closed or unknown reports are refused like the comment routes refuse them."""
         table, ref_col, fk, open_status, columns = self._kind(kind)
-        rows = self.client.table(table).select(columns).eq(ref_col, str(reference or '').strip().upper()).limit(1).execute().data or []
+        rows = public_table(self.client, table).select(columns).eq(ref_col, str(reference or '').strip().upper()).limit(1).execute().data or []
         if not rows:
             raise SocialError('That report was not found.', 404, 'not_found')
         if str(rows[0].get('status') or '').lower() != open_status:
@@ -158,7 +159,7 @@ class ReportSocial:
         posts: List[Dict[str, Any]] = []
         for name in kinds:
             table, ref_col, fk, open_status, columns = KINDS[name]
-            query = self.client.table(table).select(columns).eq('status', open_status)
+            query = public_table(self.client, table).select(columns).eq('status', open_status)
             if before:
                 query = query.lt('created_at', before)
             for row in query.order('created_at', desc=True).limit(limit + 1).execute().data or []:
@@ -185,7 +186,7 @@ class ReportSocial:
         stories: List[Dict[str, Any]] = []
         for name, (table, ref_col, fk, open_status, columns) in KINDS.items():
             try:
-                rows = self.client.table(table).select(columns).eq('status', open_status).gte('created_at', since).order('created_at', desc=True).limit(60).execute().data or []
+                rows = public_table(self.client, table).select(columns).eq('status', open_status).gte('created_at', since).order('created_at', desc=True).limit(60).execute().data or []
             except Exception as error:
                 logger.info('Stories unavailable: %s', str(error)[:120])
                 continue
@@ -202,9 +203,9 @@ class ReportSocial:
         week = (_now() - timedelta(days=URGENT_DAYS)).isoformat()
         result = {'found': 0, 'missing': 0, 'found_this_week': 0}
         try:
-            result['found'] = int(self.client.table('found_items').select('item_id', count='exact').eq('status', 'unclaimed').limit(1).execute().count or 0)
-            result['missing'] = int(self.client.table('missing_items').select('item_id', count='exact').eq('status', 'missing').limit(1).execute().count or 0)
-            result['found_this_week'] = int(self.client.table('found_items').select('item_id', count='exact').eq('status', 'unclaimed').gte('created_at', week).limit(1).execute().count or 0)
+            result['found'] = int(public_table(self.client, 'found_items').select('item_id', count='exact').eq('status', 'unclaimed').limit(1).execute().count or 0)
+            result['missing'] = int(public_table(self.client, 'missing_items').select('item_id', count='exact').eq('status', 'missing').limit(1).execute().count or 0)
+            result['found_this_week'] = int(public_table(self.client, 'found_items').select('item_id', count='exact').eq('status', 'unclaimed').gte('created_at', week).limit(1).execute().count or 0)
         except Exception as error:
             logger.info('Campus counts unavailable: %s', str(error)[:120])
         return result

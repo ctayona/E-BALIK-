@@ -237,6 +237,12 @@ class EventPilot:
                         if len(page)<250: break
                 archive.writestr('event-tag-handovers.csv', csv_bytes(('transfer_id','registration_id','destination','created_at','accepted_at','cancelled_at'),transfers))
             archive.writestr('summary.csv', csv_bytes(('metric', 'value'), summary))
+            from app.utils.event_rentals import EventRentals
+            rentals = EventRentals(self.db)
+            if rentals.enabled():
+                bookings = rentals.workspace(identifier)['bookings']
+                archive.writestr('rental-bookings.csv', csv_bytes(
+                    ('booking_id', 'status', 'organizer', 'amount', 'starts_at', 'ends_at'), bookings))
             archive.writestr('event-register.csv', csv_bytes(REGISTER_FIELDS, data['reports']))
             archive.writestr('unresolved-custody.csv', csv_bytes(REGISTER_FIELDS, [r for r in data['reports'] if r.get('received_at') and not r.get('released_at')]))
         return output.getvalue()

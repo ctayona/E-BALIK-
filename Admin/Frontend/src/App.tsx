@@ -71,7 +71,7 @@ export default function App() {
   const [reportTab, setReportTab] = useState<ReportsTab>(() => {
     const stored = localStorage.getItem(ADMIN_PAGE_STORAGE_KEY) as NavTarget | null;
     const saved = localStorage.getItem(REPORT_TAB_STORAGE_KEY);
-    return (stored && REPORT_TAB_FOR[stored]) || (saved === "found" || saved === "custody" ? saved : "lost");
+    return (stored && REPORT_TAB_FOR[stored]) || (saved === "found" || saved === "custody" || saved === "approve" ? saved : "lost");
   });
   const [eventDirty, setEventDirty] = useState(false);
   const [notifCount, setNotifCount] = useState<number>(() => getUnreadNotificationCount());

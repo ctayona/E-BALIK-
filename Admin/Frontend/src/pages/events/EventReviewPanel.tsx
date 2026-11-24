@@ -9,6 +9,7 @@ import EventManagementPanel from './EventManagementPanel';
 import EventOperationsPanel from './EventOperationsPanel';
 import { WorkspaceEventTags } from './EventTagInventory';
 import EventOperatorPanel from './EventOperatorPanel';
+import EventRentalPanel from './EventRentalPanel';
 
 const LABELS: Record<EventStatus, string> = { draft: 'Return to draft', scheduled: 'Schedule event', active: 'Start event', recovery: 'Begin recovery', closed: 'Close event', archived: 'Archive event', cancelled: 'Cancel event' };
 const time = (value: string) => new Date(value).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
@@ -50,6 +51,7 @@ export default function EventReviewPanel({ event, visible, disabled, onStep, onC
       <EventOperationsPanel event={review.event} disabled={disabled || busy || loading} onBusyChange={onBusyChange} />
       <EventOperatorPanel event={review.event} disabled={disabled || busy || loading} />
       <WorkspaceEventTags key={review.event.event_id} event={review.event.event_id}/>
+      <EventRentalPanel key={"rental-" + review.event.event_id} event={review.event.event_id}/>
       <details className="event-history"><summary>How event states work</summary><p className="event-panel-note">Logo and cover artwork are optional. Scheduling locks details and artwork. Before the start time, return to draft to edit them. An administrator starts the event manually during its scheduled hours. Begin recovery after the event ends; close after the final claiming date; archive after closing. Cancellation ends staff access and is final in this release.</p></details>
       {review.actions.length === 0 && review.lifecycle_available && <p className="event-panel-note">No state change is available now. Check the schedule and readiness, then refresh.</p>}
       {['scheduled', 'active', 'recovery'].includes(review.event.status) && <p className="event-panel-note">Assigned staff can sign in and open <code>/event-desk</code>. Their access ends at their assignment expiry or the final claiming date, whichever comes first.</p>}

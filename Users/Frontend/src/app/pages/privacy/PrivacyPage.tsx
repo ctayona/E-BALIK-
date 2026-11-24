@@ -14,13 +14,15 @@ const SECTIONS: Array<{ icon: React.ReactNode; title: string; body: React.ReactN
         <li><strong>Your reports and claims:</strong> descriptions, photos and where and when something was lost or found, so the Lost and Found Office can match items with their owners.</li>
         <li><strong>Proof of identity:</strong> a school or government ID you upload to verify your account or to support a claim. Only administrators can open it.</li>
         <li><strong>Smart Tags:</strong> the item name and photo you register, and only the contact details you choose to show a finder.</li>
+        <li><strong>Smart Tag visits, when enabled:</strong> tag code, server timestamp and a private receipt reference for recovery and misuse review. A page open is not proof of a physical scan. The visit log does not store the scanner's name, IP address or device fingerprint. Ordinary hosting/security logs are separate.</li>
+        <li><strong>Optional visit location:</strong> GPS is never requested automatically. You can separately opt in to share a device point, selected campus area or drop-off with authorized administrators, the current tag owner, or both. Declining does not restrict basic recovery information. Location is not attached to public posts or copied into scan emails.</li>
       </ul>
     ),
   },
   {
     icon: <FileLock2 size={20} aria-hidden="true" />,
     title: "Who can see it",
-    body: <p>Other users never see your email, campus ID or documents. Auction pages show bidders only as an anonymous alias. Administrators and the release-desk guard see what they need to do their work, and what they do is recorded in an activity log.</p>,
+    body: <p>Public report listings omit reporter email, campus ID and identity documents. Smart Tag contact details appear only when the owner chooses to show them. Visit locations require separate recipient consent; guards cannot open the private scan activity log. New campus reports and content edits require administrator publication approval when review is activated; custody and claim decisions remain separate. Auction pages show bidders only as an anonymous alias. Authorized staff see what they need to do their work, and administrative actions are logged.</p>,
   },
   {
     icon: <Clock3 size={20} aria-hidden="true" />,
@@ -31,6 +33,8 @@ const SECTIONS: Array<{ icon: React.ReactNode; title: string; body: React.ReactN
         <li>When an administrator deletes an account, report or claim, it also waits in the recycle bin for 30 days before it is gone for good.</li>
         <li>An approved claim that is not collected closes automatically after <strong>14 days</strong>.</li>
         <li>The record of the report or claim itself is kept so the office can show what happened. Verification codes are short-lived and are cleared regularly.</li>
+        <li><strong>Optional scan locations:</strong> inaccessible after 7 days, withdrawal, resolution or a linked verified return. Scheduled cleanup removes expired location fields. Basic visit records expire after 30 days and are excluded from application backup/restore. Aggregate visit counts and last-visit time remain with the tag.</li>
+        <li>You can remove a shared visit location using its receipt while the scan page is open, even if sharing timed out. For later withdrawal or access/deletion requests, send your visit reference to the support address below. Information already seen by a recipient cannot be recalled.</li>
       </ul>
     ),
   },

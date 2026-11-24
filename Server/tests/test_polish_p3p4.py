@@ -248,8 +248,10 @@ class ArchiveRuleTests(unittest.TestCase):
             archive.set_archived(MemClient(store), kind, reference, ADMIN_ID, False)
             self.assertIsNone(row['archived_at'], reference)
 
-    def test_live_work_can_never_be_archived(self):
-        for kind, reference in (('lost', 'MP2'), ('found', 'FP2'), ('claim', 'c3'), ('claim', 'c4')):
+    def test_reports_can_be_archived_while_claim_work_remains_active(self):
+        for kind, reference in (('lost', 'MP2'), ('found', 'FP2')):
+            self.assertTrue(self.run_it(kind, reference)[1]['archived'])
+        for kind, reference in (('claim', 'c3'), ('claim', 'c4')):
             with self.assertRaises(archive.ArchiveError) as caught:
                 self.run_it(kind, reference)
             self.assertEqual((caught.exception.status, caught.exception.code), (409, 'not_finished'), reference)
@@ -341,7 +343,7 @@ class ArchiveRouteTests(unittest.TestCase):
             self.assertEqual(self.post(level, {'kind': 'lost', 'reference': 'MP1'})[0].status_code, 403, level)
 
     def test_errors_are_plain(self):
-        self.assertEqual(self.post('admin', {'kind': 'lost', 'reference': 'MP2'})[0].get_json()['code'], 'not_finished')
+        self.assertEqual(self.post('admin', {'kind': 'lost', 'reference': 'MP2'})[0].status_code, 200)
         self.assertEqual(self.post('admin', {'kind': 'banana', 'reference': 'x'})[0].status_code, 400)
         self.assertEqual(self.post('admin', {'kind': 'claim', 'reference': 'missing'})[0].status_code, 404)
 

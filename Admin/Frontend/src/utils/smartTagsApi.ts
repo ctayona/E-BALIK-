@@ -48,6 +48,7 @@ export interface AdminSmartTag {
 export interface SmartTagStats { total: number; blank: number; claimed: number; lost: number; expired: number; pending: number; disabled: number }
 export interface TagTypeOption { value: TagType; label: string; enabled: boolean }
 export interface TagBatch {
+  archived_count?: number;
   batch_id: string | null;
   label: string;
   tag_type: TagType;

@@ -1,11 +1,8 @@
-"""Archive: tidy away finished records without deleting them.
+"""Admin archive views preserve record status, photos, relationships and custody.
 
-Archiving hides a finished lost report, found report, claim or auction from the admin's working lists (it moves to the page's Archived
-tab) and keeps every row, file and link. It is not the Recycle bin: nothing is removed, and restoring it from the Archived tab is one click.
-Only finished records can be archived, so live work (an open report, an item in custody, a pending claim, a running auction) can never be
-hidden by mistake. People's own pages are not affected: a completed report stays in the owner's Completed tab.
-
-Migration 20261016 adds `archived_at` / `archived_by` to the four tables. Before it runs every call answers 503 `setup_required`.
+Reports can be archived during custody. Claims and auctions retain their completion
+rules. Account and tag archival requires deactivation. Administrative deletion
+requires prior archival and uses the existing recovery and authorization commands.
 """
 import logging
 from datetime import datetime, timezone
@@ -22,6 +19,8 @@ KINDS: Dict[str, Dict[str, Any]] = {
     'lost': {'table': 'missing_items', 'key': 'mpost_id', 'finished': COMPLETED_MISSING, 'label': 'lost report'},
     'found': {'table': 'found_items', 'key': 'fpost_id', 'finished': COMPLETED_FOUND, 'label': 'found report'},
     'claim': {'table': 'claims', 'key': 'claim_id', 'finished': CLAIM_FINISHED, 'label': 'claim'},
+    'user': {'table': 'user_profiles', 'key': 'account_id', 'label': 'account'},
+    'tag': {'table': 'smart_tags', 'key': 'tag_id', 'label': 'Smart Tag'},
 }
 SETUP_MESSAGE = 'Archiving needs the latest database update. Run Server/manual_migrations/20261016_archive_and_bid_steps.sql in Supabase, then try again.'
 
@@ -43,7 +42,12 @@ def _missing_column(error: Exception) -> bool:
 def archived_keys(client, table: str, key: str) -> set:
     """Identifiers of the archived rows of a table. Empty (nothing is archived) before the migration."""
     try:
-        rows = client.table(table).select(f'{key},archived_at').not_.is_('archived_at', 'null').limit(5000).execute().data or []
+        rows = []
+        for offset in range(0, 5000, 1000):
+            page = client.table(table).select(f'{key},archived_at').not_.is_('archived_at', 'null').order(key).range(offset, offset + 999).execute().data or []
+            rows.extend(page)
+            if len(page) < 1000:
+                break
     except Exception as error:
         if not _missing_column(error):
             logger.warning('Archived list for %s unavailable: %s', table, error)
@@ -66,9 +70,12 @@ def set_archived(client, kind: str, reference: str, admin_id: str, archived: boo
     if not reference:
         raise ArchiveError('Choose the record to archive.', 400, 'missing_reference')
     try:
-        rows = client.table(spec['table']).select(f"{spec['key']},status,archived_at").eq(spec['key'], reference).limit(1).execute().data or []
+        fields = 'is_active,suspended_until' if kind == 'user' else 'status,is_disabled' if kind == 'tag' else 'status'
+        rows = client.table(spec['table']).select(f"{spec['key']},{fields},archived_at").eq(spec['key'], reference).limit(1).execute().data or []
     except Exception as error:
         if _missing_column(error):
+            if kind in ('user', 'tag'):
+                raise ArchiveError('Run 20261124c_admin_archive_first.sql to enable account and tag archives.', 503, 'setup_required') from None
             raise ArchiveError(SETUP_MESSAGE, 503, 'setup_required')
         if 'invalid input syntax' in str(error):   # a claim id that is not a UUID
             raise ArchiveError(f"That {spec['label']} was not found.", 404, 'not_found')
@@ -79,7 +86,13 @@ def set_archived(client, kind: str, reference: str, admin_id: str, archived: boo
     if archived:
         if row.get('archived_at'):
             raise ArchiveError(f"This {spec['label']} is already archived.", 409, 'already_archived')
-        if str(row.get('status') or '').strip().lower() not in spec['finished']:
+        if kind == 'user' and row.get('is_active') is not False:
+            raise ArchiveError('Deactivate the account before archiving it.', 409)
+        if kind == 'user' and row.get('suspended_until'):
+            raise ArchiveError('Use an indefinite suspension before archiving an account.', 409)
+        if kind == 'tag' and row.get('status') != 'blank' and row.get('is_disabled') is not True:
+            raise ArchiveError('Deactivate this registered tag before archiving it.', 409)
+        if kind == 'claim' and str(row.get('status') or '').strip().lower() not in spec['finished']:
             raise ArchiveError(f"Only finished {spec['label']}s can be archived. Complete or close it first.", 409, 'not_finished')
     elif not row.get('archived_at'):
         raise ArchiveError(f"This {spec['label']} is not archived.", 409, 'not_archived')
@@ -91,3 +104,20 @@ def set_archived(client, kind: str, reference: str, admin_id: str, archived: boo
             raise ArchiveError(SETUP_MESSAGE, 503, 'setup_required')
         raise
     return {'kind': kind, 'reference': reference, 'archived': archived}
+
+
+def require_archived(client, kind, reference):
+    """Reject working-list deletion before any recycle-bin/storage mutation."""
+    spec = KINDS.get(kind)
+    if kind == 'auction':
+        spec = {'table': 'auctions', 'key': 'auction_id'}
+    try:
+        rows = client.table(spec['table']).select('archived_at').eq(spec['key'], reference).limit(1).execute().data or []
+    except Exception as error:
+        if _missing_column(error):
+            raise ArchiveError('Apply the archive-first migration before deleting this record.', 503, 'setup_required') from None
+        raise
+    if not rows:
+        raise ArchiveError('Record not found.', 404, 'not_found')
+    if not rows[0].get('archived_at'):
+        raise ArchiveError('Archive this record first. Delete is available from its Archived view.', 409, 'archive_required')

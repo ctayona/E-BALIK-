@@ -14,6 +14,7 @@ interface User {
   mname?: string;
   lname: string;
   campus_id?: string;
+  ebalik_id?: string;
   user_role?: string;
   user_category?: string;
   access_level?: "user" | "guard" | "admin" | "super_admin";
@@ -152,6 +153,7 @@ export function useAuth() {
         mname: response.data.mname || '',
         lname: response.data.lname || '',
         campus_id: response.data.campus_id || '',
+        ebalik_id: response.data.ebalik_id || '',
         user_role: response.data.user_role || 'Others',
         access_level: 'user',
         verification_status: response.data.verification_status || 'pending',
@@ -206,6 +208,7 @@ export function useAuth() {
       mname: response.data?.mname || '',
       lname: response.data?.lname || '',
       campus_id: response.data?.campus_id || '',
+      ebalik_id: response.data?.ebalik_id || '',
       user_role: response.data?.user_role || response.data?.role || 'Others',
       access_level: response.data?.access_level || 'user',
       verification_status: response.data?.verification_status || 'pending',
@@ -275,6 +278,7 @@ export function useAuth() {
       mname: response.data?.mname || '',
       lname: response.data?.lname || '',
       campus_id: response.data?.campus_id || '',
+      ebalik_id: response.data?.ebalik_id || '',
       user_role: response.data?.user_role || response.data?.role || 'Others',
       access_level: response.data?.access_level || 'user',
       verification_status: response.data?.verification_status || 'pending',
@@ -312,6 +316,7 @@ export function useAuth() {
       mname: response.data?.mname || '',
       lname: response.data?.lname || '',
       campus_id: response.data?.campus_id || '',
+      ebalik_id: response.data?.ebalik_id || '',
       user_role: response.data?.user_role || 'Others',
       access_level: response.data?.access_level || 'user',
       verification_status: response.data?.verification_status || 'pending',
@@ -525,6 +530,7 @@ export function useAuth() {
       mname: response.data?.user?.mname || nextUser.mname || '',
       lname: response.data?.user?.lname || nextUser.lname,
       campus_id: response.data?.user?.campus_id || nextUser.campus_id || '',
+      ebalik_id: response.data?.user?.ebalik_id || nextUser.ebalik_id || '',
       user_role: response.data?.user?.user_role || nextUser.user_role || 'Others',
       verification_status: response.data?.user?.verification_status || nextUser.verification_status || 'pending',
     };

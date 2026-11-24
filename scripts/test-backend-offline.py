@@ -17,6 +17,9 @@ if __name__ == '__main__':
     os.environ['SMART_TAG_RECOVERY_ENABLED'] = 'false'
     os.environ['EVENT_SMART_TAGS_ENABLED'] = 'false'
     os.environ['EVENT_SMART_TAGS_RECOVERY_ONLY'] = 'false'
+    os.environ['EVENT_RENTALS_ENABLED'] = 'false'
+    os.environ['SMART_TAG_SCAN_LOGGING_ENABLED'] = 'false'
+    os.environ['REPORT_REVIEW_ENABLED'] = 'false'
     server = Path(__file__).resolve().parents[1] / 'Server'
     os.chdir(server)
     sys.path[:0] = [str(server), str(server.parent)]

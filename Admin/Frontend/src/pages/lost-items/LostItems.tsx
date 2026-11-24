@@ -21,8 +21,6 @@ type PendingAction =
   | { type: "delete"; reference: string }
   | { type: "archive"; reference: string; restore: boolean };
 
-/** A lost report is finished once its item went back to the owner. Only finished reports can be archived. */
-const isFinished = (item: AdminLostItemRow) => ["returned", "resolved", "closed"].includes(String(item.rawStatus ?? "").toLowerCase());
 
 const STATUS_TONE: Record<LostStatus, Tone> = {
   "Searching": "gold",
@@ -272,9 +270,9 @@ export default function LostItems() {
             <RowActions>
               <IconAction label={`${t("common.view")} ${item.id}`} onClick={() => setViewItem(item)} icon={<Eye size={17} aria-hidden="true" />} />
               <IconAction label={`${t("common.edit")} ${item.id}`} tone="gold" onClick={() => setFormItem({ item })} icon={<Pencil size={16} aria-hidden="true" />} />
-              {isFinished(item) && !item.archived && <IconAction label={`${tr("Archive")} ${item.id}`} onClick={() => setPendingAction({ type: "archive", reference: item.id, restore: false })} icon={<Archive size={16} aria-hidden="true" />} />}
+              {!item.archived && <IconAction label={`${tr("Archive")} ${item.id}`} onClick={() => setPendingAction({ type: "archive", reference: item.id, restore: false })} icon={<Archive size={16} aria-hidden="true" />} />}
               {item.archived && <IconAction label={`${tr("Restore from archive")} ${item.id}`} tone="success" onClick={() => setPendingAction({ type: "archive", reference: item.id, restore: true })} icon={<ArchiveRestore size={16} aria-hidden="true" />} />}
-              {isSuperAdmin && <IconAction label={`${t("common.delete")} ${item.id}`} tone="danger" onClick={() => setPendingAction({ type: "delete", reference: item.id })} icon={<Trash2 size={16} aria-hidden="true" />} />}
+              {isSuperAdmin && item.archived && <IconAction label={`${t("common.delete")} ${item.id}`} tone="danger" onClick={() => setPendingAction({ type: "delete", reference: item.id })} icon={<Trash2 size={16} aria-hidden="true" />} />}
             </RowActions>
           </tr>
         ))}
@@ -288,7 +286,7 @@ export default function LostItems() {
           size="lg"
           onClose={() => setViewItem(null)}
           footer={<>
-            {isSuperAdmin && <button type="button" onClick={() => setPendingAction({ type: "delete", reference: viewItem.id })} className={`${BTN.ghost} sm:mr-auto`}><Trash2 size={16} aria-hidden="true" />{t("common.delete")}</button>}
+            {isSuperAdmin && viewItem.archived && <button type="button" onClick={() => setPendingAction({ type: "delete", reference: viewItem.id })} className={`${BTN.ghost} sm:mr-auto`}><Trash2 size={16} aria-hidden="true" />{t("common.delete")}</button>}
             <button type="button" onClick={() => setViewItem(null)} className={BTN.ghost}>{t("common.close")}</button>
             <button type="button" onClick={() => { setFormItem({ item: viewItem }); setViewItem(null); }} className={BTN.primary}><Pencil size={16} aria-hidden="true" />{t("common.edit")}</button>
           </>}

@@ -41,6 +41,7 @@ export async function adminMutationRequest(url: string, options: RequestInit, ti
 }
 
 export interface AdminUser {
+  ebalik_id?: string;
   account_id: string;
   email: string;
   fname: string;
@@ -89,6 +90,7 @@ export interface AdminReportsData {
 }
 
 export interface AdminUserRow {
+  roleId?: string;
   id: string;
   name: string;
   initials: string;
@@ -264,6 +266,7 @@ export async function adminLogin(email: string, password: string): Promise<Admin
     mname: data.mname ? String(data.mname) : "",
     lname: String(data.lname || ""),
     campus_id: data.campus_id ? String(data.campus_id) : "",
+    ebalik_id: data.ebalik_id ? String(data.ebalik_id) : "",
     user_role: String(data.user_role),
     access_level: (accessLevel || "admin") as AdminUser["access_level"],
   };
@@ -357,7 +360,7 @@ export async function updateAdminUserAccessLevel(accountId: string, accessLevel:
   if (!response.ok) {
     throw new Error(typeof payload.error === "string" ? payload.error : "Unable to update user access level");
   }
-  return payload as { user: { account_id: string; email: string; access_level: "user" | "guard" | "admin" } };
+  return payload as { user: { account_id: string; email: string; access_level: "user" | "guard" | "admin" }; profile?: Partial<AdminUserRow> };
 }
 
 export async function deleteAdminUser(accountId: string, authenticatorCode: string) {

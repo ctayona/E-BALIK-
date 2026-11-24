@@ -287,7 +287,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (page: DeskPage
                 <div><dt className="text-[13px] font-medium text-ink-muted">{tr("This month")}</dt><dd className="font-[family-name:var(--font-heading)] text-[24px] font-semibold leading-tight tabular-nums text-ink">{peso(income.this_month)}</dd></div>
                 <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Auction Hall")}</dt><dd className="text-[16px] font-semibold tabular-nums text-ink">{peso(income.by_source.auction)}</dd></div>
                 <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Smart Tags")}</dt><dd className="text-[16px] font-semibold tabular-nums text-ink">{peso(income.by_source.smart_tag)}</dd></div>
-                <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Awaiting confirmation")}</dt><dd className="text-[16px] font-semibold tabular-nums text-gold-800 dark:text-gold-300">{peso(income.pending.auction + income.pending.smart_tag)}</dd></div>
+                <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Event rentals")}</dt><dd className="text-[16px] font-semibold tabular-nums text-ink">{peso(income.by_source.event_rental ?? 0)}</dd></div>
+                <div><dt className="text-[13px] font-medium text-ink-muted">{tr("Awaiting confirmation")}</dt><dd className="text-[16px] font-semibold tabular-nums text-gold-800 dark:text-gold-300">{peso(income.pending.auction + income.pending.smart_tag + (income.pending.event_rental ?? 0))}</dd></div>
               </dl>
               <div className="h-[92px]" role="img" aria-label={tr("Income for the last six months")}>
                 <ResponsiveContainer width="100%" height="100%">

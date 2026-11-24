@@ -185,7 +185,7 @@ def make_backup(env: Dict[str, str], out_dir: Path, exclude: set, with_files: bo
     out_dir.mkdir(parents=True, exist_ok=True)
     zip_path = out_dir / f'ebalik-backup-{stamp}.zip'
     # Precise locations expire independently of archive retention, even with --include-all.
-    exclude = exclude | {'tag_recovery_points'}
+    exclude = exclude | {'tag_recovery_points','smart_tag_scans'}
     manifest: Dict[str, Any] = {'format': 1, 'app': 'E-Balik', 'created_at': datetime.now(timezone.utc).isoformat(), 'project': urllib.parse.urlparse(url).hostname.split('.')[0],
                                 'tables': {}, 'files': {}, 'excluded': sorted(exclude)}
     tables = list_tables(url, key)

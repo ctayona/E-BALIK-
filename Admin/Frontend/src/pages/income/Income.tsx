@@ -26,10 +26,10 @@ type SourceFilter = "" | IncomeSource;
 
 const PAGE = 25;
 // Gold for the Auction Hall, mint for Smart Tags, copper for seller commissions, periwinkle for anything else: the same everywhere on this page.
-const COLOR: Record<IncomeSource, string> = { auction: "#d1a153", smart_tag: "#2fae8e", commission: "#c9784a", other: "#6e8ef0" };
-const SOURCE_TONE: Record<IncomeSource, Tone> = { auction: "gold", smart_tag: "mint", commission: "slate", other: "iris" };
-const SOURCE_LABEL: Record<IncomeSource, string> = { auction: "Auction Hall", smart_tag: "Smart Tags", commission: "Seller commissions", other: "Other" };
-const SOURCES: IncomeSource[] = ["auction", "smart_tag", "commission", "other"];
+const COLOR: Record<IncomeSource, string> = { auction: "#d1a153", smart_tag: "#2fae8e", commission: "#c9784a", event_rental: "#8b5cf6", other: "#6e8ef0" };
+const SOURCE_TONE: Record<IncomeSource, Tone> = { auction: "gold", smart_tag: "mint", commission: "slate", event_rental: "iris", other: "iris" };
+const SOURCE_LABEL: Record<IncomeSource, string> = { auction: "Auction Hall", smart_tag: "Smart Tags", commission: "Seller commissions", event_rental: "Event rentals", other: "Other" };
+const SOURCES: IncomeSource[] = ["auction", "smart_tag", "commission", "event_rental", "other"];
 const KIND_LABEL: Record<IncomeKind, string> = { sale: "Sale", refund: "Refund", adjustment: "Adjustment", payout: "Seller's share" };
 const METHOD_LABEL: Record<IncomeMethod, string> = { cash: "Cash", gcash: "GCash", maya: "Maya", bank: "Bank transfer", other: "Other" };
 
@@ -101,7 +101,7 @@ function EntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
   const amountOk = /^\d{1,7}(\.\d{1,2})?$/.test(amountText) && Number(amountText) > 0 && Number(amountText) <= 1_000_000;
   const needsReason = form.kind !== "sale";
   const valid = amountOk && /^[0-9]{6}$/.test(code) && form.description.trim().length >= 4 && (!needsReason || form.notes.trim().length >= 8) && Boolean(form.received_on) && form.received_on <= campusToday();
-  const sourceOptions: IncomeSource[] = form.kind === "sale" ? ["other"] : ["auction", "smart_tag", "other"];
+  const sourceOptions: IncomeSource[] = form.kind === "sale" ? ["other"] : form.kind === "refund" ? ["auction", "smart_tag", "other"] : ["auction", "smart_tag", "event_rental", "other"];
 
   const save = async () => {
     if (!valid || busy) return;
@@ -139,7 +139,7 @@ function EntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => 
         <SegmentedFilter
           label="Entry type"
           value={form.kind}
-          onChange={(kind) => setForm((current) => ({ ...current, kind, source: kind === "sale" ? "other" : current.source }))}
+          onChange={(kind) => setForm((current) => ({ ...current, kind, source: kind === "sale" || (kind === "refund" && current.source === "event_rental") ? "other" : current.source }))}
           options={[{ value: "adjustment", label: "Adjustment" }, { value: "refund", label: "Refund" }, { value: "sale", label: "Other income" }]}
         />
         {form.kind === "adjustment" && <SegmentedFilter label="Adjustment direction" value={direction} onChange={setDirection}
@@ -271,7 +271,7 @@ export default function Income({ onNavigate }: { onNavigate?: (page: "auctions" 
   const split = summary ? SOURCES.filter((key) => key !== "commission" || (summary.by_source.commission ?? 0) !== 0).map((key) => ({ key, value: Math.max(0, summary.by_source[key] ?? 0) })) : [];
   const splitTotal = split.reduce((sum, part) => sum + part.value, 0);
   const chart = (summary?.by_month ?? []).map((row) => ({ ...row, label: monthLabel(row.month) }));
-  const owed = summary ? summary.pending.auction + summary.pending.smart_tag : 0;
+  const owed = summary ? summary.pending.auction + summary.pending.smart_tag + (summary.pending.event_rental ?? 0) : 0;
   const waitingCount = awaiting?.totals.count ?? 0;
   const refreshAll = () => { setLogKey((key) => key + 1); void load(); };
 

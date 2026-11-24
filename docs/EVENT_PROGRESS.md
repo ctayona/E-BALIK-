@@ -1,6 +1,6 @@
 # Event Rentals — Current Roadmap Status
 
-Updated November 24, 2026 (Asia/Singapore). The reusable university Event Smart Tag pilot is implemented locally. Its additive migration, operator activation and real-device acceptance are pending. [Rollout and acceptance](EVENT_SMART_TAG_PLAN.md#11-operator-handoff)
+Updated November 24, 2026 (Asia/Singapore). The reusable university Event Smart Tag pilot was released with its migration verified applied. Physical operator acceptance remains pending. Paid-rental billing is now implemented locally behind a default-off flag, with its separate migration pending user execution. [Billing rollout](EVENT_RENTAL_BILLING.md)
 
 ## Implemented university-pilot software
 
@@ -17,8 +17,8 @@ The user selected completion of the university pilot before visitors, event tags
 | 4 — Setup/branding/preview | Saved branding, explicit portal open/pause, canonical event URL, QR/poster sharing and staff desk implemented locally | Manual/hosted/real-phone acceptance and wider accessibility |
 | 5 — Lost-and-found operations | Pilot code complete locally, including explicit hub publication, unresolved register, closing export and acknowledged custody handovers | Full real-account acceptance run |
 | 6 — Internal pilot | In-app admin/staff guide, printable desk/fallback pack, snapshot-based next actions and complete acceptance run prepared; actual pilot not started | Selected event/operator, staff briefing, monitored pilot and completed recovery/closure |
-| 7 — Tags/external participation | University QR pilot implemented locally | Manual SQL and physical pilot pending. External visitor onboarding remains future work. |
-| 8 — Paid rentals | Not started | Packages, booking, event payment/receipt/reversal source and reconciled revenue |
+| 7 — Tags/external participation | University QR pilot released and migration verified applied | Physical pilot acceptance pending. External visitor onboarding remains future work. |
+| 8 — Paid rentals | Implemented locally behind migration and default-off flag | Manual migration, agreed package prices/terms and real-account acceptance. See EVENT_RENTAL_BILLING.md |
 | 9 — Commercial release | Not started | Acceptance evidence, operational ownership, supported rollout and maintenance |
 
 The report slice deliberately uses separate event tables. Reports/claims/alerts remain event-only even when a safe publication is selected for the hub. Campus Browse APIs and IDs remain unchanged; its event tab reads a separate safe feed and opens the original event flow. Event handovers do not create campus inventory or auction eligibility. See the pilot handoff and earlier reporting inventory for boundaries; external tags, visitors, email and payments remain later gates.
@@ -60,3 +60,9 @@ All work remains on feature/event-foundation, local and uncommitted. No commit/p
 Restart the local backend to load the persistent event-module flag, refresh the admin app, then use EVENT_PILOT_COMPLETION.md for one complete real-account acceptance run. All seven event migrations are already applied; no SQL rerun is needed. Record results before operating a real university pilot. This November 20 checkpoint preceded the reusable university tag implementation. Visitor access and paid bookings remain future work.
 
 The operator tools and draft-access fix add no migration. Use Review → Open operator guide and Event desk → Staff guide to brief the team and download the printable desk pack. Nov 19 read-only verification confirms saved workspaces still exist, including a non-deleted draft; the missing local event-module flag caused the unavailable screen.
+
+## November 25 release checkpoint
+
+The active release branch is main. Reusable university event tags and staff-confirmed rental billing are implemented; visitor self-service and payment-gateway settlement remain outside this pilot. Read-only Supabase verification now finds the rental B and archive-first C migration receipts, rental booking table and archive guard/deletion functions. Those migrations no longer need application solely for this release. Use EVENT_RENTAL_BILLING.md and ADMIN_ARCHIVE_FIRST.md for their acceptance checks.
+
+The release also includes role-specific E-Balik IDs that preserve official campus IDs, private personal-tag scan/location logs and campus report publication approval. The new campus review migration is pending user execution; event-only report moderation and explicit event hub publication remain separate. See SCAN_PRIVACY_REPORT_REVIEW.md for activation, retention, verification and rollback. Real-account/physical pilot acceptance is still operator-run; Codex has made no live data/storage/email changes.

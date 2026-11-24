@@ -35,6 +35,7 @@ export default function PaymentsQueue({ data, loading, error, onConfirm }: { dat
         <span className="inline-flex items-center gap-1.5 font-semibold text-ink"><Hourglass size={15} aria-hidden="true" />{tr("{0} waiting, {1} in total", { "0": totals.count, "1": peso(totals.amount) })}</span>
         <span>{tr("Auctions {0} ({1})", { "0": peso(totals.auction), "1": totals.auction_count })}</span>
         <span>{tr("Smart Tags {0} ({1})", { "0": peso(totals.smart_tag), "1": totals.smart_tag_count })}</span>
+        {!!totals.event_rental_count && <span>Event rentals {peso(totals.event_rental ?? 0)} ({totals.event_rental_count})</span>}
         {totals.proofs_waiting > 0 && <span className="font-semibold text-gold-800 dark:text-gold-300">{tr("{0} payment receipt(s) sent by payers", { "0": totals.proofs_waiting })}</span>}
       </p>
       <DataTable
@@ -48,7 +49,7 @@ export default function PaymentsQueue({ data, loading, error, onConfirm }: { dat
           <tr key={`${item.source}-${item.source_ref}`}>
             <td>
               <span className="block font-semibold text-ink">{item.title}</span>
-              <span className="block text-[12.5px] text-ink-muted">{item.source === "auction" ? (item.seller_listing ? tr("Seller's item") : tr("Auction Hall")) : tr("Smart Tag")}{item.reference ? ` · ${item.reference}` : ""}</span>
+              <span className="block text-[12.5px] text-ink-muted">{item.source === "auction" ? (item.seller_listing ? tr("Seller's item") : tr("Auction Hall")) : item.source === "event_rental" ? tr("Event rental") : tr("Smart Tag")}{item.reference ? ` · ${item.reference}` : ""}</span>
             </td>
             <td className="text-[13.5px]">{item.payer_name || "—"}</td>
             <td><StatusPill tone={STATE[item.state].tone}>{tr(STATE[item.state].label)}</StatusPill>{item.proof && <span className="mt-1 flex"><StatusPill tone="gold">{tr("Receipt sent: check it")}</StatusPill></span>}</td>

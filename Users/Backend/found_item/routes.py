@@ -1,3 +1,4 @@
+from app.utils.report_publication import submission,is_published
 """Found Item page: create found reports, list own reports, match summaries."""
 import uuid
 from datetime import datetime
@@ -156,6 +157,7 @@ def create_found_item():
             'handover_guard_id': str(guard['account_id']) if guard else None,
             'custody_status': 'turned_over',
             'status': 'unclaimed',
+            **submission(db.client),
         })
         user_full_name = f"{reporter.get('fname', '')} {reporter.get('lname', '')}".strip()
         custody_log.record(db.client, item.get('item_id'), 'turned_over', account_id, user_full_name,
@@ -229,7 +231,7 @@ def summarize_found_item_matches():
     try:
         account_id = _authenticated_account_id()
         db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
-        found_items = db.get_found_items_by_account(account_id)
+        found_items = [row for row in db.get_found_items_by_account(account_id) if is_published(db.client,row)]
         missing_items = db.get_missing_items_for_matching()
         return jsonify({'summaries': build_found_match_summaries(found_items, missing_items)}), 200
     except ValueError as error:

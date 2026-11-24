@@ -7,6 +7,7 @@ Two triggers (both best effort, never raise, never block the report that caused 
 A pair is alerted once (the notice itself is the memory: same person, same found item, same lost report).
 Scores come from `matching.match_percentage`. A notice never names the other person: only the item, where it was found and the score.
 """
+from .report_publication import public_table, is_published
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -81,9 +82,9 @@ def _email(db, owner_id: str, found: Dict[str, Any], missing: Dict[str, Any], sc
 def alert_for_new_found_item(db, found: Dict[str, Any]) -> int:
     """A found item was registered: alert the owners of open lost reports that match it. Returns how many were alerted."""
     try:
-        if not found or not found.get('item_id'):
+        if not found or not found.get('item_id') or not is_published(db.client, found):
             return 0
-        rows = db.client.table('missing_items').select(_MISSING_COLUMNS).eq('status', 'missing').order('created_at', desc=True).limit(1000).execute().data or []
+        rows = public_table(db.client, 'missing_items').select(_MISSING_COLUMNS).eq('status', 'missing').order('created_at', desc=True).limit(1000).execute().data or []
         scored = sorted(
             ((match_percentage(missing, found), missing) for missing in rows if str(missing.get('account_id')) != str(found.get('account_id'))),
             key=lambda pair: pair[0], reverse=True,
@@ -108,9 +109,9 @@ def alert_for_new_found_item(db, found: Dict[str, Any]) -> int:
 def alert_for_new_missing_report(db, missing: Dict[str, Any]) -> int:
     """A lost report was filed: if items at the office already look like it, tell the owner once. Returns 1 when alerted, else 0."""
     try:
-        if not missing or not missing.get('item_id') or not missing.get('account_id'):
+        if not missing or not missing.get('item_id') or not missing.get('account_id') or not is_published(db.client, missing):
             return 0
-        rows = db.client.table('found_items').select(_FOUND_COLUMNS).eq('status', 'unclaimed').order('created_at', desc=True).limit(1000).execute().data or []
+        rows = public_table(db.client, 'found_items').select(_FOUND_COLUMNS).eq('status', 'unclaimed').order('created_at', desc=True).limit(1000).execute().data or []
         scored = sorted(
             ((match_percentage(missing, found), found) for found in rows if str(found.get('account_id')) != str(missing.get('account_id'))),
             key=lambda pair: pair[0], reverse=True,

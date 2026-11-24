@@ -3,6 +3,7 @@ import { Eye, Pencil, Trash2, UserCheck, UserCog, UserPlus, UserRound, UserX } f
 import type { User } from "../../data/types";
 import { deleteAdminUser, fetchAdminAccountVerifications, fetchAdminUsers, getStoredAdmin, updateAdminUserAccessLevel, updateAdminUserStatus, type AdminAccountVerificationRequest } from "../../utils/api";
 import { canDelete } from "../../utils/permissions";
+import ArchiveRecord, { useArchiveStatus } from "../../components/ArchiveRecord";
 import { useT } from "../../utils/preferences";
 import { downloadCsv } from "../../utils/csv";
 import UserFormModal from "./UserFormModal";
@@ -66,6 +67,8 @@ export default function Users() {
   const [verificationError, setVerificationError] = useState("");
   const currentAdminId = getStoredAdmin()?.account_id;
   const isSuperAdmin = canDelete();
+  const archives = useArchiveStatus("user", true);
+  const [archiveView, setArchiveView] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -121,11 +124,12 @@ export default function Users() {
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return users.filter((user) => {
+      if (archives.has(user.id) !== archiveView) return false;
       if (statusFilter !== ALL && user.status !== statusFilter) return false;
       if (accessFilter !== ALL && user.accessLevel !== accessFilter) return false;
-      return !query || user.name.toLowerCase().includes(query) || user.studentId.toLowerCase().includes(query) || user.email.toLowerCase().includes(query);
+      return !query || user.name.toLowerCase().includes(query) || user.studentId.toLowerCase().includes(query) || user.email.toLowerCase().includes(query) || user.roleId?.toLowerCase().includes(query);
     });
-  }, [users, search, statusFilter, accessFilter]);
+  }, [users, search, statusFilter, accessFilter, archives, archiveView]);
   const paging = usePagination(filtered, 12, `${search}|${statusFilter}|${accessFilter}`);
   const hasFilters = Boolean(search) || statusFilter !== ALL || accessFilter !== ALL;
 
@@ -143,7 +147,7 @@ export default function Users() {
     setAccessBusy(user.id);
     try {
       const response = await updateAdminUserAccessLevel(user.id, nextLevel);
-      setUsers((current) => current.map((row) => row.id === user.id ? { ...row, accessLevel: response.user.access_level } : row));
+      setUsers((current) => current.map((row) => row.id === user.id ? { ...row, ...response.profile, accessLevel: response.user.access_level } : row));
       setRoleTarget(null);
       showInfoModal({
         variant: "success",
@@ -160,7 +164,7 @@ export default function Users() {
   };
 
   // Administrators may make someone a guard; only super admins may make or change an admin, and nobody changes a super admin or themselves.
-  const canChangeRole = (user: User) => user.accessLevel !== "super_admin" && user.id !== currentAdminId && (isSuperAdmin || user.accessLevel !== "admin");
+  const canChangeRole = (user: User) => !archives.has(user.id) && user.accessLevel !== "super_admin" && user.id !== currentAdminId && (isSuperAdmin || user.accessLevel !== "admin");
 
   const askStatus = (user: User) => user.status === "Active" ? setSuspendTarget(user) : setConfirmAction(
     { type: "activate", userId: user.id, title: tr("reactivate {0}?", { "0": user.name }), description: tr("{0} can sign in and use E-Balik again.", { "0": user.name }), confirmText: "Reactivate account" });
@@ -173,8 +177,8 @@ export default function Users() {
     confirmText: "Delete account",
   });
 
-  const exportCsv = () => downloadCsv("users", ["Name", "Campus ID", "Email", "Role", "Access", "Reports", "Claims", "Status", "Last activity"],
-    filtered.map((user) => [user.name, user.studentId, user.email, user.program, ACCESS_LABEL[user.accessLevel], user.reports, user.claims, user.status, user.lastActivity]));
+  const exportCsv = () => downloadCsv("users", ["Name", "Campus ID", "E-Balik ID", "Email", "Role", "Access", "Reports", "Claims", "Status", "Last activity"],
+    filtered.map((user) => [user.name, user.studentId, user.roleId || "", user.email, user.program, ACCESS_LABEL[user.accessLevel], user.reports, user.claims, user.status, user.lastActivity]));
 
   if (loading) {
     return (
@@ -195,6 +199,7 @@ export default function Users() {
         description={t("users.description", { count: users.length })}
         meta={<RolePill superAdmin={isSuperAdmin} />}
         actions={activeTab === "users" ? <>
+          {isSuperAdmin && <button type="button" className={BTN.ghost} onClick={() => { setArchiveView(!archiveView); setStatusFilter(ALL); }}>{archiveView ? "Working accounts" : "Archived accounts"}</button>}
           <ExportButton onClick={exportCsv} disabled={!filtered.length} />
           <button type="button" onClick={() => setUserForm({})} className={BTN.primary}><UserPlus size={17} aria-hidden="true" />{t("users.add")}</button>
         </> : undefined}
@@ -252,7 +257,9 @@ export default function Users() {
                 <div>{user.program}</div>
                 {user.accessLevel === "user" && <div className="mt-0.5"><VerificationPill status={user.verification} /></div>}
               </td>
-              <td><StatusPill tone={ACCESS_TONE[user.accessLevel]}>{ACCESS_LABEL[user.accessLevel]}</StatusPill></td>
+              <td><StatusPill tone={ACCESS_TONE[user.accessLevel]}>{ACCESS_LABEL[user.accessLevel]}</StatusPill>
+                {user.roleId && <p className="mt-1 max-w-[210px] break-all font-mono text-xs text-ink-muted" title="E-Balik ID">{user.roleId}</p>}
+              </td>
               <td className="text-right font-semibold text-ink">{user.reports}</td>
               <td className="text-right font-semibold text-ink">{user.claims}</td>
               <td>
@@ -265,13 +272,13 @@ export default function Users() {
                 {canEdit(user) && <IconAction label={`${t("common.edit")} ${user.name}`} tone="gold" onClick={() => setUserForm({ user })} icon={<Pencil size={16} aria-hidden="true" />} />}
                 {canChangeRole(user) && (
                   <IconAction
-                    label={tr("Change role for {0}", { "0": user.name })}
+                    label={tr("Change access role for {0}", { "0": user.name })}
                     disabled={accessBusy === user.id}
                     onClick={() => setRoleTarget(user)}
                     icon={<UserCog size={17} aria-hidden="true" />}
                   />
                 )}
-                {canEdit(user) && user.id !== currentAdminId && (
+                {canEdit(user) && !archives.has(user.id) && user.id !== currentAdminId && (
                   <IconAction
                     label={user.status === "Active" ? tr("Suspend {0}", { "0": user.name }) : tr("Reactivate {0}", { "0": user.name })}
                     tone={user.status === "Active" ? "danger" : "success"}
@@ -279,7 +286,8 @@ export default function Users() {
                     icon={user.status === "Active" ? <UserX size={17} aria-hidden="true" /> : <UserCheck size={17} aria-hidden="true" />}
                   />
                 )}
-                {isSuperAdmin && user.id !== currentAdminId && <IconAction label={`${t("common.delete")} ${user.name}`} tone="danger" onClick={() => askDelete(user)} icon={<Trash2 size={16} aria-hidden="true" />} />}
+                {isSuperAdmin && user.id !== currentAdminId && <ArchiveRecord kind="user" reference={user.id} archived={archives.has(user.id)} />}
+                {isSuperAdmin && archives.has(user.id) && user.id !== currentAdminId && <IconAction label={`${t("common.delete")} ${user.name}`} tone="danger" onClick={() => askDelete(user)} icon={<Trash2 size={16} aria-hidden="true" />} />}
               </RowActions>
             </tr>
           ))}
@@ -311,7 +319,7 @@ export default function Users() {
               </button>
             )}
             <button type="button" onClick={() => setViewUser(null)} className={BTN.ghost}>{t("common.close")}</button>
-            {canChangeRole(viewUser) && <button type="button" onClick={() => { setRoleTarget(viewUser); setViewUser(null); }} className={BTN.ghost}><UserCog size={16} aria-hidden="true" />{tr("Change role")}</button>}
+            {canChangeRole(viewUser) && <button type="button" onClick={() => { setRoleTarget(viewUser); setViewUser(null); }} className={BTN.ghost}><UserCog size={16} aria-hidden="true" />{tr("Change access role")}</button>}
             {canEdit(viewUser) && <button type="button" onClick={() => { setUserForm({ user: viewUser }); setViewUser(null); }} className={BTN.primary}><Pencil size={16} aria-hidden="true" />{t("common.edit")}</button>}
           </>}
         >
@@ -331,6 +339,7 @@ export default function Users() {
             ["Claims filed", String(viewUser.claims)],
             ["Last activity", viewUser.lastActivity],
             ["Campus ID", viewUser.studentId],
+            ["E-Balik ID", viewUser.roleId || "—"],
           ]} />
         </AdminModal>
       )}
@@ -396,8 +405,12 @@ export default function Users() {
       {userForm && (
         <UserFormModal
           user={userForm.user}
+          onManageAccess={userForm.user && canChangeRole(userForm.user) ? () => { setRoleTarget(userForm.user!); setUserForm(null); } : undefined}
           onClose={() => setUserForm(null)}
-          onSaved={() => { void fetchAdminUsers().then(setUsers).catch(() => undefined); }}
+          onSaved={(updated) => {
+            setUsers(current => current.map(row => row.id === updated.id ? { ...row, ...updated } : row));
+            void fetchAdminUsers().then(setUsers).catch(() => undefined);
+          }}
         />
       )}
     </div>

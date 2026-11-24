@@ -29,6 +29,7 @@ const OTHER_GUARD = "__other__";
 const TURNOVER_LOCATIONS = ["Main Security Office", "Main Building Security Desk", "Student Center Security Desk", "Library Security Desk", "Gym Security Desk", "Other Security Post"];
 
 type Report = {
+  publication_state?:string;
   fpost_id: string;
   item_name: string;
   category: string;
@@ -220,8 +221,8 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
     const created = (result.item || null) as Report | null;
     showInfoModal({
       variant: "success",
-      title: "Found report published",
-      message: "Thank you. The report is recorded and the item is logged as turned over for safekeeping. Owners can now match against it.",
+      title: created?.publication_state==="pending"?"Report awaiting admin review":"Found report published",
+      message: created?.publication_state==="pending"?"Your report and turnover details are saved. An administrator must approve publication before the report appears in public listings or matching.":"Thank you. The report is recorded and the item is logged as turned over for safekeeping. Owners can now match against it.",
       reference: created?.fpost_id,
       details: [`Turned over at ${turnoverLocation}${guardLabel ? ` to ${guardLabel}` : ""}.`],
     });

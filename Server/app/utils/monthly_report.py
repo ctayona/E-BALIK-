@@ -111,7 +111,7 @@ def _figures(db, first: date) -> Dict[str, Any]:
         from app.utils.income import IncomeService
         rows = _rows(db, 'income_ledger', 'source,source_ref,kind,amount', 'received_at', first, nxt)
         refs = IncomeService.seller_refs(rows)
-        total = {'auction': Decimal('0'), 'smart_tag': Decimal('0'), 'commission': Decimal('0'), 'other': Decimal('0')}
+        total = {'auction': Decimal('0'), 'smart_tag': Decimal('0'), 'event_rental': Decimal('0'), 'commission': Decimal('0'), 'other': Decimal('0')}
         sales = {'auction': 0, 'smart_tag': 0, 'commission': 0}
         refunds = Decimal('0')
         for row in rows:
@@ -123,7 +123,7 @@ def _figures(db, first: date) -> Dict[str, Any]:
             if row.get('kind') == 'sale' and bucket in sales:
                 sales[bucket] += 1
         return {'total': float(sum(total.values())), 'auction': float(total['auction']), 'smart_tag': float(total['smart_tag']), 'commission': float(total['commission']),
-                'other': float(total['other']), 'refunds': float(refunds), 'auctions_sold': sales['auction'], 'tags_sold': sales['smart_tag'], 'seller_sales': sales['commission']}
+                'event_rental': float(total['event_rental']), 'other': float(total['other']), 'refunds': float(refunds), 'auctions_sold': sales['auction'], 'tags_sold': sales['smart_tag'], 'seller_sales': sales['commission']}
     figures['income'] = _section('income', income)
     return figures
 
@@ -228,6 +228,7 @@ def to_csv(report: Dict[str, Any]) -> str:
         writer.writerow(['Overview', label, '' if figures.get(key) is None else figures[key]])
     income = figures.get('income')
     if income:
+        writer.writerow(['Income', 'Event rentals (PHP)', f"{income.get('event_rental', 0):.2f}"])
         for label, key in (('Total income (PHP)', 'total'), ('Auction Hall (PHP)', 'auction'), ('Smart Tags (PHP)', 'smart_tag'), ('Seller commissions (PHP)', 'commission'), ('Other (PHP)', 'other'), ('Refunds (PHP)', 'refunds'), ('Auctions sold', 'auctions_sold'), ('Smart Tags sold', 'tags_sold'), ('Seller items sold', 'seller_sales')):
             writer.writerow(['Income', label, f'{income[key]:.2f}' if isinstance(income[key], float) else income[key]])
     claims = report.get('claims')

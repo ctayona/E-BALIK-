@@ -4,6 +4,7 @@ import { downloadActivityLogs, fetchAdminActivityLogs, fetchAdminAdministratorAc
 import { isSuperAdmin as isSuperAdminRole } from "../../utils/permissions";
 import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkeleton";
 import { T } from "../../components/ui/management";
+import TagScanActivity from "./TagScanActivity";
 
 import { tr } from "../../utils/preferences";
 type FilterType = "All Types" | "Lost Item" | "Found Item" | "Claim Actions" | "AI Matching" | "Auctions" | "Smart Tags" | "Payments" | "Admin & Security" | "System";
@@ -56,6 +57,7 @@ function mapActivityLogs(data: UserActivityLog[]): ActivityLog[] {
 }
 
 export default function ActivityLogs() {
+  const [view,setView]=useState("activity");
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterType>("All Types");
@@ -145,6 +147,11 @@ export default function ActivityLogs() {
 
   return (
     <div className="p-6 space-y-5">
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Activity log view">
+        <button type="button" role="tab" aria-selected={view==="activity"} onClick={()=>setView("activity")} className={`rounded-xl border border-line px-4 py-3 font-semibold ${view==="activity"?"bg-navy-700 text-white":"text-ink"}`}>Account activity</button>
+        <button type="button" role="tab" aria-selected={view==="scans"} onClick={()=>setView("scans")} className={`rounded-xl border border-line px-4 py-3 font-semibold ${view==="scans"?"bg-navy-700 text-white":"text-ink"}`}>Smart Tag scans</button>
+      </div>
+      {view==="scans"?<TagScanActivity/>:<>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="font-[family-name:var(--font-heading)] text-[26px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[30px]"><T k="page.activityLogs" /></h1>
@@ -255,6 +262,7 @@ export default function ActivityLogs() {
           Showing {filtered.length} of {logs.length} records
         </div>
       </div>
+      </>}
     </div>
   );
 }

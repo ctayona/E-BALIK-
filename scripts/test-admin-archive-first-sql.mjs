@@ -1,0 +1,52 @@
+// Disposable WASM PostgreSQL only.
+import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
+import {pathToFileURL} from "node:url";
+import {randomUUID as id} from "node:crypto";
+const {PGlite}=await import(pathToFileURL(process.argv[2]).href);
+const db=new PGlite();
+const [admin,user,event,batch,claim]=Array.from({length:5},id);
+try {
+ await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;
+ CREATE TABLE migration_log(name text primary key,note text);
+ CREATE TABLE user_profiles(account_id uuid primary key,is_active boolean,access_level text,suspended_until timestamptz);
+ CREATE TABLE smart_tags(tag_id text primary key,status text,is_disabled boolean,batch_id uuid);
+ CREATE TABLE found_items(fpost_id text primary key,status text,archived_at timestamptz);
+ CREATE TABLE missing_items(mpost_id text primary key,status text,archived_at timestamptz);
+ CREATE TABLE claims(claim_id uuid primary key,status text,archived_at timestamptz);
+ CREATE TABLE auctions(auction_id uuid primary key,archived_at timestamptz);
+ CREATE TABLE event_workspaces(event_id uuid primary key,status text,version int,deleted_at timestamptz,portal_enabled boolean,updated_at timestamptz);
+ CREATE TABLE event_state_history(event_id uuid,actor_id uuid,from_status text,to_status text,note text,created_at timestamptz default now());
+ CREATE FUNCTION admin_delete_found_item(text,uuid) RETURNS jsonb LANGUAGE plpgsql AS $$ BEGIN DELETE FROM found_items WHERE fpost_id=$1; RETURN '{}'::jsonb; END $$;
+ CREATE FUNCTION admin_delete_missing_item(text,uuid) RETURNS jsonb LANGUAGE plpgsql AS $$ BEGIN DELETE FROM missing_items WHERE mpost_id=$1; RETURN '{}'::jsonb; END $$;
+ CREATE FUNCTION admin_delete_claim(uuid,uuid) RETURNS jsonb LANGUAGE plpgsql AS $$ BEGIN DELETE FROM claims WHERE claim_id=$1; RETURN '{}'::jsonb; END $$;
+ CREATE FUNCTION admin_delete_user(uuid,uuid,bigint) RETURNS jsonb LANGUAGE plpgsql AS $$ BEGIN DELETE FROM user_profiles WHERE account_id=$1; RETURN '{}'::jsonb; END $$;`);
+ await db.query("INSERT INTO user_profiles VALUES($1,true,'super_admin',null),($2,false,'user',null)",[admin,user]);
+ await db.query("INSERT INTO smart_tags VALUES('TAG1','active',true,$1)",[batch]);
+ await db.exec("INSERT INTO found_items VALUES('FP1','ready_to_release',null); INSERT INTO missing_items VALUES('MP1','open',null)");
+ await db.query("INSERT INTO event_workspaces VALUES($1,'draft',1,null,false,now())",[event]);
+ const sql=await readFile("Server/manual_migrations/20261124c_admin_archive_first.sql","utf8");
+ await db.exec(sql);await db.exec(sql);
+ await assert.rejects(db.query("SELECT admin_delete_archived_found_item('FP1',$1)",[admin]));
+ await db.exec("UPDATE found_items SET archived_at=now() WHERE fpost_id='FP1'");
+ assert.equal((await db.query("SELECT status FROM found_items")).rows[0].status,"ready_to_release");
+ await db.query("SELECT admin_delete_archived_found_item('FP1',$1)",[admin]);
+ assert.equal((await db.query("SELECT count(*) FROM found_items")).rows[0].count,0);
+ // User-owned report deletion keeps its existing entry point.
+ await db.exec("DELETE FROM missing_items WHERE mpost_id='MP1'");
+ await db.query("UPDATE user_profiles SET archived_at=now() WHERE account_id=$1",[user]);
+ await assert.rejects(db.query("UPDATE user_profiles SET is_active=true WHERE account_id=$1",[user]));
+ await db.query("SELECT admin_archive_tag_batch($1,$2,true)",[batch,admin]);
+ await assert.rejects(db.exec("UPDATE smart_tags SET is_disabled=false WHERE tag_id='TAG1'"));
+ await db.query("SELECT admin_archive_tag_batch($1,$2,false)",[batch,admin]);
+ await db.exec("UPDATE smart_tags SET is_disabled=false WHERE tag_id='TAG1'");
+ await assert.rejects(db.query("UPDATE event_workspaces SET deleted_at=now() WHERE event_id=$1",[event]));
+ await db.query("SELECT admin_archive_draft_event($1,$2,1,'Unused draft')",[event,admin]);
+ await db.query("SELECT admin_restore_archived_event($1,$2,2,'Restore setup')",[event,admin]);
+ assert.equal((await db.query("SELECT status FROM event_workspaces")).rows[0].status,'draft');
+ await db.query("SELECT admin_archive_draft_event($1,$2,3,'Unused draft again')",[event,admin]);
+ await db.query("UPDATE event_workspaces SET deleted_at=now() WHERE event_id=$1",[event]);
+ await db.exec("SET ROLE anon");
+ await assert.rejects(db.query("SELECT admin_archive_tag_batch($1,$2,true)",[batch,admin]));
+ console.log("Archive SQL passed rerun, custody preservation, admin deletion gate, user deletion compatibility, activation guards, batch and draft archive.");
+} finally {await db.close();}

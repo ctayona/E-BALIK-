@@ -3,13 +3,14 @@ import { API_URL, adminMutationRequest, getAuthHeaders } from "./api";
 /** Revenue and payments: the income ledger plus payment confirmation (migrations 20261022 and 20261024). Reads throw `IncomeSetupError` until the ledger exists. */
 
 /** How income is reported. "commission" is what the office kept from items people listed themselves (a seller's auction). */
-export type IncomeSource = "auction" | "smart_tag" | "commission" | "other";
+export type IncomeSource = "auction" | "smart_tag" | "commission" | "event_rental" | "other";
 /** "payout" is a seller's share of a sale: written with the sale so it never counts as the office's income. */
 export type IncomeKind = "sale" | "refund" | "adjustment" | "payout";
 export type IncomeMethod = "cash" | "gcash" | "maya" | "bank" | "other";
 
-export interface IncomeMonth { month: string; auction: number; smart_tag: number; commission?: number; other: number; total: number }
+export interface IncomeMonth { month: string; auction: number; smart_tag: number; commission?: number; event_rental?: number; other: number; total: number }
 export interface IncomePending {
+  event_rental?: number;
   /** Auction wins and registered priced tags whose payment an administrator has not confirmed yet. */
   auction: number; auction_count: number;
   smart_tag: number; smart_tag_count: number;
@@ -126,7 +127,7 @@ export const peso = (value: number) => `${value < 0 ? "−" : ""}₱${Math.abs(v
 
 /** One thing that is owed: an auction win or a registered, priced Smart Tag. */
 export interface AwaitingItem {
-  source: "auction" | "smart_tag"; source_ref: string; title: string; reference: string; payer_account_id: string; payer_name: string; amount: number;
+  source: "auction" | "smart_tag" | "event_rental"; source_ref: string; title: string; reference: string; payer_account_id: string; payer_name: string; amount: number;
   /** The item was already handed over but nobody confirmed the payment. */
   released: boolean; state: "released" | "awaiting_pickup" | "pending_approval" | "registered"; since: string | null;
   /** The receipt image the payer sent (GCash, Maya or bank), waiting for an administrator to check it. */
@@ -138,7 +139,7 @@ export interface AwaitingItem {
 export interface PaymentProof { proof_id: string; method: IncomeMethod; reference: string; note: string; status: "pending" | "accepted" | "rejected" | "replaced"; created_at: string; review_note: string }
 export interface AwaitingData {
   items: AwaitingItem[];
-  totals: { count: number; amount: number; auction: number; auction_count: number; smart_tag: number; smart_tag_count: number; released_unpaid: number; released_unpaid_count: number; proofs_waiting: number };
+  totals: { count: number; amount: number; auction: number; auction_count: number; smart_tag: number; smart_tag_count: number; event_rental?: number; event_rental_count?: number; released_unpaid: number; released_unpaid_count: number; proofs_waiting: number };
 }
 export type PaymentStatus =
   | { state: "confirmed"; receipt_no: string; amount: number; method: IncomeMethod; entry_id: string }

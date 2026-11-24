@@ -5,7 +5,7 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 from app.utils import get_db, rate_limit
 from app.utils.smart_tags import MAX_PHOTO_BYTES, SURRENDER_INSTRUCTIONS, SmartTagService, TagError, TagsUnavailable
 from app.utils.nfc_tags import prepare_nfc
-from app.utils import tag_recovery
+from app.utils import tag_recovery, tag_scans
 from Users.Backend.shared.request_auth import _authenticated_account_id
 
 smart_tags_bp = Blueprint('user_smart_tags', __name__)
@@ -135,9 +135,38 @@ def tag_page(tag_id):
         raise TagError('Too many lookups. Wait a minute and try again.', 429)
     service = _service()
     result = service.public_view(tag_id, _optional_account_id())
+    try:
+        result['scan_logging'] = tag_scans.enabled(service.client)
+    except Exception:
+        # Optional logging must not block the owner's basic recovery information.
+        result['scan_logging'] = False
     if result.get('status') in ('active','lost') and tag_recovery.enabled(service.client):
         result['recovery'] = True
     return _private(result)
+
+
+@smart_tags_bp.post('/<tag_id>/scan')
+@_handled('record this page visit')
+def record_scan(tag_id):
+    if not rate_limit.allow(f'tag-scan:{_client_ip()}',60,60):
+        raise TagError('Too many visits; basic recovery remains available.',429)
+    return _private(tag_scans.command(_service(),tag_id,request.get_json(silent=True),'record'))
+
+
+@smart_tags_bp.post('/<tag_id>/scan/<action>')
+@_handled('update scan location')
+def share_scan(tag_id,action):
+    if action not in ('share','withdraw'):
+        raise TagError('Invalid scan action',404)
+    if not rate_limit.allow(f'tag-scan-share:{_client_ip()}',30,60):
+        raise TagError('Too many requests; try again shortly.',429)
+    return _private(tag_scans.command(_service(),tag_id,request.get_json(silent=True),action))
+
+
+@smart_tags_bp.get('/<tag_id>/scans')
+@_handled('load shared scan locations')
+def owner_scans(tag_id):
+    return _private(tag_scans.list_scans(_service(),tag=tag_id,owner=_authenticated_account_id()))
 
 
 @smart_tags_bp.route('/<tag_id>/found', methods=['POST'])

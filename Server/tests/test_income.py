@@ -183,7 +183,7 @@ class SummaryTests(unittest.TestCase):
         db.client = MemClient(store)         # the payment queue uses neq / not_ filters the small Table above does not have
         result = IncomeService(db).summary()
         self.assertEqual(result['total'], 1450.0)
-        self.assertEqual(result['by_source'], {'auction': 1300.0, 'smart_tag': 150.0, 'commission': 0.0, 'other': 0.0})
+        self.assertEqual(result['by_source'], {'auction': 1300.0, 'smart_tag': 150.0, 'event_rental': 0.0, 'commission': 0.0, 'other': 0.0})
         self.assertEqual(result['refunds'], -200.0)
         self.assertEqual(result['this_month'], 1450.0)
         self.assertEqual(len(result['by_month']), 12)
@@ -351,6 +351,7 @@ class TagRemovalAndRevenueTests(unittest.TestCase):
             SmartTagService(make_db(store)).delete_tag('ABCDEFGHJK23', ADMIN)
         self.assertEqual(caught.exception.status, 409)
         store['smart_tags'][0]['is_disabled'] = True
+        store['smart_tags'][0]['archived_at'] = datetime.now(timezone.utc).isoformat()
         self.assertTrue(SmartTagService(make_db(store)).delete_tag('ABCDEFGHJK23', ADMIN)['deleted'])
 
     def test_a_tag_linked_to_a_found_item_is_kept(self):

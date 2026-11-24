@@ -1,3 +1,4 @@
+from app.utils.report_publication import submission,is_published
 """Missing Item page: create missing reports, list own reports, match summaries."""
 import uuid
 from datetime import datetime
@@ -100,6 +101,7 @@ def create_missing_item():
             'last_seen_date': last_seen_date,
             'image_url': image_url,
             'status': 'missing',
+            **submission(db.client),
         })
         match_alerts.alert_for_new_missing_report(db, item)   # items already at the office that look like this report
         user_full_name = f"{reporter.get('fname', '')} {reporter.get('lname', '')}".strip()
@@ -166,7 +168,7 @@ def summarize_missing_item_matches():
     try:
         account_id = _authenticated_account_id()
         db = get_db(url=current_app.config['SUPABASE_URL'], service_key=current_app.config['SUPABASE_SERVICE_KEY'])
-        missing_items = db.get_missing_items_by_account(account_id)
+        missing_items = [row for row in db.get_missing_items_by_account(account_id) if is_published(db.client,row)]
         found_items = db.get_unclaimed_found_items_for_matching()
         return jsonify({'summaries': build_match_summaries(missing_items, found_items)}), 200
     except ValueError as error:

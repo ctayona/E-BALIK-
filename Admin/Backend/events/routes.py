@@ -10,6 +10,8 @@ from app.utils.event_recovery import EventRecovery
 from app.utils.event_share import EventShare
 from app.utils.event_pilot import EventPilot
 from app.utils.event_tags import EventTags
+from app.utils.event_rentals import EventRentals
+from app.utils.income import IncomeError
 from app.utils import rate_limit
 from Admin.Backend.shared.admin_access import _require_admin, _log_admin_action
 
@@ -44,6 +46,8 @@ def _handled(view):
             return response
         except EventError as error:
             return jsonify(error=str(error), code=error.code, setup_required=error.code == 'setup_required'), error.status
+        except IncomeError as error:
+            return jsonify(error=error.message, code=error.code), error.status
         except ValueError:
             return jsonify(error='Valid authentication required.'), 401
         except PermissionError:
@@ -72,6 +76,47 @@ def event_tag_admin(service,db,actor,section):
         row=tags.detail(actor['account_id'],request.args.get('registration'))
         return jsonify(history=tags.rows(tags.table('_history').select('action,created_at,outcome').eq('registration_id',row['registration_id']).order('created_at',desc=True).range(pilot_offset(),pilot_offset()+23)))
     raise EventError('Unknown event tag section.',404)
+
+
+@events_bp.get('/events/rentals/capability')
+@_handled
+def rental_capability(service, db, actor):
+    return jsonify(enabled=EventRentals(db).enabled())
+
+
+@events_bp.get('/events/<identifier>/rentals')
+@_handled
+def rental_workspace(service, db, actor, identifier):
+    return jsonify(EventRentals(db).workspace(identifier))
+
+
+@events_bp.post('/events/rentals/actions')
+@_handled
+def rental_action(service, db, actor):
+    if not rate_limit.allow(f"event-rentals:{actor['account_id']}", 60, 60):
+        raise IncomeError('Please wait before another rental action.', 429)
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or body.get('action') not in ('package', 'book', 'cancel'):
+        raise IncomeError('Choose a package or booking action.')
+    if not isinstance(body.get('request_id'), str):
+        raise IncomeError('Supply the form request reference.')
+    result = EventRentals(db).command(actor['account_id'], body['action'], body.get('data'), body['request_id'])
+    _log_admin_action(db, actor, 'Event Rental ' + body['action'], 'Income', 'Rental action recorded', result.get('id'))
+    return jsonify(success=True, result=result)
+
+
+@events_bp.get('/events/<identifier>/rentals/receipt')
+@_handled
+def rental_receipt(service, db, actor, identifier):
+    rentals = EventRentals(db)
+    workspace = rentals.workspace(identifier)
+    booking = request.args.get('booking', '')
+    if not any(row['booking_id'] == booking for row in workspace['bookings']):
+        raise IncomeError('Booking not found.', 404)
+    rows = rentals.rows(db.client.table('income_ledger').select('entry_id,amount').eq('source', 'event_rental').eq('source_ref', booking).eq('kind', 'sale').limit(1))
+    if not rows:
+        raise IncomeError('No payment receipt for this booking.', 404)
+    return jsonify(rows[0])
 
 
 @events_bp.post('/events/event-tags/actions')

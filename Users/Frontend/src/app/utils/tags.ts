@@ -23,7 +23,15 @@ export const DEFAULT_TAG_SETTINGS: TagSettings = { name_display: "full", languag
 
 export type PublicTagStatus = "blank" | "pending_verification" | "active" | "lost" | "expired" | "disabled" | "inactive";
 
+export interface SharedScan {
+  scan_id:string; tag_id:string; scanned_at:string; expires_at:string; version:number;
+  admin_consent:boolean; owner_consent:boolean; shared_at?:string; withdrawn_at?:string; resolved_at?:string;
+  venue?:string; drop_off?:string; latitude?:number; longitude?:number; accuracy?:number;
+  captured_at?:string; location_expires_at?:string;
+}
+
 export interface PublicTag {
+  scan_logging?: boolean;
   recovery?: boolean;
   tag_id: string;
   status: PublicTagStatus;
@@ -137,6 +145,9 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
 export const tagsApi = {
   nfc: (id: string, offlineContact = false) => request<NfcPayload>(`/${encodeURIComponent(id)}/nfc`, { method: "POST", body: { offline_contact: offlineContact } }),
   view: (id: string) => request<PublicTag>(`/${encodeURIComponent(id)}`),
+  recordScan: (id: string, body: { scan_id: string; token: string }) => request<{ scan_id: string; scanned_at: string }>(`/${encodeURIComponent(id)}/scan`, {method:"POST",body,auth:false}),
+  shareScan: (id: string, body: Record<string,unknown>, action: "share" | "withdraw" = "share") => request(`/${encodeURIComponent(id)}/scan/${action}`, {method:"POST",body,auth:false}),
+  scanHistory: (id: string) => request<{available:boolean;scans:SharedScan[]}>(`/${encodeURIComponent(id)}/scans`),
   found: (id: string, input: { message: string; contact: string } & Partial<FinderDetails>) => request<FoundResult>(`/${encodeURIComponent(id)}/found`, { method: "POST", body: input, auth: false }),
   history: (id: string, offset = 0) => request<{ reports: RecoveryReport[] }>(`/${encodeURIComponent(id)}/recovery?offset=${offset}`),
   flag: (id: string, report: string) => request(`/${encodeURIComponent(id)}/recovery/${encodeURIComponent(report)}/flag`, {method: "POST"}),

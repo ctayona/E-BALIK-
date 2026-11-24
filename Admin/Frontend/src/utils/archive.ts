@@ -1,13 +1,13 @@
 import { API_URL, adminMutationRequest, getAuthHeaders } from "./api";
 
-export type ArchiveKind = "lost" | "found" | "claim" | "auction";
+export type ArchiveKind = "lost" | "found" | "claim" | "auction" | "user" | "tag" | "tag_batch";
 
 /**
  * Archive a finished record, or bring it back. Archiving hides it from the page's working list (it moves to the Archived tab)
  * and deletes nothing. Only finished records qualify; the server refuses the rest with a plain message.
  */
 export async function setArchived(kind: ArchiveKind, reference: string, archived: boolean): Promise<string> {
-  const labels: Record<ArchiveKind, string> = { lost: "lost report", found: "found report", claim: "claim", auction: "auction" };
+  const labels: Record<ArchiveKind, string> = { lost: "lost report", found: "found report", claim: "claim", auction: "auction", user: "account", tag: "Smart Tag", tag_batch: "tag batch" };
   const response = await adminMutationRequest(`${API_URL}/api/admin/archive`, {
     method: "POST",
     headers: getAuthHeaders(),

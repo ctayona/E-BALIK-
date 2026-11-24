@@ -16,7 +16,7 @@ export const METHOD_LABEL: Record<IncomeMethod, string> = { cash: "Cash", gcash:
 const NEEDS_REFERENCE: IncomeMethod[] = ["gcash", "maya", "bank"];
 
 /** What is being paid for. Amounts here are only shown: the server reads the real amount again and refuses a stale one. */
-export interface PayableItem { source: "auction" | "smart_tag"; source_ref: string; title: string; amount: number; payer_name: string; released?: boolean; proof?: PaymentProof | null;
+export interface PayableItem { source: "auction" | "smart_tag" | "event_rental"; source_ref: string; title: string; amount: number; payer_name: string; released?: boolean; proof?: PaymentProof | null;
   /** A seller's item: only the commission becomes income, the rest is held for the seller. */
   seller_split?: { commission: number; share: number; rate: number } | null }
 
@@ -311,7 +311,7 @@ export function ReceiptModal({ kind, id, onClose, onChanged }: { kind: "payment"
 }
 
 /** For the Auctions and Smart Tags pages: shows whether an item is paid, and lets an administrator confirm it right there. */
-export function PaymentStatusChip({ source, refId, onChanged }: { source: "auction" | "smart_tag"; refId: string; onChanged?: () => void }) {
+export function PaymentStatusChip({ source, refId, onChanged }: { source: "auction" | "smart_tag" | "event_rental"; refId: string; onChanged?: () => void }) {
   const [status, setStatus] = useState<PaymentStatus | null>(null);
   const [confirming, setConfirming] = useState<PayableItem | null>(null);
   const [viewing, setViewing] = useState("");

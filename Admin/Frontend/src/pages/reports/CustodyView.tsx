@@ -7,6 +7,7 @@ import { AdminTableSkeleton, SkeletonBlock } from "../../components/LoadingSkele
 import { BTN } from "../../components/ui/primitives";
 import { DataTable, ExportButton, SearchField, SegmentedFilter, StatusPill, TableFooter, Thumb, Toolbar, usePagination, type Tone } from "../../components/ui/management";
 import CustodyHistoryModal from "./CustodyHistoryModal";
+import ArchiveRecord, { useArchiveStatus } from "../../components/ArchiveRecord";
 
 type NavTarget = "claims" | "auctions";
 type Filter = "all" | "review" | "pickup" | "auction" | "waiting" | "hold";
@@ -49,6 +50,7 @@ export default function CustodyView({ onNavigate }: { onNavigate: (target: NavTa
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [historyOf, setHistoryOf] = useState<string | null>(null);
+  const archives = useArchiveStatus("found", true);
 
   useEffect(() => {
     let active = true;
@@ -179,6 +181,7 @@ export default function CustodyView({ onNavigate }: { onNavigate: (target: NavTa
                 {step
                   ? <button type="button" onClick={() => onNavigate(step.target)} className={step.target === "auctions" && row.state === "waiting" ? BTN.gold : BTN.ghost}>{step.target === "auctions" ? <Gavel size={15} aria-hidden="true" /> : null}{tr(step.label)}</button>
                   : <span className="text-ink-muted">—</span>}
+                <ArchiveRecord kind="found" reference={row.reference} archived={archives.has(row.reference)} />
               </td>
               <td>
                 <button type="button" onClick={() => setHistoryOf(row.reference)} className={BTN.ghost} aria-label={tr("Open the handling history of {0}", { "0": row.reference })}>

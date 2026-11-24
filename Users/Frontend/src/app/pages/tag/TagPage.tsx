@@ -4,6 +4,7 @@ import { motion, useReducedMotion } from "motion/react";
 import umakLogo from "@/imports/umaklogo.webp";
 import Modal from "@/app/shared/modal/Modal";
 import RecoveryFields from "@/app/shared/tags/RecoveryFields";
+import ScanPrivacy from "@/app/shared/tags/ScanPrivacy";
 import type { FinderDetails } from "@/app/utils/tags";
 import AuthOverlay from "@/app/shared/tags/AuthOverlay";
 import TagDetailsForm from "@/app/shared/tags/TagDetailsForm";
@@ -52,12 +53,12 @@ const WORDS = {
 type Words = (typeof WORDS)["en"];
 
 /** Full-screen night shell for every state of the public scan page. No app header or menu: this page is for strangers. */
-function Shell({ code, children, safety = WORDS.en.safety }: { code?: string; children: React.ReactNode; safety?: string }) {
+function Shell({ code, children, safety = WORDS.en.safety, scanLogging=false }: { code?: string; children: React.ReactNode; safety?: string; scanLogging?:boolean }) {
   return (
     <main className="relative flex min-h-[100dvh] flex-col items-center overflow-hidden bg-[linear-gradient(170deg,#0e1830_0%,#162448_45%,#1f3160_100%)] px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] text-white sm:justify-center sm:py-10">
       <span className="pointer-events-none absolute -top-40 left-1/2 size-[520px] -translate-x-1/2 rounded-full bg-gold-500/15 blur-3xl" aria-hidden="true" />
       <span className="pointer-events-none absolute -bottom-48 -right-32 size-[420px] rounded-full bg-iris-500/15 blur-3xl" aria-hidden="true" />
-      <div className="relative w-full max-w-md">{children}</div>
+      <div className="relative w-full max-w-md">{children}{code&&<ScanPrivacy key={code} tag={code} enabled={scanLogging}/>}</div>
       <footer className="relative mt-8 max-w-md text-center text-[12.5px] leading-5 text-white/55">
         {code && <p className="mb-2 font-mono text-[12.5px] tracking-[0.18em] text-white/70" aria-label={`Tag code ${code}`}>{spacedCode(code)}</p>}
         <p><ShieldCheck size={13} className="mr-1 inline text-gold-300" aria-hidden="true" />{safety}</p>
@@ -267,7 +268,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
   // ---- Logic check 1: a blank tag
   if (tag.status === "blank") {
     return (
-      <Shell code={tagCode}>
+      <Shell code={tagCode} scanLogging={tag.scan_logging}>
         <StateCard icon={<QrCode size={32} />} tone="gold" title="This E-Balik Smart Tag is unregistered!">
           {signedIn ? (
             <>
@@ -299,7 +300,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
   // ---- Expired: the tag's validity period ended, so nothing about the item or owner is shown and nobody can be notified
   if (tag.status === "expired") {
     return (
-      <Shell code={tagCode}>
+      <Shell code={tagCode} scanLogging={tag.scan_logging}>
         <StateCard icon={<CalendarX size={32} />} tone="gold" title="This Smart Tag has expired">
           <p className={muted}>Its validity period has ended, so the owner's details are no longer shown. If you found an item with this tag, please bring it to the nearest OHSO guard post so it can be checked and returned.</p>
           <p className="mx-auto mt-3 max-w-[42ch] text-[13.5px] leading-6 text-white/60">Are you the owner? Ask the Lost and Found Office to renew this tag.</p>
@@ -312,7 +313,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
   // ---- Waiting for staff: nothing about the item, owner or photo is shown
   if (tag.status === "pending_verification") {
     return (
-      <Shell code={tagCode}>
+      <Shell code={tagCode} scanLogging={tag.scan_logging}>
         <StateCard icon={<Hourglass size={32} />} tone="gold" title={tag.is_owner ? "Your tag is waiting for approval" : "This Smart Tag is awaiting approval"}>
           <p className={muted}>{tag.is_owner
             ? "Bring the item with this tag on it to the Lost and Found Office. Staff will compare it with the photo you took, then switch the tag on. Until then nobody can see your details."
@@ -326,7 +327,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
   // ---- Deactivated, or the owner's account is gone: nothing about the item or owner is shown
   if (tag.status === "disabled" || tag.status === "inactive") {
     return (
-      <Shell code={tagCode}>
+      <Shell code={tagCode} scanLogging={tag.scan_logging}>
         <StateCard icon={<ShieldAlert size={32} />} tone="rose" title={tag.status === "disabled" ? "This Smart Tag was deactivated" : "This Smart Tag is no longer active"}>
           <p className={muted}>If you found an item with this tag, please bring it to the nearest OHSO guard post so it can be checked and returned.</p>
           <a href="/" className={homeButton}>Go to E-Balik</a>
@@ -343,7 +344,7 @@ export default function TagPage({ rawId }: { rawId: string }) {
   const monogram = name ? name.split(/\s+/).map((part) => part.replace(/[^\p{L}]/gu, "")[0] ?? "").join("").slice(0, 2).toUpperCase() : "";
 
   return (
-    <Shell code={tagCode} safety={words.safety}>
+    <Shell code={tagCode} safety={words.safety} scanLogging={tag.scan_logging}>
       <Card banner={lost ? (
         <p className="flex items-center justify-center gap-2 bg-[linear-gradient(90deg,#e11d48,#be123c)] px-4 py-2.5 text-center text-[14px] font-semibold text-white" role="status">
           <AlertTriangle size={16} aria-hidden="true" />{words.lostBanner}

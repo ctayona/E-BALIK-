@@ -112,7 +112,11 @@ def cascade_delete(store, table, value):
 
 
 def make(store=None, files=None, unique=None):
-    store = store if store is not None else world()
+    store = world() if store is None else store
+    store.setdefault('migration_log', [{'name': '20261124c_admin_archive_first'}])
+    for table in ('user_profiles', 'found_items', 'missing_items', 'claims', 'auctions'):
+        for row in store.get(table, []):
+            row.setdefault('archived_at', NOW.isoformat())
     storage = FakeStorage(files if files is not None else {
         ('claim-proof-images', 'proof/1.jpg'): b'PROOF', ('claim-id-documents', 'id/1.pdf'): b'IDPDF', ('found-item-images', 'u1.jpg'): b'UMB',
         ('missing-item-images', 'w1.jpg'): b'WALLET', ('verification-documents', 'v/owner.pdf'): b'VERIFY'})
@@ -131,8 +135,8 @@ def make(store=None, files=None, unique=None):
             return cascade_delete(store, table, row['item_id']) if row else None
         return handler
     client = MemClient(store, unique=unique or {}, rpc_handlers={
-        'admin_delete_claim': rpc('claims', 'claim_id'), 'admin_delete_user': rpc('user_profiles', 'account_id'),
-        'admin_delete_found_item': rpc('found_items', 'item_id'), 'admin_delete_missing_item': rpc('missing_items', 'item_id')})
+        'admin_delete_archived_claim': rpc('claims', 'claim_id'), 'admin_delete_archived_user': rpc('user_profiles', 'account_id'),
+        'admin_delete_archived_found_item': rpc('found_items', 'item_id'), 'admin_delete_archived_missing_item': rpc('missing_items', 'item_id')})
     client.storage = storage
     db = SupabaseDB.__new__(SupabaseDB)
     db.client = client
@@ -181,7 +185,7 @@ class ArchiveAndRestoreTests(unittest.TestCase):
 
     def test_a_failed_delete_undoes_the_archive(self):
         db, store, storage = make()
-        db.client.rpc_handlers['admin_delete_claim'] = lambda params: (_ for _ in ()).throw(RuntimeError('database down'))
+        db.client.rpc_handlers['admin_delete_archived_claim'] = lambda params: (_ for _ in ()).throw(RuntimeError('database down'))
         with self.assertRaises(RuntimeError):
             db.delete_admin_claim(CLAIM, ADMIN)
         self.assertEqual(store['recycle_bin'], [])
@@ -190,7 +194,7 @@ class ArchiveAndRestoreTests(unittest.TestCase):
 
     def test_a_delete_that_deletes_nothing_leaves_no_bin_entry(self):
         db, store, _ = make()
-        db.client.rpc_handlers['admin_delete_claim'] = lambda params: None
+        db.client.rpc_handlers['admin_delete_archived_claim'] = lambda params: None
         with self.assertRaises(RuntimeError):
             db.delete_admin_claim(CLAIM, ADMIN)
         self.assertEqual(store['recycle_bin'], [])

@@ -1,0 +1,70 @@
+// Disposable WASM PostgreSQL. No remote database connection is accepted.
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { randomUUID as id } from "node:crypto";
+import { pathToFileURL } from "node:url";
+const { PGlite } = await import(pathToFileURL(process.argv[2]).href);
+const db = new PGlite();
+const [admin, owner, staff, event] = Array.from({length: 4}, id);
+const sql = await readFile("Server/manual_migrations/20261124b_event_rentals.sql", "utf8");
+const first = async (q, args=[]) => (await db.query(q,args)).rows[0];
+const command = async(action,data,actor=admin,key=id()) =>
+  (await first("select event_rental_command($1,$2,$3,$4::jsonb) as result",[actor,key,action,JSON.stringify(data)])).result;
+try {
+ await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;
+ CREATE TABLE migration_log(name text primary key,note text);
+ INSERT INTO migration_log VALUES('20261124_event_smart_tags','fixture');
+ CREATE TABLE user_profiles(account_id uuid primary key,access_level text,is_active boolean,suspended_until timestamptz);
+ CREATE TABLE event_workspaces(event_id uuid primary key,name text,organizer_name text,status text,starts_at timestamptz,ends_at timestamptz,deleted_at timestamptz);
+ CREATE TABLE event_tag_allocations(allocation_id uuid primary key default gen_random_uuid(),event_id uuid references event_workspaces,ended_at timestamptz);
+ CREATE TABLE income_ledger(entry_id uuid primary key default gen_random_uuid(),source text,kind text,source_ref text,amount numeric,
+ description text,payer_account_id uuid,recorded_by uuid,method text,payment_reference text,proof_path text,receipt_no text,notes text,
+ received_at timestamptz default now(), CONSTRAINT income_ledger_source_check CHECK(source IN ('auction','smart_tag','other')));
+ CREATE UNIQUE INDEX uq_income_one_sale ON income_ledger(source,source_ref) WHERE kind='sale';
+ CREATE TABLE payment_proofs(source text CONSTRAINT payment_proofs_source_check CHECK(source IN ('auction','smart_tag')));
+ `);
+ await db.query("insert into user_profiles values($1,'super_admin',true,null),($2,'user',true,null),($3,'admin',true,null)",[admin,owner,staff]);
+ await db.query("insert into event_workspaces values($1,'Campus night','University','draft',now()+interval '1 day',now()+interval '1 day 3 hours',null)",[event]);
+ await db.exec(sql);
+ await db.exec(sql);
+ const pkg={name:"Campus package",price:"500.00",included_tags:2,duration_hours:4,support:"Desk briefing",terms:"Full refund on cancellation before service"};
+ await assert.rejects(command("package",pkg,staff));
+ const packageKey=id();
+ const p=await command("package",pkg,admin,packageKey);
+ assert.deepEqual(await command("package",pkg,admin,packageKey),p);
+ await assert.rejects(command("package",{...pkg,price:"600"},admin,packageKey));
+ const book={event_id:event,package_id:p.id,package_version:1,payer_id:owner,note:"Organizer agreed to the quoted terms"};
+ const b=await command("book",book);
+ await assert.rejects(command("book",book));
+ await command("package",{...pkg,package_id:p.id,version:1,price:"700",active:false});
+ const frozen=await first("select * from event_rental_bookings where booking_id=$1",[b.id]);
+ assert.equal(Number(frozen.amount),500);
+ assert.equal(frozen.quote.price,500);
+ await assert.rejects(db.query("update event_workspaces set starts_at=starts_at+interval '1 hour' where event_id=$1",[event]));
+ await assert.rejects(db.query("insert into event_tag_allocations(event_id) values($1)",[event]));
+ const payment={booking_id:b.id,version:1,amount:"500",method:"cash",reference:"",proof_path:null,notes:"Cash received"};
+ await assert.rejects(command("confirm",{...payment,amount:"1"}));
+ const key=id();
+ const paid=await command("confirm",payment,admin,key);
+ assert.equal(Number((await first("select amount from income_ledger where entry_id=$1",[paid.entry_id])).amount),500);
+ assert.deepEqual(await command("confirm",payment,admin,key),paid);
+ await assert.rejects(command("confirm",payment));
+ await db.query("insert into event_tag_allocations(event_id) values($1),($1)",[event]);
+ await assert.rejects(db.query("insert into event_tag_allocations(event_id) values($1)",[event]));
+ await assert.rejects(command("cancel",{booking_id:b.id,version:2,note:"Cancel paid booking"}));
+ await assert.rejects(command("refund",{booking_id:b.id,version:1,note:"Wrong old version"}));
+ const refunded=await command("refund",{booking_id:b.id,version:2,note:"Organizer cancellation approved"});
+ assert.equal(Number((await first("select amount from income_ledger where entry_id=$1",[refunded.entry_id])).amount),-500);
+ await assert.rejects(command("refund",{booking_id:b.id,version:3,note:"Another refund attempted"}));
+ assert.equal(Number((await first("select sum(amount) as total from income_ledger")).total),0);
+ await assert.rejects(db.exec("delete from event_rental_history"));
+ await db.exec("SET ROLE anon");
+ await assert.rejects(db.exec("select * from event_rental_bookings"));
+ await db.exec("RESET ROLE");
+ const free=await command("package",{...pkg,name:"Approved free pilot",price:"0"});
+ const courtesy=await command("book",{...book,package_id:free.id});
+ assert.equal((await first("select status from event_rental_bookings where booking_id=$1",[courtesy.id])).status,"complimentary");
+ await assert.rejects(command("confirm",{...payment,booking_id:courtesy.id}));
+ await command("cancel",{booking_id:courtesy.id,version:1,note:"Free pilot no longer needed"});
+ console.log("Rental SQL passed: replay, conflict, permissions, frozen quotes, full payment/refund, quota, complimentary and history.");
+} finally { await db.close(); }

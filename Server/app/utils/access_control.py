@@ -19,7 +19,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 #   'super' pages are super-admin only and cannot be granted. 'always' pages cannot be taken away.
 ADMIN_PAGES: List[Dict[str, Any]] = [
     {'id': 'dashboard', 'label': 'Dashboard', 'api': ['/dashboard', '/nav-badges'], 'always': True},
-    {'id': 'report-hub', 'label': 'Reports', 'api': ['/lost-items', '/found-items', '/archive', '/claims', '/auctions', '/report-comments']},
+    {'id': 'report-hub', 'label': 'Reports', 'api': ['/lost-items', '/found-items', '/archive', '/claims', '/auctions', '/report-comments', '/report-publication']},
     {'id': 'ai-matching', 'label': 'AI matching', 'api': ['/ai-matches', '/lost-items', '/found-items']},
     {'id': 'auctions', 'label': 'Auctions', 'api': ['/auctions', '/found-items']},
     {'id': 'smart-tags', 'label': 'Smart tags', 'api': ['/smart-tags']},
@@ -29,7 +29,7 @@ ADMIN_PAGES: List[Dict[str, Any]] = [
     {'id': 'reports', 'label': 'Analytics', 'api': ['/reports', '/dashboard']},
     {'id': 'income', 'label': 'Revenue and payments', 'api': ['/income']},
     {'id': 'notifications', 'label': 'Notifications', 'api': ['/activity-logs', '/claims']},
-    {'id': 'activity-logs', 'label': 'Activity logs', 'api': ['/activity-logs', '/admin-activity-logs']},
+    {'id': 'activity-logs', 'label': 'Activity logs', 'api': ['/activity-logs', '/admin-activity-logs', '/tag-scan-activity']},
     {'id': 'system-control', 'label': 'System control', 'api': ['/system'], 'super': True},
     {'id': 'events', 'label': 'Events', 'api': ['/events'], 'super': True},
     {'id': 'recycle-bin', 'label': 'Recycle bin', 'api': ['/recycle-bin'], 'super': True},

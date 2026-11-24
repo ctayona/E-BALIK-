@@ -1566,6 +1566,8 @@ class AuctionService:
         from app.utils.recycle_bin import RecycleBin
         try:
             row = self._live_row(auction_id)
+            if not row.get('archived_at'):
+                raise AuctionError('Archive the auction first. Delete is available from Archived.', 409)
             if row.get('status') in OPEN_STATUSES:
                 raise AuctionError('Cancel the auction before deleting it.', 409)
             if row.get('fulfillment_status') == 'awaiting_pickup':
@@ -1573,7 +1575,9 @@ class AuctionService:
             actor = (self.db.get_user_by_account_id(admin_id) or {}) if admin_id else {}
             archive_id = RecycleBin(self.db).archive_entity('auction', auction_id, admin_id, actor.get('email') or 'Admin')   # the bids are kept too
             try:
-                self.client.table('auctions').delete().eq('auction_id', auction_id).execute()
+                removed = self.client.table('auctions').delete().eq('auction_id', auction_id).eq('archived_at', row['archived_at']).execute().data
+                if not removed:
+                    raise AuctionError('Auction was restored or changed. Archive it again before deletion.', 409)
             except Exception:
                 RecycleBin(self.db).discard(archive_id)
                 raise

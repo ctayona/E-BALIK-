@@ -12,6 +12,7 @@ search that meets them (a few per search) and remembered.
 """
 import colorsys
 import io
+from .report_publication import public_table, is_published
 import logging
 import urllib.request
 from typing import Any, Dict, List, Optional
@@ -148,12 +149,12 @@ def search(db, query_bytes: bytes) -> Dict[str, Any]:
         raise ValueError('We could not read that photo. Use a JPG, PNG or WEBP picture.')
     columns = 'item_id,fpost_id,item_name,category,location,found_date,image_url,status'
     try:
-        rows = db.client.table('found_items').select(columns + ',image_features').eq('status', 'unclaimed').neq('image_url', '').order('created_at', desc=True).limit(500).execute().data or []
+        rows = public_table(db.client, 'found_items').select(columns + ',image_features').eq('status', 'unclaimed').neq('image_url', '').order('created_at', desc=True).limit(500).execute().data or []
         saved_column = True
     except Exception as error:
         if 'image_features' not in str(error):
             raise
-        rows = db.client.table('found_items').select(columns).eq('status', 'unclaimed').neq('image_url', '').order('created_at', desc=True).limit(500).execute().data or []
+        rows = public_table(db.client, 'found_items').select(columns).eq('status', 'unclaimed').neq('image_url', '').order('created_at', desc=True).limit(500).execute().data or []
         saved_column = False
     results: List[Dict[str, Any]] = []
     backfilled = 0

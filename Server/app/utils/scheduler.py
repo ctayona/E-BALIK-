@@ -50,6 +50,12 @@ def run_scheduled_jobs(app) -> Dict[str, Any]:
                 db.client.table('tag_recovery_points').delete().lte('expires_at', datetime.now(timezone.utc).isoformat()).execute()
         except Exception:
             logger.warning('Unable to check recovery location retention')
+        try:
+            from app.utils.report_publication import installed as scan_schema_installed
+            if db is not None and scan_schema_installed(db.client):
+                db.client.rpc('smart_tag_scan_cleanup',{}).execute()
+        except Exception:
+            logger.warning('Unable to check scan activity retention')
     if any(value for part in summary.values() if isinstance(part, dict) for key, value in part.items() if key not in ('checked', 'days', 'disabled')):
         logger.info('Scheduled jobs: %s', summary)
     return summary

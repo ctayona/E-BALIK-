@@ -815,7 +815,7 @@ export default function ClaimsVerification() {
                 )}
                 {isClosed(claim) && !claim.archived && <IconAction label={`${tr("Archive")} ${claim.claimReference || claim.id}`} onClick={() => setArchiveTarget(claim)} icon={<Archive size={16} aria-hidden="true" />} />}
                 {claim.archived && <IconAction label={`${tr("Restore from archive")} ${claim.claimReference || claim.id}`} tone="success" onClick={() => setArchiveTarget(claim)} icon={<ArchiveRestore size={16} aria-hidden="true" />} />}
-                {isSuperAdmin && (
+                {isSuperAdmin && claim.archived && (
                   <IconAction label={`${t("common.delete")} ${claim.claimReference || claim.id}`} tone="danger" onClick={() => { setDeleteTarget(claim); setDeleteConfirmValue(""); }} icon={<Trash2 size={16} aria-hidden="true" />} />
                 )}
               </RowActions>

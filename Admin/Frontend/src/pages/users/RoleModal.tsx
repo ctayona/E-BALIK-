@@ -12,7 +12,7 @@ const ROLES: Array<{ value: Role; title: string; description: string; icon: type
   {
     value: "guard",
     title: "Security guard",
-    description: "Receives items from finders and releases approved claims at the release desk by Handover PIN. Cannot open any other page, and is signed out after 20 minutes of inactivity.",
+    description: "Receives items from finders and releases approved claims using Handover PINs. Console pages follow the administrator's Role access settings.",
     icon: ShieldCheck,
   },
   { value: "admin", title: "Admin", description: "Reviews reports, claims and auctions in this console. Only super admins can delete.", icon: Shield, superOnly: true },
@@ -25,7 +25,7 @@ export default function RoleModal({ user, isSuperAdmin, busy, onClose, onSave }:
 
   return (
     <AdminModal
-      title={tr("Change role for {0}", { "0": user.name })}
+      title={tr("Change access role for {0}", { "0": user.name })}
       description={tr("Choose what {0} can do in E-Balik. The change applies the next time they sign in or load a page.", { "0": user.name })}
       icon={<UserCog size={20} />}
       tone="navy"
@@ -33,10 +33,11 @@ export default function RoleModal({ user, isSuperAdmin, busy, onClose, onSave }:
       onClose={onClose}
       footer={<>
         <button type="button" onClick={onClose} disabled={busy} className={BTN.ghost}>{tr("Cancel")}</button>
-        <button type="button" onClick={() => onSave(role)} disabled={busy || role === current} className={BTN.primary}>{busy ? tr("Saving…") : tr("Save role")}</button>
+        <button type="button" onClick={() => onSave(role)} disabled={busy || role === current} className={BTN.primary}>{busy ? tr("Saving…") : tr("Save access role")}</button>
       </>}
     >
       <fieldset className="space-y-3" disabled={busy}>
+        <p className="text-sm text-ink-muted">{tr("The E-Balik ID updates automatically with access changes. The campus ID stays associated with the same account.")}</p>
         <legend className="sr-only">{tr("Role")}</legend>
         {ROLES.map(({ value, title, description, icon: Icon, superOnly }) => {
           const locked = Boolean(superOnly) && !isSuperAdmin;

@@ -18,6 +18,7 @@ import NfcPanel from "./NfcPanel";
 import { downloadCsv } from "../../utils/csv";
 import { formatDateTime } from "../../utils/countdown";
 import { canDelete } from "../../utils/permissions";
+import ArchiveRecord, { useArchiveStatus } from "../../components/ArchiveRecord";
 import { tr } from "../../utils/preferences";
 
 const PESO = (value: number) => `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -100,8 +101,9 @@ function BatchPanel({ batches, superAdmin, onDeactivate, onReactivate, onPrice, 
                 <div className="flex flex-wrap gap-2">
                   {batch.price !== null && batch.price !== undefined && batch.blank > 0 && <button type="button" onClick={() => onPrice(batch)} className={`${BTN.ghost} !min-h-[38px]`}><PhilippinePeso size={15} aria-hidden="true" />{tr("Set price")}</button>}
                   {batch.disabled < batch.total && <button type="button" onClick={() => onDeactivate(batch)} className={`${BTN.ghost} !min-h-[38px] text-rose-700 dark:text-rose-300`}><Ban size={15} aria-hidden="true" />{tr("Deactivate batch")}</button>}
-                  {batch.disabled > 0 && <button type="button" onClick={() => onReactivate(batch)} className={`${BTN.ghost} !min-h-[38px]`}><ShieldCheck size={15} aria-hidden="true" />{tr("Reactivate batch")}</button>}
-                  {batch.blank + batch.disabled > 0 && <button type="button" onClick={() => onDelete(batch)} className={`${BTN.ghost} !min-h-[38px] text-rose-700 dark:text-rose-300`}><Trash2 size={15} aria-hidden="true" />{tr("Delete unused")}</button>}
+                  {batch.archived_count !== batch.total && batch.disabled > 0 && <button type="button" onClick={() => onReactivate(batch)} className={`${BTN.ghost} !min-h-[38px]`}><ShieldCheck size={15} aria-hidden="true" />{tr("Reactivate batch")}</button>}
+                  {batch.batch_id && <ArchiveRecord kind="tag_batch" reference={batch.batch_id} archived={batch.archived_count === batch.total} />}
+                  {batch.archived_count === batch.total && batch.blank + batch.disabled > 0 && <button type="button" onClick={() => onDelete(batch)} className={`${BTN.ghost} !min-h-[38px] text-rose-700 dark:text-rose-300`}><Trash2 size={15} aria-hidden="true" />{tr("Delete unused")}</button>}
                 </div>
               )}
             </li>
@@ -315,7 +317,7 @@ function TagFacts({ title, rows }: { title: string; rows: [string, ReactNode][] 
   );
 }
 
-function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew, onEdit, onDelete }: { tag: AdminSmartTag; canBan: boolean; onClose: () => void; onDeactivate: () => void; onReactivate: () => void; onRenew: () => void; onEdit: () => void; onDelete: () => void }) {
+function TagModal({ tag, canBan, canRemove, onClose, onDeactivate, onReactivate, onRenew, onEdit, onDelete }: { tag: AdminSmartTag; canBan: boolean; canRemove: boolean; onClose: () => void; onDeactivate: () => void; onReactivate: () => void; onRenew: () => void; onEdit: () => void; onDelete: () => void }) {
   const [zoom, setZoom] = useState(false);
   const [qr, setQr] = useState("");
   const [qrError, setQrError] = useState(false);
@@ -359,7 +361,7 @@ function TagModal({ tag, canBan, onClose, onDeactivate, onReactivate, onRenew, o
         {canBan && registered && (tag.is_disabled
           ? <button type="button" onClick={onReactivate} className={`${BTN.ghost} whitespace-nowrap sm:mr-auto`}><ShieldCheck size={16} aria-hidden="true" />{tr("Reactivate")}</button>
           : <button type="button" onClick={onDeactivate} className="inline-flex min-h-[42px] items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-rose-200 bg-rose-50 px-4 text-[14px] font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 sm:mr-auto dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-200 dark:hover:bg-rose-500/20"><Ban size={16} aria-hidden="true" />{tr("Deactivate tag")}</button>)}
-        {canBan && isDeletableTag(tag) && <button type="button" onClick={onDelete} className={`${BTN.ghost} whitespace-nowrap text-rose-700 dark:text-rose-300 ${registered ? "" : "sm:mr-auto"}`}><Trash2 size={16} aria-hidden="true" />{tr("Delete tag")}</button>}
+        {canRemove && isDeletableTag(tag) && <button type="button" onClick={onDelete} className={`${BTN.ghost} whitespace-nowrap text-rose-700 dark:text-rose-300 ${registered ? "" : "sm:mr-auto"}`}><Trash2 size={16} aria-hidden="true" />{tr("Delete tag")}</button>}
         {owner && registered && <button type="button" onClick={onEdit} className={`${BTN.ghost} whitespace-nowrap`}><Pencil size={16} aria-hidden="true" />{tr("Edit")}</button>}
         {owner && registered && tag.status !== "pending_verification" && <button type="button" onClick={onRenew} className={`${BTN.ghost} whitespace-nowrap`}><RotateCw size={16} aria-hidden="true" />{tr("Renew")}</button>}
         <button type="button" onClick={onClose} className={`${BTN.primary} whitespace-nowrap`}>{tr("Close")}</button>
@@ -511,6 +513,8 @@ export default function SmartTags() {
   const [removingBatch, setRemovingBatch] = useState<TagBatch | null>(null);
   const [busy, setBusy] = useState(false);
   const superAdmin = canDelete();
+  const archives = useArchiveStatus("tag", true);
+  const [archiveView, setArchiveView] = useState(false);
 
   const load = useCallback(async () => {
     const version = ++loadVersion.current;
@@ -536,6 +540,11 @@ export default function SmartTags() {
     try { setBatches((await fetchTagBatches()).batches); } catch { /* the main list already explains a missing migration */ }
   }, []);
   useEffect(() => { void loadBatches(); }, [loadBatches]);
+  useEffect(() => {
+    const refresh = () => void loadBatches();
+    window.addEventListener("ebalik-admin-archive-updated", refresh);
+    return () => window.removeEventListener("ebalik-admin-archive-updated", refresh);
+  }, [loadBatches]);
 
   const tags = data?.tags ?? [];
   const batchKey = (id: string | null, label: string) => id ? `id:${id}` : `label:${label}`;
@@ -552,9 +561,10 @@ export default function SmartTags() {
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return tags.filter(t =>
+      archives.has(t.tag_id) === archiveView &&
       (batchFilter === "all" || batchKey(t.batch_id, t.batch_label || "") === batchFilter) &&
       (!query || `${t.tag_id} ${t.item_name} ${t.batch_label} ${t.owner?.name ?? ""} ${t.owner?.email ?? ""}`.toLowerCase().includes(query)));
-  }, [tags, search, batchFilter]);
+  }, [tags, search, batchFilter, archives, archiveView]);
   const paging = usePagination(filtered, 12, `${filter}|${search}|${medium}|${batchFilter}`);
   const stats = data?.stats;
 
@@ -645,9 +655,10 @@ export default function SmartTags() {
         </section>
       )}
 
+      {superAdmin && <button type="button" className={BTN.ghost} onClick={() => { setArchiveView(!archiveView); setFilter("all"); setBatchFilter("all"); }}>{archiveView ? "Working tags" : "Archived tags"}</button>}
       <SegmentedFilter label="Tag medium" value={medium} onChange={setMedium} options={[{ value: "all", label: "All media" }, { value: "qr", label: "QR stickers" }, { value: "nfc", label: "NFC cards" }, ...(data?.tag_types.some(t => t.value === "rfid" && t.enabled) ? [{ value: "rfid" as const, label: "RFID" }] : [])]} />
       <p className="text-[13px] text-ink-muted">Status counts and the tag list follow the selected medium. Revenue totals cover all Smart Tags.</p>
-      <BatchPanel batches={batches.filter(b => medium === "all" || b.tag_type === medium)} superAdmin={superAdmin} onDeactivate={(b) => { setBatchReason(""); setBatchBan(b); }} onReactivate={setBatchRevive} onPrice={setBatchPricing} onDelete={setRemovingBatch} />
+      <BatchPanel batches={batches.filter(b => (medium === "all" || b.tag_type === medium) && ((b.archived_count ?? 0) === b.total) === archiveView)} superAdmin={superAdmin} onDeactivate={(b) => { setBatchReason(""); setBatchBan(b); }} onReactivate={setBatchRevive} onPrice={setBatchPricing} onDelete={setRemovingBatch} />
       {batchPricing && <BatchPriceModal batch={batchPricing} onClose={() => setBatchPricing(null)} onSaved={() => { setBatchPricing(null); void loadBatches(); }} />}
 
       {loadError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[14px] text-rose-800">{loadError}</p>}
@@ -705,10 +716,11 @@ export default function SmartTags() {
                 {tag.status === "pending_verification" && <IconAction label={`${tr("Review")} ${tag.tag_id}`} tone="gold" onClick={() => setReviewing(tag)} icon={<ClipboardCheck size={17} aria-hidden="true" />} />}
                 <IconAction label={`${tr("View")} ${tag.tag_id}`} onClick={() => (tag.status === "pending_verification" ? setReviewing(tag) : setViewing(tag))} icon={<Eye size={17} aria-hidden="true" />} />
                 <IconAction label={`${tr("QR code")} ${tag.tag_id}`} tone="gold" onClick={() => setViewing(tag)} icon={<QrCode size={16} aria-hidden="true" />} />
-                {superAdmin && tag.status !== "blank" && (tag.is_disabled
+                {superAdmin && !archives.has(tag.tag_id) && tag.status !== "blank" && (tag.is_disabled
                   ? <IconAction label={`${tr("Reactivate")} ${tag.tag_id}`} tone="success" onClick={() => setReviving(tag)} icon={<ShieldCheck size={17} aria-hidden="true" />} />
                   : <IconAction label={`${tr("Deactivate")} ${tag.tag_id}`} tone="danger" onClick={() => { setBanReason(""); setBanning(tag); }} icon={<Ban size={16} aria-hidden="true" />} />)}
-                {superAdmin && isDeletableTag(tag) && <IconAction label={`${tr("Delete")} ${tag.tag_id}`} tone="danger" onClick={() => setRemovingTag(tag)} icon={<Trash2 size={16} aria-hidden="true" />} />}
+                {superAdmin && <ArchiveRecord kind="tag" reference={tag.tag_id} archived={archives.has(tag.tag_id)} />}
+                {superAdmin && archives.has(tag.tag_id) && isDeletableTag(tag) && <IconAction label={`${tr("Delete")} ${tag.tag_id}`} tone="danger" onClick={() => setRemovingTag(tag)} icon={<Trash2 size={16} aria-hidden="true" />} />}
               </RowActions>
             </tr>
           );
@@ -720,7 +732,8 @@ export default function SmartTags() {
       {viewing && (
         <TagModal
           tag={tags.find((t) => t.tag_id === viewing.tag_id) ?? viewing}
-          canBan={superAdmin}
+          canBan={superAdmin && !archives.has(viewing.tag_id)}
+          canRemove={superAdmin && archives.has(viewing.tag_id)}
           onClose={() => setViewing(null)}
           onDeactivate={() => { const t = viewing; setViewing(null); setBanReason(""); setBanning(t); }}
           onReactivate={() => { const t = viewing; setViewing(null); setReviving(t); }}

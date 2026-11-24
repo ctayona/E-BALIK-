@@ -28,7 +28,7 @@ from app.utils.income import MAX_ROWS, METHODS, IncomeError, IncomeService, Inco
 
 logger = logging.getLogger(__name__)
 
-PAYABLE = ('auction', 'smart_tag')
+PAYABLE = ('auction', 'smart_tag', 'event_rental')
 NEEDS_REFERENCE = ('gcash', 'maya', 'bank')
 SETUP_MESSAGE = 'Payment confirmation is not set up yet. Run Server/manual_migrations/20261024_payment_confirmation.sql in Supabase.'
 PROOF_SETUP = 'Payment proofs are not set up yet. Run Server/manual_migrations/20261025_payment_proofs_and_matching.sql in Supabase.'
@@ -50,6 +50,9 @@ class PaymentDesk:
     # ------------------------------------------------------------------ what is owed
     def _record(self, source: str, ref: str) -> Dict[str, Any]:
         """The authoritative amount, payer and description for an auction or tag, or an IncomeError saying why there is nothing to confirm."""
+        if source == 'event_rental':
+            from app.utils.event_rentals import EventRentals
+            return EventRentals(self.db).record(ref)
         if source == 'auction':
             rows = self._auction_rows('auction_id,title,item_reference,winning_amount,winner_account_id,fulfillment_status', lambda q: q.eq('auction_id', ref).limit(1))
             if not rows:
@@ -142,6 +145,17 @@ class PaymentDesk:
             items.append({'source': 'smart_tag', 'source_ref': str(t['tag_id']), 'title': t.get('item_name') or 'Smart Tag', 'reference': str(t['tag_id']),
                           'payer_account_id': t.get('owner_account_id'), 'amount': float(Decimal(str(t['price']))), 'released': False,
                           'state': 'pending_approval' if t.get('status') == 'pending_verification' else 'registered', 'since': None})
+        from app.utils.event_rentals import EventRentals
+        rentals = EventRentals(self.db)
+        if rentals.enabled():
+            for booking in rentals.rows(self.client.table('event_rental_bookings').select('*').eq('status', 'awaiting_payment').limit(MAX_ROWS)):
+                try:
+                    record = rentals.record(booking['booking_id'])
+                except IncomeError:
+                    continue
+                items.append(dict(source='event_rental', source_ref=record['ref'], title=record['title'],
+                                  reference=record['ref'], payer_account_id=record['payer'], amount=float(record['amount']),
+                                  released=False, state='registered', since=booking['created_at']))
         names = self.ledger._names([i['payer_account_id'] for i in items])
         for item in items:
             item['payer_name'] = names.get(str(item['payer_account_id']), '')
@@ -159,6 +173,7 @@ class PaymentDesk:
             'count': len(items), 'amount': float(total),
             'auction': float(sum(Decimal(str(i['amount'])) for i in items if i['source'] == 'auction')), 'auction_count': sum(1 for i in items if i['source'] == 'auction'),
             'smart_tag': float(sum(Decimal(str(i['amount'])) for i in items if i['source'] == 'smart_tag')), 'smart_tag_count': sum(1 for i in items if i['source'] == 'smart_tag'),
+            'event_rental': float(sum(Decimal(str(i['amount'])) for i in items if i['source'] == 'event_rental')), 'event_rental_count': sum(i['source'] == 'event_rental' for i in items),
             'released_unpaid': float(sum(Decimal(str(i['amount'])) for i in unpaid_released)), 'released_unpaid_count': len(unpaid_released),
             'proofs_waiting': sum(1 for i in items if i['proof']),
         }}
@@ -207,6 +222,10 @@ class PaymentDesk:
                 proof_id: Any = None, proof_data: Optional[bytes] = None) -> Dict[str, Any]:
         if source not in PAYABLE:
             raise IncomeError('Choose an auction or a Smart Tag.')
+        if source == 'event_rental':
+            profile = self.db.get_user_by_account_id(str(admin_id)) or {}
+            if profile.get('access_level') != 'super_admin' or profile.get('is_active') is not True:
+                raise IncomeError('Super administrator access required for event billing.', 403)
         method = str(method or '').strip().lower()
         if method not in METHODS:
             raise IncomeError('Choose how the money was paid.')
@@ -250,10 +269,15 @@ class PaymentDesk:
                          'receipt_no': None, 'notes': f"Owed to the seller ({float(split['rate']):g}% office fee ₱{split['commission']:,.2f} kept)",
                          'description': f"Seller's share: {record['title']}"[:255], **({'proof_path': None} if proof_path else {})})
         try:
-            written = self.client.table('income_ledger').insert(rows if len(rows) > 1 else row).execute().data or rows
+            if source == 'event_rental':
+                from app.utils.event_rentals import EventRentals
+                written = [EventRentals(self.db).confirm(record, row, admin_id)]
+            else:
+                written = self.client.table('income_ledger').insert(rows if len(rows) > 1 else row).execute().data or rows
             entry = next((r for r in written if r.get('kind') == 'sale'), written[0])
         except Exception as error:
-            self._remove_image(uploaded)
+            if source != 'event_rental':
+                self._remove_image(uploaded)
             text = str(error).lower()
             if 'duplicate' in text or '23505' in text:
                 raise IncomeError('This payment was already confirmed.', 409, 'already_confirmed') from error
@@ -330,6 +354,9 @@ class PaymentDesk:
         if not rows or rows[0].get('kind') != 'sale':
             raise IncomeError('Only a confirmed payment can be reversed.', 404, 'not_found')
         sale = rows[0]
+        if sale['source'] == 'event_rental':
+            from app.utils.event_rentals import EventRentals
+            return EventRentals(self.db).reverse(sale, reason, admin_id, before_commit)
         number = sale.get('receipt_no') or receipts.payment_number(sale['source'], sale.get('source_ref') or '', _parse_moment(sale.get('received_at')))
         linked = self.client.table('income_ledger').select('entry_id').eq('kind', 'refund').eq('receipt_no', number).limit(1).execute().data or []
         if linked:

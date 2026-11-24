@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, current_app, jsonify, request
 from werkzeug.utils import secure_filename
 from app.utils import get_db, JWTService
+from app.utils.account_identity import ebalik_id
 from app.utils.text_guard import TextRejected, clean_field
 from Users.Backend.shared.account import _infer_user_role_and_campus, _verification_profile_metadata
 from Users.Backend.shared.privacy import DPA_REQUIRED_MESSAGE, dpa_consent_given
@@ -68,6 +69,8 @@ def update_profile():
                 return jsonify({'error': 'Email already registered'}), 409
 
         inferred_role, inferred_campus_id = _infer_user_role_and_campus(requested_email, data.get('campus_id') or current_user.get('campus_id'))
+        if current_user.get('user_category'):
+            inferred_campus_id = current_user.get('campus_id') or inferred_campus_id
         verified = str(current_user.get('verification_status') or '').lower() == 'verified'
         new_campus_id = (data.get('campus_id') or inferred_campus_id or current_user.get('campus_id') or '').strip()
         if verified and (requested_email != current_user['email'] or new_campus_id != (current_user.get('campus_id') or '')):
@@ -81,7 +84,7 @@ def update_profile():
             'campus_id': new_campus_id,
             'updated_at': 'now()',
         }
-        if not verified:
+        if not verified and not current_user.get('user_category'):
             # Before verification the role is only a guess from the email. Once an admin has assigned a role it is never overwritten here.
             updated_fields['user_role'] = inferred_role
 
@@ -93,6 +96,7 @@ def update_profile():
             'user': {
                 'account_id': updated_user['account_id'],
                 'campus_id': updated_user.get('campus_id', ''),
+                'ebalik_id': ebalik_id(updated_user),
                 'fname': updated_user.get('fname', ''),
                 'mname': updated_user.get('mname', ''),
                 'lname': updated_user.get('lname', ''),

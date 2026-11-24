@@ -534,7 +534,7 @@ class SmartTagService:
         tag = self._refresh(self._get(tag_id))
         if tag.get('status') != 'blank':
             self._record_scan(tag)
-        if tag.get('is_disabled'):
+        if tag.get('is_disabled') or tag.get('archived_at'):
             return {'tag_id': tag_id, 'status': 'disabled'}
         if tag.get('status') == 'blank':
             # The price is public on purpose: someone about to register a sticker should know what they will pay at the office.
@@ -708,6 +708,8 @@ class SmartTagService:
         if int(owned.count or 0) >= MAX_TAGS_PER_ACCOUNT:
             raise TagError(f'You can register up to {MAX_TAGS_PER_ACCOUNT} Smart Tags.', 409)
         current = self._get(tag_id)  # 404 for a code that was never generated
+        if current.get('archived_at'):
+            raise TagError('This tag is archived. Ask the office to restore it before registration.', 409, code='archived')
         if current.get('status') != 'blank' or current.get('owner_account_id') or current.get('is_disabled'):
             # Do not store a photo for a sticker somebody else already owns.
             if current.get('is_disabled'):
@@ -799,6 +801,7 @@ class SmartTagService:
         Never raises: the tag is already marked lost, and a report problem must not undo that.
         """
         try:
+            from .report_publication import submission
             existing = self._lost_reports(tag, ['missing', 'found', 'matched'])
             if existing:
                 return existing[0]['mpost_id']
@@ -807,7 +810,9 @@ class SmartTagService:
             mpost_id = self.db.next_mpost_id(today.isoformat(), str(today.weekday() + 1))
             name = tag.get('item_name') or 'Smart Tag item'
             description = (tag.get('item_description') or '').strip() or f'{name}. Marked as lost by its owner through its E-Balik Smart Tag.'
+            review_fields = submission(self.client)
             self.db.create_missing_item({
+                **review_fields,
                 'account_id': str(tag['owner_account_id']), 'mpost_id': mpost_id,
                 'reporter_account_id': str(tag['owner_account_id']), 'reporter_email': owner.get('email'),
                 'reporter_campus_id': owner.get('campus_id'), 'item_name': name, 'category': 'Others',
@@ -815,8 +820,8 @@ class SmartTagService:
                 'distinctive_marks': f'{self._report_mark(tag["tag_id"])}. Anyone who scans the sticker can alert the owner.',
                 'last_location': 'Not specified (marked lost from a Smart Tag)', 'last_seen_date': today.isoformat(), 'status': 'missing',
             })
-            self._notify(tag.get('owner_account_id'), 'Your lost Smart Tag item was posted',
-                         f'We posted a missing report ({mpost_id}) for "{name}". It closes when you mark the tag as found.', 'smart_tag_lost')
+            self._notify(tag.get('owner_account_id'), 'Your lost Smart Tag report was saved',
+                         f'We saved a missing report ({mpost_id}) for "{name}".' + (' It awaits administrator publication review.' if review_fields else '') + ' It closes when you mark the tag as found.', 'smart_tag_lost')
             return mpost_id
         except Exception as error:
             logger.warning('Could not post a missing report for Smart Tag %s: %s', tag.get('tag_id'), error)
@@ -1243,12 +1248,17 @@ class SmartTagService:
         if not tag_id:
             raise TagError('This Smart Tag was not found.', 404)
         tag = self._get(tag_id)
+        from app.utils.archive import require_archived, ArchiveError
+        try:
+            require_archived(self.client, 'tag', tag_id)
+        except ArchiveError as error:
+            raise TagError(error.message, error.status, code=error.code) from None
         if not self.deletable(tag):
             raise TagError('Only a blank tag, or one an administrator deactivated, can be deleted. Deactivate it first.', 409, code='in_use')
         if tag.get('status') != 'blank' and self._linked_found_item(tag_id):
             raise TagError('A found item in custody was registered with this tag, so it is kept for the handover record.', 409, code='linked')
         try:
-            query = self._table().delete().eq('tag_id', tag_id)
+            query = self._table().delete().eq('tag_id', tag_id).eq('archived_at', tag.get('archived_at'))
             query = query.eq('status', 'blank') if tag.get('status') == 'blank' and not tag.get('is_disabled') else query.eq('is_disabled', True)
             removed = query.execute().data or []
         except Exception as error:
@@ -1266,11 +1276,13 @@ class SmartTagService:
         except (TypeError, ValueError):
             raise TagError('This batch was not found.', 404)
         try:
-            rows = self._table().select('tag_id,status,is_disabled,item_image_url,pending_image_url').eq('batch_id', batch_id).limit(5000).execute().data or []
+            rows = self._table().select('tag_id,status,is_disabled,item_image_url,pending_image_url,archived_at').eq('batch_id', batch_id).limit(5000).execute().data or []
         except Exception as error:
             self._guard(error)
         if not rows:
             raise TagError('This batch was not found.', 404)
+        if any(not row.get('archived_at') for row in rows):
+            raise TagError('Archive the entire batch first. Delete is available from Archived.', 409, code='archive_required')
         candidates = [row for row in rows if self.deletable(row) and (row.get('status') == 'blank' or not self._linked_found_item(row['tag_id']))]
         deleted: List[str] = []
         for start in range(0, len(candidates), 200):
@@ -1279,9 +1291,9 @@ class SmartTagService:
                 blank = [r['tag_id'] for r in candidates[start:start + 200] if r.get('status') == 'blank' and not r.get('is_disabled')]
                 off = [tag for tag in chunk if tag not in blank]
                 if blank:
-                    deleted += [r['tag_id'] for r in (self._table().delete().in_('tag_id', blank).eq('status', 'blank').execute().data or [])]
+                    deleted += [r['tag_id'] for r in (self._table().delete().in_('tag_id', blank).eq('status', 'blank').not_.is_('archived_at', 'null').execute().data or [])]
                 if off:
-                    deleted += [r['tag_id'] for r in (self._table().delete().in_('tag_id', off).eq('is_disabled', True).execute().data or [])]
+                    deleted += [r['tag_id'] for r in (self._table().delete().in_('tag_id', off).eq('is_disabled', True).not_.is_('archived_at', 'null').execute().data or [])]
             except Exception as error:
                 self._guard(error)
         for row in candidates:
@@ -1331,6 +1343,8 @@ class SmartTagService:
     def batches(self) -> Dict[str, Any]:
         """One row per generated batch, the ones whose registered tags expire soonest first."""
         self._expire_due()
+        from app.utils.archive import archived_keys
+        archived = archived_keys(self.client, 'smart_tags', 'tag_id')
         try:
             base = 'tag_id,status,is_disabled,batch_id,batch_label,tag_type,validity_months,valid_until,created_at,scan_count,last_scanned_at'
             try:
@@ -1354,6 +1368,7 @@ class SmartTagService:
                 'price': None, 'sold': 0, 'revenue': 0.0,
             })
             group['total'] += 1
+            group['archived_count'] = group.get('archived_count', 0) + int(str(row['tag_id']) in archived)
             if priced:
                 unit = float(row.get('price') or 0)
                 # The price shown is what an unsold tag costs now; a batch with none left shows what its tags were sold for.

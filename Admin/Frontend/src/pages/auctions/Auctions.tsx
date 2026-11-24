@@ -300,7 +300,7 @@ export default function Auctions() {
               {(auction.stage === "live" || auction.stage === "scheduled" || auction.stage === "awaiting_admin" || auction.stage === "awaiting_pickup") && <IconAction label={`${tr("Edit")} ${auction.reference || auction.title}`} tone="gold" onClick={() => setForm({ edit: auction })} icon={<Pencil size={16} aria-hidden="true" />} />}
               {FINISHED_STAGES.includes(auction.stage) && !auction.archived && <IconAction label={`${tr("Archive")} ${auction.reference || auction.title}`} onClick={() => setArchiveTarget(auction)} icon={<Archive size={16} aria-hidden="true" />} />}
               {auction.archived && <IconAction label={`${tr("Restore from archive")} ${auction.reference || auction.title}`} tone="success" onClick={() => setArchiveTarget(auction)} icon={<ArchiveRestore size={16} aria-hidden="true" />} />}
-              {isSuperAdmin && auction.status !== "live" && auction.status !== "scheduled" && auction.status !== "awaiting" && auction.fulfillment_status !== "awaiting_pickup" && (
+              {isSuperAdmin && auction.archived && auction.status !== "live" && auction.status !== "scheduled" && auction.status !== "awaiting" && auction.fulfillment_status !== "awaiting_pickup" && (
                 <IconAction label={`${tr("Delete")} ${auction.reference || auction.title}`} tone="danger" onClick={() => setDeleteTarget(auction)} icon={<Trash2 size={16} aria-hidden="true" />} />
               )}
             </RowActions>

@@ -114,6 +114,7 @@ export default function AdminProfile() {
               <div className="flex justify-between gap-4"><span className="text-slate-500">{tr("Full Name")}</span><span className="font-medium">{user.fname} {user.lname}</span></div>
               <div className="flex justify-between gap-4"><span className="text-slate-500">{tr("Email")}</span><span className="font-medium break-all">{user.email}</span></div>
               <div className="flex justify-between gap-4"><span className="text-slate-500">{tr("Campus ID")}</span><span className="font-medium">{user.campus_id || "N/A"}</span></div>
+              {user.ebalik_id && <div className="flex flex-wrap justify-between gap-2"><span className="text-slate-500">E-Balik ID</span><span className="break-all font-mono text-sm">{user.ebalik_id}</span></div>}
               <div className="flex justify-between gap-4"><span className="text-slate-500">{tr("Role")}</span><span className="font-medium">{user.user_role || "Admin"}</span></div>
             </div>
           </div>

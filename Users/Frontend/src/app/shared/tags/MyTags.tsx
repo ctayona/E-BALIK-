@@ -7,6 +7,7 @@ import { SkeletonBlock } from "@/app/shared/LoadingSkeleton";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { showToast } from "@/app/shared/toast/toastStore";
 import RecoveryHistory from "./RecoveryHistory";
+import SharedScanHistory from "./SharedScanHistory";
 import LivePhotoField from "@/app/shared/tags/LivePhotoField";
 import ScanCodeButton from "@/app/shared/tags/ScanCodeButton";
 import TagDetailsForm from "@/app/shared/tags/TagDetailsForm";
@@ -368,6 +369,7 @@ export default function MyTags({ initialTag, openClaim, onLoaded, onRegister, re
         {m && (
           <div className="space-y-5">
             {m.recovery && <RecoveryHistory key={"history-" + m.tag_id} tag={m.tag_id} openClaim={openClaim} />}
+            <SharedScanHistory key={"scans-"+m.tag_id} tag={m.tag_id}/>
             {m.tag_type === "nfc" && <NfcPanel key={m.tag_id} tagId={m.tag_id} />}
             <div className="flex flex-col items-center gap-3 rounded-2xl bg-[radial-gradient(120%_90%_at_20%_0%,#33497f_0%,#1f3160_55%,#0e1830_100%)] p-5">
               <TagQr tagId={m.tag_id} size="large" />

@@ -1,3 +1,4 @@
+from app.utils.report_publication import is_published
 """Claim page: submit, list and cancel claims."""
 from flask import Blueprint, Response, current_app, jsonify, request
 from werkzeug.utils import secure_filename
@@ -78,7 +79,7 @@ def claims():
             return jsonify({'error': 'Identity document content does not match its file type'}), 400
 
         found_item = db.get_found_item_by_fpost_id(fpost_id)
-        if not found_item:
+        if not found_item or not is_published(db.client, found_item):
             return jsonify({'error': 'Found item reference was not found'}), 404
         if str(found_item.get('status') or '').strip().lower() != 'unclaimed':
             return jsonify({'error': 'This found item is no longer accepting claims'}), 409

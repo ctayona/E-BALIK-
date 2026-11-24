@@ -126,7 +126,7 @@ export default function AuctionDetailModal({ id, canDelete, onClose, onEdit, onC
         size="xl"
         onClose={onClose}
         footer={<>
-          {canDelete && !live && !awaiting && !pickupPending && <button type="button" onClick={() => setPending("delete")} className={`${BTN.ghost} sm:mr-auto`}><Trash2 size={16} aria-hidden="true" />{tr("Delete")}</button>}
+          {canDelete && auction.archived && !live && !awaiting && !pickupPending && <button type="button" onClick={() => setPending("delete")} className={`${BTN.ghost} sm:mr-auto`}><Trash2 size={16} aria-hidden="true" />{tr("Delete")}</button>}
           {finished && !auction.archived && <button type="button" onClick={() => setPending("archive")} className={BTN.ghost}><Archive size={16} aria-hidden="true" />{tr("Archive")}</button>}
           {auction.archived && <button type="button" onClick={() => setPending("unarchive")} className={BTN.ghost}><ArchiveRestore size={16} aria-hidden="true" />{tr("Restore from archive")}</button>}
           {(live || awaiting) && <button type="button" onClick={() => setCancelOpen(true)} className={`${BTN.ghost} sm:mr-auto`}><Ban size={16} aria-hidden="true" />{tr("Cancel auction")}</button>}

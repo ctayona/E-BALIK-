@@ -17,7 +17,7 @@ import { campusToday, earliestReportDate, reportDateProblem } from "@/app/utils/
 type Report = {
   id: string; name: string; category?: string; description?: string;
   location: string; date: string; image?: string; status: string;
-  kind: "Missing" | "Found"; distinctive_marks?: string; turnover_location?: string;
+  kind: "Missing" | "Found"; distinctive_marks?: string; turnover_location?: string; publication?:string;
 };
 type Filter = "all" | "missing" | "found" | "completed";
 
@@ -76,12 +76,12 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
       const m = (missing.items || []).map((item: any): Report => ({
         id: item.mpost_id, name: item.item_name, category: item.category, description: item.description,
         distinctive_marks: item.distinctive_marks, location: item.last_location, date: item.last_seen_date,
-        image: item.image_url, status: item.status || "missing", kind: "Missing",
+        image: item.image_url, status: item.status || "missing", kind: "Missing",publication:item.publication_state,
       }));
       const f = (found.items || []).map((item: any): Report => ({
         id: item.fpost_id, name: item.item_name, category: item.category, description: item.description,
         location: item.location, date: item.found_date, image: item.image_url,
-        status: item.status || "unclaimed", turnover_location: item.turnover_location, kind: "Found",
+        status: item.status || "unclaimed", turnover_location: item.turnover_location, kind: "Found",publication:item.publication_state,
       }));
       // Newest first by date, except a report that was just submitted: it always leads, so it is the first thing the reporter sees.
       setReports([...m, ...f].sort((a, b) => (Number(b.id === highlightId) - Number(a.id === highlightId)) || (new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())));
@@ -271,6 +271,7 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
                 <span className="inline-flex flex-col items-end gap-1 sm:flex-row sm:items-center">
                   {report && fromTag(report) && <span className="inline-flex items-center gap-1 rounded-full bg-gold-50 px-2 py-1 text-[11px] font-semibold text-gold-800 ring-1 ring-gold-200"><QrCode size={11} aria-hidden="true" /><span className="hidden sm:inline">Smart Tag</span><span className="sr-only sm:hidden">Smart Tag</span></span>}
                   <StatusPill status={item.status || ""} />
+                  {report?.publication&&report.publication!=="approved"&&<StatusPill status={report.publication==="pending"?"Awaiting admin review":"Needs changes"}/>}
                 </span>
               );
             }}

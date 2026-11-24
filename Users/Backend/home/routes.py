@@ -716,6 +716,7 @@ def verify_admin_mfa_login():
             'mname': user.get('mname', ''),
             'lname': user.get('lname', ''),
             'campus_id': user.get('campus_id', ''),
+            'ebalik_id': _verification_profile_metadata(db, user)['ebalik_id'],
             'user_role': user.get('user_role'),
             'access_level': access_level,
             'token': token,

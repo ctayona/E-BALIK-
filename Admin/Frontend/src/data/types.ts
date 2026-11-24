@@ -36,6 +36,7 @@ export interface User {
   name: string;
   initials: string;
   studentId: string;
+  roleId?: string;
   email: string;
   program: string;
   reports: number;

@@ -163,6 +163,8 @@ def payment_number(source: str, source_ref: Any, moment: Optional[datetime]) -> 
     """PR-<date>-AU-<first 8 characters of the auction id>  or  PR-<date>-TG-<Smart Tag code>. One sale per item, so one number per item."""
     moment = moment or datetime.now(timezone.utc)
     ref = str(source_ref or '').upper()
+    if source == 'event_rental':
+        return f"{PAYMENT_PREFIX}-{_day(moment)}-EV-{ref.replace('-', '')[:24]}"
     return f"{PAYMENT_PREFIX}-{_day(moment)}-AU-{ref[:8]}" if source == 'auction' else f"{PAYMENT_PREFIX}-{_day(moment)}-TG-{ref[:30]}"
 
 
@@ -199,7 +201,7 @@ def _payment_receipts(db, account_id: str, owner: Dict[str, Any]) -> List[Dict[s
     staff: Dict[str, Dict[str, Any]] = {}
     result = []
     for entry in sales:
-        if entry.get('source') not in ('auction', 'smart_tag'):
+        if entry.get('source') not in ('auction', 'smart_tag', 'event_rental'):
             continue
         by = str(entry.get('recorded_by') or '')
         if by and by not in staff:
@@ -211,7 +213,7 @@ def _payment_receipts(db, account_id: str, owner: Dict[str, Any]) -> List[Dict[s
 def receipt_for_payment(db, entry_id: str) -> Optional[Dict[str, Any]]:
     """The receipt for one confirmed payment (for the confirming administrator and the payer's email). None if it is not a payment sale."""
     rows = db.client.table('income_ledger').select('*').eq('entry_id', str(entry_id)).limit(1).execute().data or []
-    if not rows or rows[0].get('kind') != 'sale' or rows[0].get('source') not in ('auction', 'smart_tag'):
+    if not rows or rows[0].get('kind') != 'sale' or rows[0].get('source') not in ('auction', 'smart_tag', 'event_rental'):
         return None
     entry = rows[0]
     owner = db.get_user_by_account_id(str(entry['payer_account_id'])) if entry.get('payer_account_id') else {}
@@ -225,7 +227,7 @@ def receipt_for_payment(db, entry_id: str) -> Optional[Dict[str, Any]]:
 
 def _verify_payment(db, day: str, ref: str, entered: str) -> Dict[str, Any]:
     kind_code, _, key = ref.partition('-')
-    source = {'AU': 'auction', 'TG': 'smart_tag'}.get(kind_code.upper())
+    source = {'AU': 'auction', 'TG': 'smart_tag', 'EV': 'event_rental'}.get(kind_code.upper())
     if not source or not key:
         return {'valid': False}
     try:
@@ -234,7 +236,12 @@ def _verify_payment(db, day: str, ref: str, entered: str) -> Dict[str, Any]:
         return {'valid': False}
     for row in rows:
         reference = str(row.get('source_ref') or '').upper()
-        if not (reference.startswith(key.upper()) if source == 'auction' else reference == key.upper()):
+        matches = reference == key.upper()
+        if source == 'event_rental':
+            matches = reference.replace('-', '').startswith(key.upper())
+        elif source == 'auction':
+            matches = reference.startswith(key.upper())
+        if not matches:
             continue
         moment = _parse(row.get('received_at'))
         if moment and _day(moment) == day and hmac.compare_digest(_code('payment', str(row['entry_id']), moment), entered):
@@ -354,7 +361,7 @@ def admin_list(db, kind: str = '', q: str = '', status: str = '', start: str = '
     people = _people(db, [s.get('payer_account_id') for s in sales] + [s.get('recorded_by') for s in sales] + [c.get('claimant_account_id') for c in claims] + [a.get('winner_account_id') for a in auctions]
                      + [p.get('seller_account_id') for p in payouts] + [p.get('paid_by') for p in payouts])
     for entry in sales:
-        if entry.get('source') not in ('auction', 'smart_tag'):
+        if entry.get('source') not in ('auction', 'smart_tag', 'event_rental'):
             continue
         number, moment = _entry_number(entry), _parse(entry.get('received_at'))
         rows.append({'kind': 'payment', 'id': str(entry['entry_id']), 'receipt_no': number, 'item': entry.get('description') or 'Payment', 'person': people.get(str(entry.get('payer_account_id')), ''),

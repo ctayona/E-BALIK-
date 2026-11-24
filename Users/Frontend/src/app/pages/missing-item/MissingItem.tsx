@@ -27,6 +27,7 @@ const CATEGORIES = ["Bags & Luggage", "Electronics", "Accessories", "Personal Ef
 import { useCampusVenues } from "../../../../../../shared/useCampusVenues";
 
 type Report = {
+  publication_state?:string;
   mpost_id: string;
   item_name: string;
   category: string;
@@ -228,8 +229,8 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
     const created = (result.item || null) as Report | null;
     showInfoModal({
       variant: "success",
-      title: "Missing report is now active",
-      message: "We'll compare it against every found item and notify you when a likely match appears.",
+      title: created?.publication_state==="pending"?"Report awaiting admin review":"Missing report is now active",
+      message: created?.publication_state==="pending"?"Your report is saved privately. An administrator must approve it before it appears in public listings or matching.":"We'll compare it against every found item and notify you when a likely match appears.",
       reference: created?.mpost_id,
       details: ["Check Matches any time to review possible found items."],
     });

@@ -214,6 +214,10 @@ Gate: campus tag registration/scan/renewal still works; event scans, private che
 
 ### Phase 8 — Rental booking and financial integration
 
+November 24 implementation checkpoint. The local university full-payment pilot is connected to event setup, reusable tag quotas, private payment evidence, existing receipts and verification, MFA refunds, ledger categories, exports and backup ordering. Activation requires the user-applied 20261124b_event_rentals.sql migration and EVENT_RENTALS_ENABLED=true. See EVENT_RENTAL_BILLING.md for acceptance and rollback. Operational acceptance remains pending.
+
+Local implementation is in [the billing handoff](EVENT_RENTAL_BILLING.md). Admin packages/bookings, full payments/refunds, complimentary authorization, receipt integration, event-rental reporting, package tag limits and custody-independent billing are implemented behind a default-off flag and migration capability. User migration and real-account acceptance remain pending before checking the commercial gate below.
+
 - [ ] Add organizer details, package/quote snapshot, agreed dates, included tags/support, cancellation terms, and booking states.
 - [ ] Keep booking/payment status separate from the event operating state; free pilots and authorized exceptions are explicit.
 - [ ] Initial scope: one full payment per booking. Defer deposits/installments until their ledger allocation and reconciliation model is designed.
@@ -303,7 +307,7 @@ Run targeted tests during development and the full compatibility suite at integr
 | Schema and isolation | All seven event migrations verified user-applied; service-only pilot metadata checked Nov 19 | Isolated SQL evidence plus real-account acceptance still required before operational sign-off |
 | Internal pilot | Software/operator tools prepared; actual operation not started | Staff briefing, monitored event and completed recovery/closure |
 | Tags/external users | Not started | Scoped tags and visitor/staff acceptance checks |
-| Paid rentals | Not started | Reconciled financial integration and operational readiness |
+| Paid rentals | University full-payment implementation available locally | User-applied migration, agreed pricing/terms and real-account acceptance |
 | Commercial release | Not started | Pilot evidence and user-approved rollout |
 
 Implement one phase or small reviewable slice at a time. For each slice, record scope, files, migration dependency, current checks, known limitations, and next gate. Append a daily prompt/edit/database audit. Do not label a phase complete because the UI exists or a build passes.

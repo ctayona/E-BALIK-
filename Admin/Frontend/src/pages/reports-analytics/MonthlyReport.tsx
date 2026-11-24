@@ -93,6 +93,7 @@ export default function MonthlyReportView() {
   const incomeParts = income ? [
     { label: tr("Auction Hall"), value: income.auction, color: "#1f3160" },
     { label: tr("Smart Tags"), value: income.smart_tag, color: "#d1a153" },
+    { label: tr("Event rentals"), value: income.event_rental ?? 0, color: "#8b5cf6" },
     ...(income.commission ? [{ label: tr("Seller commissions"), value: income.commission, color: "#c9784a" }] : []),
     { label: tr("Other"), value: income.other, color: "#0f8077" },
   ] : [];

@@ -162,6 +162,35 @@ async function rawApiCall<T = unknown>(
   }
 }
 
+interface AccountProfile {
+  account_id: string;
+  email: string;
+  fname: string;
+  mname?: string;
+  lname: string;
+  campus_id?: string;
+  ebalik_id?: string;
+  user_role?: string;
+  user_category?: string;
+  access_level?: 'user' | 'guard' | 'admin' | 'super_admin';
+  verification_status?: string;
+  verification_document_name?: string;
+  verification_document_type?: string;
+  verification_uploaded_at?: string;
+  verification_review_note?: string;
+}
+
+interface AuthSessionResponse extends Partial<AccountProfile> {
+  token?: string;
+  role?: string;
+  mfa_required?: boolean;
+  challenge_token?: string;
+  code?: string;
+  message?: string;
+  error?: string;
+  google_profile?: { email?: string; fname?: string; mname?: string; lname?: string };
+}
+
 /**
  * Authentication API calls
  */
@@ -207,7 +236,7 @@ export const authApi = {
   }) {
     return apiCall<{
       account_id: string; token: string; email: string; fname: string; mname?: string;
-      lname: string; campus_id: string; user_role: string; verification_status?: string;
+      lname: string; campus_id: string; ebalik_id?: string; user_role: string; verification_status?: string;
     }>('/api/auth/verify-otp', {
       method: 'POST',
       body: data,
@@ -218,14 +247,14 @@ export const authApi = {
    * Login user
    */
   async login(email: string, password: string) {
-    return apiCall('/api/auth/login', {
+    return apiCall<AuthSessionResponse>('/api/auth/login', {
       method: 'POST',
       body: { email, password },
     });
   },
 
   async verifyAdminMfa(challenge_token: string, code: string) {
-    return apiCall('/api/auth/admin-mfa/verify', {
+    return apiCall<AuthSessionResponse>('/api/auth/admin-mfa/verify', {
       method: 'POST',
       body: { challenge_token, code },
     });
@@ -235,7 +264,7 @@ export const authApi = {
    * Login or register with Google ID token
    */
   async googleLogin(credential: string, purpose: 'login' | 'register' = 'login') {
-    return apiCall('/api/auth/google-login', {
+    return apiCall<AuthSessionResponse>('/api/auth/google-login', {
       method: 'POST',
       body: { credential, purpose },
     });
@@ -274,7 +303,7 @@ export const authApi = {
    * Update current user profile
    */
   async getProfile() {
-    return apiCall('/api/auth/profile', {
+    return apiCall<{ user: AccountProfile }>('/api/auth/profile', {
       method: 'GET',
       requiresAuth: true,
     });
@@ -288,7 +317,7 @@ export const authApi = {
     campus_id?: string;
     user_role?: string;
   }) {
-    return apiCall('/api/auth/profile', {
+    return apiCall<{ user: AccountProfile }>('/api/auth/profile', {
       method: 'PUT',
       body: data,
       requiresAuth: true,

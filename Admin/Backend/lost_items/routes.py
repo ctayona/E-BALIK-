@@ -96,6 +96,8 @@ def manage_lost_item(item_reference):
             return jsonify({'error': 'Lost item not found'}), 404
         _log_admin_action(db, admin, 'Update Lost Item', 'Lost Items', updated.get('item_name') or item_reference, item_reference)
         return jsonify({'success': True, 'item': updated}), 200
+    except BinError as error:
+        return jsonify(error=error.message, code=error.code), error.status
     except ValueError as error:
         return jsonify({'error': str(error)}), 400
     except PermissionError as error:

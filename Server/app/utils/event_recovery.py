@@ -62,6 +62,15 @@ class EventRecovery:
         note = _text(payload['note'], 'Reason', 1000, True)
         if len(note) < 5:
             raise EventError('Enter a reason of at least five characters.')
+        current = self.events.get(identifier, include_deleted=True)
+        if payload['action'] == 'delete' and current['status'] != 'archived':
+            raise EventError('Archive the event first. Delete is available from Archived.', 409)
+        if payload['action'] == 'archive' and current['status'] == 'draft':
+            return self.rpc('admin_archive_draft_event', dict(p_event_id=event_id(identifier), p_actor_id=event_id(actor),
+                            p_version=payload['version'], p_note=note))['event']
+        if payload['action'] == 'restore' and current['status'] == 'archived' and current.get('deleted_at') is None:
+            return self.rpc('admin_restore_archived_event', dict(p_event_id=event_id(identifier), p_actor_id=event_id(actor),
+                            p_version=payload['version'], p_note=note))['event']
         return self.rpc('event_manage_workspace', dict(p_event_id=event_id(identifier), p_actor_id=event_id(actor), p_version=payload['version'], p_action=payload['action'], p_note=note))['event']
 
     @staticmethod

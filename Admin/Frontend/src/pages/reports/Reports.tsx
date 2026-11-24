@@ -6,8 +6,9 @@ import CustodyView from "./CustodyView";
 
 const LostItems = lazy(() => import("../lost-items/LostItems"));
 const FoundItems = lazy(() => import("../found-items/FoundItems"));
+const ReportApprovals = lazy(() => import("./ReportApprovals"));
 
-export type ReportsTab = "lost" | "found" | "custody";
+export type ReportsTab = "lost" | "found" | "custody" | "approve";
 
 /**
  * One page for everything people reported: the lost reports, the found reports, and the items the office is holding.
@@ -26,6 +27,7 @@ export default function Reports({ tab, onTabChange, onNavigate }: { tab: Reports
             { value: "lost", label: "Lost reports" },
             { value: "found", label: "Found reports" },
             { value: "custody", label: "Items in custody" },
+            { value: "approve", label: "Approve Reports" },
           ]}
         />
       </div>
@@ -33,6 +35,7 @@ export default function Reports({ tab, onTabChange, onNavigate }: { tab: Reports
         {tab === "lost" && <LostItems />}
         {tab === "found" && <FoundItems />}
         {tab === "custody" && <div className="p-4 sm:p-6"><CustodyView onNavigate={onNavigate} /></div>}
+        {tab === "approve" && <ReportApprovals />}
       </Suspense>
     </div>
   );

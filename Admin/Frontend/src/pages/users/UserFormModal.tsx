@@ -21,7 +21,7 @@ function generatePassword() {
 }
 
 /** Create a user account, or edit an existing account's profile details. */
-export default function UserFormModal({ user, onClose, onSaved }: { user?: AdminUserRow; onClose: () => void; onSaved: (user: AdminUserRow) => void }) {
+export default function UserFormModal({ user, onClose, onSaved, onManageAccess }: { user?: AdminUserRow; onClose: () => void; onSaved: (user: AdminUserRow) => void; onManageAccess?: () => void }) {
   const editing = Boolean(user);
   const initialName = splitName(user);
   const [fname, setFname] = useState(initialName.fname);
@@ -29,7 +29,7 @@ export default function UserFormModal({ user, onClose, onSaved }: { user?: Admin
   const [lname, setLname] = useState(initialName.lname);
   const [email, setEmail] = useState(user?.email ?? "");
   const [campusId, setCampusId] = useState(user && user.studentId !== "N/A" ? user.studentId : "");
-  const [role, setRole] = useState<AdminUserInput["user_role"]>((ROLES.find((r) => r === user?.program) ?? "Student"));
+  const [role, setRole] = useState<AdminUserInput["user_role"]>(user?.program === "Visitor" ? "Others" : (ROLES.find((r) => r === user?.program) ?? "Student"));
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -72,7 +72,7 @@ export default function UserFormModal({ user, onClose, onSaved }: { user?: Admin
         <Field label={tr("First name")} required>{(id) => <TextInput id={id} data-autofocus value={fname} onChange={(e) => setFname(e.target.value)} required maxLength={100} autoComplete="off" />}</Field>
         <Field label={tr("Last name")} required>{(id) => <TextInput id={id} value={lname} onChange={(e) => setLname(e.target.value)} required maxLength={100} autoComplete="off" />}</Field>
         <Field label={tr("Middle name")} hint={editing ? tr("Leave blank to keep the current value.") : undefined}>{(id) => <TextInput id={id} value={mname} onChange={(e) => setMname(e.target.value)} maxLength={100} autoComplete="off" />}</Field>
-        <Field label={tr("Role")}>{(id) => (
+        <Field label={tr("University affiliation")}>{(id) => (
           <SelectInput id={id} value={role} onChange={(e) => setRole(e.target.value as AdminUserInput["user_role"])}>
             {ROLES.map((r) => <option key={r}>{r}</option>)}
           </SelectInput>
@@ -81,6 +81,10 @@ export default function UserFormModal({ user, onClose, onSaved }: { user?: Admin
           <Field label={tr("Email")} required>{(id) => <TextInput id={id} type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={255} autoComplete="off" placeholder={tr("j.delacruz.k12345678@umak.edu.ph")} />}</Field>
         </div>
         <Field label={tr("Campus ID")} required>{(id) => <TextInput id={id} value={campusId} onChange={(e) => setCampusId(e.target.value)} required maxLength={50} autoComplete="off" placeholder={tr("K12345678")} />}</Field>
+        {editing && <div className="sm:col-span-2 rounded-xl border border-line p-3 text-sm text-ink-muted">
+          <p>{tr("Guard and administrator permissions are managed through Access role.")}</p>
+          {onManageAccess && <button type="button" className={BTN.ghost + " mt-2"} disabled={busy} onClick={onManageAccess}>{tr("Change access role")}</button>}
+        </div>}
         {!editing && (
           <Field label={tr("Temporary password")} required hint={tr("At least {0} characters.", { "0": MIN_PASSWORD })}>{(id) => (
             <div className="flex gap-2">

@@ -1,5 +1,6 @@
 """Account helpers shared by the Home (sign-in/registration) and Profile pages."""
 import re
+from app.utils.account_identity import ebalik_id
 
 
 def _ensure_email_normalized(email: str) -> str:
@@ -26,6 +27,7 @@ def _infer_user_role_and_campus(email: str, campus_id: str | None = None):
 def _verification_profile_metadata(db, user):
     profile = db._decrypt_profile_sensitive_fields(user) or user
     return {
+        'ebalik_id': ebalik_id(profile),
         'verification_status': profile.get('verification_status') or 'pending',
         'user_category': profile.get('user_category') or '',
         'verification_document_name': profile.get('verification_document_name') or '',
