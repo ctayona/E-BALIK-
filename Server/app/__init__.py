@@ -46,7 +46,7 @@ def create_app(config_name: str = None):
         r"/api/*": {
             "origins": app_config.CORS_ORIGINS,
             "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"],
+            "allow_headers": ["Content-Type", "Authorization", "X-Tag-Scan-Id", "X-Tag-Scan-Token"],
             "supports_credentials": True
         }
     })

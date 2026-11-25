@@ -48,7 +48,7 @@ export default function RecoveryFields({ value, change, onLocating, disabled }: 
     <CampusVenueSelect venues={venues.filter(v => v !== "Other")} value={value.venue}
       onChange={venue => change({ ...value, venue })} label="Found-at location" placeholder="Not sure / elsewhere" className={CX.input + " w-full min-w-0"} />
     <p className={CX.helper}>For an unlisted room or landmark, describe it in your message.</p>
-    <p className="text-sm">You may also share your current device location with the tag owner. It can differ from where you found the item. Only sending the report shares the point shown below. The owner can view it for seven days or until verified return, whichever comes first.</p>
+    <p className="text-sm">This finder-report location goes only to the tag owner, not to the admin scan log. To share with admins instead, use Optional scan location on the tag page. Only sending this report shares the point below with the owner, for seven days or until verified return.</p>
     <button type="button" className={CX.btnGhost} disabled={waiting} onClick={locate}>{waiting ? "Getting location…" : value.point ? "Retry location" : "Share my current location"}</button>
     {(waiting || value.point) && <button type="button" className={CX.btnGhost} onClick={() => { sequence.current++; markWaiting(false); change({ ...value, point: null }); setNotice("Location removed."); }}>Remove</button>}
     <p aria-live="polite" className={CX.helper}>{notice || (value.point && `${value.point.latitude.toFixed(5)}, ${value.point.longitude.toFixed(5)} · accuracy ±${Math.round(value.point.accuracy)} m · ${new Date(value.point.captured_at).toLocaleTimeString()}`)}</p>

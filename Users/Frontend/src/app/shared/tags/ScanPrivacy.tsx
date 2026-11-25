@@ -1,17 +1,13 @@
 import {useEffect,useRef,useState} from "react";
-import {tagsApi,type SharedPoint} from "@/app/utils/tags";
+import {tagsApi,newScanReceipt,type ScanReceipt,type SharedPoint} from "@/app/utils/tags";
 import CampusVenueSelect from "../../../../../../shared/CampusVenueSelect";
 import {useCampusVenues} from "../../../../../../shared/useCampusVenues";
 
 /** This component never requests location on mount. Each recipient must be chosen explicitly. */
-export default function ScanPrivacy({tag,enabled}:{tag:string;enabled:boolean}) {
+export default function ScanPrivacy({tag,enabled,recorded}:{tag:string;enabled:boolean;recorded?:ScanReceipt}) {
   const venues=useCampusVenues();
-  const [receipt]=useState(()=>{
-    const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
-    const hex=Array.from(bytes,b=>b.toString(16).padStart(2,"0")).join("");
-    return {scan_id:`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`,
-      token:Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,"0")).join("")};
-  });
+  const [fallbackReceipt]=useState(newScanReceipt);
+  const receipt=recorded??fallbackReceipt;
   const registration=useRef<Promise<unknown>|null>(null);
   const [ready,setReady]=useState(false),[admin,setAdmin]=useState(false),[owner,setOwner]=useState(false);
   const [venue,setVenue]=useState(""),[dropOff,setDropOff]=useState(""),[point,setPoint]=useState<SharedPoint|null>(null);
@@ -20,11 +16,14 @@ export default function ScanPrivacy({tag,enabled}:{tag:string;enabled:boolean}) 
   useEffect(()=>{
     let active=true;
     if(enabled){
-      if(!registration.current) registration.current=tagsApi.recordScan(tag,receipt);
-      registration.current.then(()=>{if(active)setReady(true);}).catch(()=>{if(active)setNotice("Visit logging is unavailable. You can still contact the owner or report the item.");});
+      if(recorded){setReady(true);}
+      else {
+        if(!registration.current) registration.current=tagsApi.recordScan(tag,receipt);
+        registration.current.then(()=>{if(active)setReady(true);}).catch(()=>{if(active)setNotice("Visit logging is unavailable. You can still contact the owner or report the item.");});
+      }
     }
     return ()=>{active=false;sequence.current++;};
-  },[tag,enabled,receipt]);
+  },[tag,enabled,receipt,recorded]);
   function locate(){
     if(!(admin||owner)){setNotice("Choose who may receive your location first.");return;}
     if(!navigator.geolocation||!window.isSecureContext){setNotice("GPS is unavailable. Choose an area or drop-off instead.");return;}
@@ -40,7 +39,8 @@ export default function ScanPrivacy({tag,enabled}:{tag:string;enabled:boolean}) 
     if(!withdraw)setAttempted(true);
     setBusy(true);setNotice("");
     try{
-      await tagsApi.shareScan(tag,withdraw?receipt:{...receipt,admin_consent:admin,owner_consent:owner,consent_version:"scan-v1",venue,drop_off:dropOff,point},withdraw?"withdraw":"share");
+      const proof={scan_id:receipt.scan_id,token:receipt.token};
+      await tagsApi.shareScan(tag,withdraw?proof:{...proof,admin_consent:admin,owner_consent:owner,consent_version:"scan-v1",venue,drop_off:dropOff,point},withdraw?"withdraw":"share");
       setShared(!withdraw);if(withdraw){setPoint(null);setVenue("");setDropOff("");setAdmin(false);setOwner(false);setReady(false);}
       setNotice(withdraw?"Shared location removed. Basic visit metadata expires within 30 days.":"Location shared only with the recipient(s) you chose. You can remove it below while this page remains open.");
     }catch(e){setNotice(e instanceof Error?e.message:"Unable to update scan location.");}
@@ -52,10 +52,11 @@ export default function ScanPrivacy({tag,enabled}:{tag:string;enabled:boolean}) 
     {enabled&&<>
       <p className="mt-2 text-white/85">Optional locations are visible for up to 7 days or until resolved/withdrawn. Basic visit records expire after 30 days; aggregate counts and the last-visit time remain with the tag. Choosing neither recipient keeps your location private and does not restrict recovery information.</p>
       <details className="mt-3">
-        <summary className="cursor-pointer font-semibold text-gold-200">Optionally share where this visit happened</summary>
+        <summary className="cursor-pointer font-semibold text-gold-200">Optional scan location: share with admins or owner</summary>
+        <p className="mt-2 text-white/85">This visit is logged even without location. To send a location to admins, choose the administrator checkbox, select GPS or an area, then press Share location. Sending location in the finder report only sends it to the owner.</p>
         <fieldset disabled={busy||shared||!ready} className="mt-3 space-y-3">
           <label className="flex items-start gap-2"><input type="checkbox" checked={admin} onChange={e=>setAdmin(e.target.checked)} className="mt-1"/>I agree to share my selected area/drop-off or GPS point with authorized E-Balik administrators for recovery and misuse review.</label>
-          <label className="flex items-start gap-2"><input type="checkbox" checked={owner} onChange={e=>setOwner(e.target.checked)} className="mt-1"/>I also agree to share that location with this tag's current owner to help recover the item.</label>
+          <label className="flex items-start gap-2"><input type="checkbox" checked={owner} onChange={e=>setOwner(e.target.checked)} className="mt-1"/>I agree to share that location with this tag's current owner to help recover the item.</label>
           <label className="block">Campus area (optional)<CampusVenueSelect venues={venues.filter(v=>v!=="Other")} value={venue} onChange={setVenue} label="Scan area" placeholder="Not sure / elsewhere" className="mt-1 w-full min-w-0 rounded-xl bg-white p-3 text-navy-950"/></label>
           <label className="block">Drop-off (optional)<select value={dropOff} onChange={e=>setDropOff(e.target.value)} className="mt-1 w-full rounded-xl bg-white p-3 text-navy-950"><option value="">Not selected</option><option>OHSO guard post</option><option>Lost and Found Office</option></select></label>
           <button type="button" disabled={locating||!(admin||owner)} onClick={locate} className="min-h-11 rounded-xl border border-white/30 px-3 py-2">{locating?"Getting GPS…":"Choose my current GPS point"}</button>

@@ -13,6 +13,60 @@ from Admin.Backend.activity_logs import routes as activity
 
 
 class ScanPrivacyTests(unittest.TestCase):
+    def test_capability_diagnostics_are_read_only(self):
+        from Users.Backend.smart_tags import routes
+        service=self.service();app=Flask(__name__);app.register_blueprint(routes.smart_tags_bp,url_prefix='/api/tags')
+        with patch.object(routes,'_service',return_value=service),patch.object(tag_scans,'status',return_value=dict(available=True,reason='ready')):
+            response=app.test_client().get('/api/tags/capabilities')
+        self.assertEqual(response.status_code,200);self.assertEqual(response.get_json()['scan_logging']['reason'],'ready')
+        service.public_view.assert_not_called();service.client.rpc.assert_not_called()
+
+    def test_cors_accepts_private_receipt_headers_for_deployed_tag_page(self):
+        from app import create_app
+        # Keep the real factory/CORS configuration without registering shared global blueprints again.
+        with patch('app.utils.supabase_db.get_db',return_value=MagicMock()),patch('app.blueprints.register_blueprints'),patch('app.utils.scheduler.start_scheduler'):
+            app=create_app('testing')
+        app.add_url_rule('/api/tags/ABCDEFGHJK23',view_func=lambda: {'tag_id':'ABCDEFGHJK23'})
+        origin=app.config['CORS_ORIGINS'][0]
+        response=app.test_client().options('/api/tags/ABCDEFGHJK23',headers={
+            'Origin':origin,'Access-Control-Request-Method':'GET',
+            'Access-Control-Request-Headers':'X-Tag-Scan-Id,X-Tag-Scan-Token'})
+        allowed=response.headers.get('Access-Control-Allow-Headers','').lower()
+        self.assertEqual(response.status_code,200)
+        self.assertIn('x-tag-scan-id',allowed);self.assertIn('x-tag-scan-token',allowed)
+
+    def test_logging_defaults_to_installed_schema_but_respects_explicit_suspension(self):
+        with patch.dict(os.environ,{},clear=True),patch.object(tag_scans,'installed',return_value=True):
+            self.assertTrue(tag_scans.enabled(MagicMock()))
+        with patch.dict(os.environ,SMART_TAG_SCAN_LOGGING_ENABLED='false'),patch.object(tag_scans,'installed') as migration:
+            self.assertEqual(tag_scans.status(MagicMock())['reason'],'disabled_by_configuration')
+            migration.assert_not_called()
+        with patch.dict(os.environ,SMART_TAG_SCAN_LOGGING_ENABLED='true'),patch.object(tag_scans,'installed',return_value=False):
+            self.assertFalse(tag_scans.enabled(MagicMock()))
+
+    def test_tag_open_records_metadata_and_returns_receipt_without_gps(self):
+        from Users.Backend.smart_tags import routes
+        service=self.service();service.public_view.return_value=dict(tag_id='ABCDEFGHJK23',status='active',contact={'name':'Visible owner'})
+        service.client.rpc.return_value.execute.return_value.data={'scan_id':'saved','scanned_at':'2026-11-25T02:00:00Z'}
+        app=Flask(__name__);app.register_blueprint(routes.smart_tags_bp,url_prefix='/api/tags')
+        nonce=self.body()
+        with patch.object(routes,'_service',return_value=service),patch.object(routes,'_optional_account_id',return_value=None),patch.object(routes.rate_limit,'allow',return_value=True),patch.object(routes.tag_recovery,'enabled',return_value=False),patch.object(tag_scans,'enabled',return_value=True):
+            response=app.test_client().get('/api/tags/ABCDEFGHJK23',headers={'X-Tag-Scan-Id':nonce['scan_id'],'X-Tag-Scan-Token':nonce['token']})
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(response.get_json()['scan_receipt']['scan_id'],nonce['scan_id'])
+        args=service.client.rpc.call_args.args[1]
+        self.assertEqual(args['p_action'],'record');self.assertEqual(args['p_data'],{})
+        self.assertNotIn('latitude',args);self.assertEqual(args['p_scan'],nonce['scan_id'])
+
+    def test_failed_recording_preserves_recovery_and_does_not_claim_a_saved_receipt(self):
+        from Users.Backend.smart_tags import routes
+        service=self.service();service.public_view.return_value=dict(tag_id='ABCDEFGHJK23',status='active',contact={'name':'Visible owner'})
+        app=Flask(__name__);app.register_blueprint(routes.smart_tags_bp,url_prefix='/api/tags')
+        with patch.object(routes,'_service',return_value=service),patch.object(routes,'_optional_account_id',return_value=None),patch.object(routes.rate_limit,'allow',return_value=True),patch.object(routes.tag_recovery,'enabled',return_value=False),patch.object(tag_scans,'enabled',return_value=True),patch.object(tag_scans,'record_open',side_effect=RuntimeError('offline')):
+            response=app.test_client().get('/api/tags/ABCDEFGHJK23')
+        self.assertEqual(response.status_code,200);self.assertTrue(response.get_json()['scan_recording_failed'])
+        self.assertNotIn('scan_receipt',response.get_json())
+
     def service(self):
         service=MagicMock()
         service.client.rpc.return_value.execute.return_value.data={'scan_id':'saved'}

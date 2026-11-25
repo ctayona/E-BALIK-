@@ -32,6 +32,8 @@ export interface SharedScan {
 
 export interface PublicTag {
   scan_logging?: boolean;
+  scan_receipt?: ScanReceipt;
+  scan_recording_failed?:boolean;
   recovery?: boolean;
   tag_id: string;
   status: PublicTagStatus;
@@ -119,10 +121,20 @@ export class TagRequestError extends Error {
   }
 }
 
-async function request<T>(path: string, options: { method?: string; body?: unknown; auth?: boolean } = {}): Promise<T> {
+export interface ScanReceipt {scan_id:string;token:string;scanned_at?:string}
+
+export function newScanReceipt():ScanReceipt {
+  const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
+  const hex=Array.from(bytes,b=>b.toString(16).padStart(2,"0")).join("");
+  return {scan_id:`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`,
+    token:Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,"0")).join("")};
+}
+
+async function request<T>(path: string, options: { method?: string; body?: unknown; auth?: boolean; headers?:Record<string,string> } = {}): Promise<T> {
   const upload = options.body instanceof FormData;
   // A multipart body must not carry our JSON content type: the browser adds the boundary itself.
   const headers: Record<string, string> = upload ? {} : { "Content-Type": "application/json" };
+  Object.assign(headers,options.headers);
   const token = localStorage.getItem("ebalik_token");
   if (token && options.auth !== false) headers.Authorization = `Bearer ${token}`;
   let response: Response;
@@ -144,7 +156,14 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
 
 export const tagsApi = {
   nfc: (id: string, offlineContact = false) => request<NfcPayload>(`/${encodeURIComponent(id)}/nfc`, { method: "POST", body: { offline_contact: offlineContact } }),
-  view: (id: string) => request<PublicTag>(`/${encodeURIComponent(id)}`),
+  view: async(id: string,receipt?:ScanReceipt) => {
+    try { return await request<PublicTag>(`/${encodeURIComponent(id)}`,{headers:receipt?{'X-Tag-Scan-Id':receipt.scan_id,'X-Tag-Scan-Token':receipt.token}:undefined}); }
+    catch(error) {
+      // Older backend instances may not yet allow the receipt headers during rollout.
+      if(receipt&&error instanceof TagRequestError&&error.status===0)return request<PublicTag>(`/${encodeURIComponent(id)}`);
+      throw error;
+    }
+  },
   recordScan: (id: string, body: { scan_id: string; token: string }) => request<{ scan_id: string; scanned_at: string }>(`/${encodeURIComponent(id)}/scan`, {method:"POST",body,auth:false}),
   shareScan: (id: string, body: Record<string,unknown>, action: "share" | "withdraw" = "share") => request(`/${encodeURIComponent(id)}/scan/${action}`, {method:"POST",body,auth:false}),
   scanHistory: (id: string) => request<{available:boolean;scans:SharedScan[]}>(`/${encodeURIComponent(id)}/scans`),

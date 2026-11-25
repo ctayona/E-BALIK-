@@ -137,12 +137,25 @@ def tag_page(tag_id):
     result = service.public_view(tag_id, _optional_account_id())
     try:
         result['scan_logging'] = tag_scans.enabled(service.client)
+        if result['scan_logging']:
+            try:
+                result['scan_receipt']=tag_scans.record_open(service,tag_id,
+                    request.headers.get('X-Tag-Scan-Id'),request.headers.get('X-Tag-Scan-Token'))
+            except Exception:
+                result['scan_recording_failed']=True
+                current_app.logger.warning('Smart Tag visit recording unavailable; recovery remains accessible')
     except Exception:
         # Optional logging must not block the owner's basic recovery information.
         result['scan_logging'] = False
     if result.get('status') in ('active','lost') and tag_recovery.enabled(service.client):
         result['recovery'] = True
     return _private(result)
+
+
+@smart_tags_bp.get('/capabilities')
+@_handled('load Smart Tag capabilities')
+def tag_capabilities():
+    return _private({'scan_logging':tag_scans.status(_service().client)})
 
 
 @smart_tags_bp.post('/<tag_id>/scan')

@@ -1,8 +1,9 @@
 """Minimal page-open logs; scanner locations require separate recipient consent."""
 import hashlib
 import os
+import secrets
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID,uuid4
 from .report_publication import installed
 from .tag_recovery import point
 from .smart_tags import TagError, normalize_tag_id
@@ -10,7 +11,20 @@ from .campus_catalogue import available
 
 
 def enabled(client):
-    return os.getenv('SMART_TAG_SCAN_LOGGING_ENABLED','').lower()=='true' and installed(client)
+    return status(client)['available']
+
+
+def status(client):
+    # Applying the reviewed schema activates logging unless an operator explicitly suspends it.
+    if os.getenv('SMART_TAG_SCAN_LOGGING_ENABLED','auto').strip().lower() in ('false','0','off','no'):
+        return dict(available=False,reason='disabled_by_configuration')
+    return dict(available=True,reason='ready') if installed(client) else dict(available=False,reason='migration_required')
+
+
+def record_open(service,tag,scan_id=None,token=None):
+    receipt=dict(scan_id=scan_id or str(uuid4()),token=token or secrets.token_urlsafe(32))
+    saved=command(service,tag,receipt,'record')
+    return {**receipt,'scanned_at':saved['scanned_at']}
 
 
 def command(service, tag, body, action):
@@ -69,7 +83,7 @@ def sanitize(row, recipient):
 
 def list_scans(service, offset=0, tag='', status='all', owner=None):
     if not enabled(service.client):
-        return dict(available=False,scans=[],has_more=False)
+        return dict(**status(service.client),scans=[],has_more=False)
     now = datetime.now(timezone.utc).isoformat()
     q=service.client.table('smart_tag_scans').select('*').gt('expires_at',now)
     if owner:

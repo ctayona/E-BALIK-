@@ -31,6 +31,9 @@ services:
         value: "true"
       - key: SMART_TAG_RECOVERY_ENABLED
         value: "true"
+      # Still requires the manually applied scan/privacy migration; GPS always needs recipient consent.
+      - key: SMART_TAG_SCAN_LOGGING_ENABLED
+        value: "true"
       - key: OTP_EXPIRATION_MINUTES
         value: "10"
       - key: JWT_SECRET_KEY
