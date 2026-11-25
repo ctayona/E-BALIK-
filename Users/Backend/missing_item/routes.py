@@ -119,7 +119,7 @@ def create_missing_item():
             to_email=reporter.get('email'),
             recipient_name=user_full_name,
             subject='Your E-Balik missing-item report was received',
-            summary='We received your missing-item report. Keep this reference for tracking and future follow-up.',
+            summary='Your private report is for administrator approval and has not been posted yet. Track it in My reports → For approval.' if item.get('publication_state')=='pending' else 'We received your missing-item report. Keep this reference for tracking and future follow-up.',
             reference_label='Missing report reference',
             reference=mpost_id,
             details={
@@ -131,7 +131,7 @@ def create_missing_item():
         )
         if not email_sent:
             current_app.logger.warning('Missing report %s was saved, but confirmation email was not sent', mpost_id)
-        return jsonify({'message': 'Missing item report created', 'item': item, 'mpost_id': mpost_id}), 201
+        return jsonify({'message': 'Report submitted for approval' if item.get('publication_state')=='pending' else 'Missing item report created', 'item': item, 'mpost_id': mpost_id}), 201
     except ReportRuleError as error:
         return jsonify({'error': error.message, 'code': error.code, **error.extra}), error.status
     except TextRejected as error:

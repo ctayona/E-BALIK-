@@ -165,6 +165,7 @@ export interface AdminClaimHistoryRow {
 }
 
 export interface AdminFoundItemRow {
+  publicationState?: "pending" | "approved" | "rejected";
   id: string;
   item: string;
   description: string;
@@ -185,6 +186,7 @@ export interface AdminFoundItemRow {
 }
 
 export interface AdminLostItemRow {
+  publicationState?: "pending" | "approved" | "rejected";
   id: string;
   item: string;
   description: string;

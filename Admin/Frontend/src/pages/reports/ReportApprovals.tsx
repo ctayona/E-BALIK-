@@ -1,4 +1,4 @@
-import {useEffect,useState} from "react";
+import {useEffect,useRef,useState} from "react";
 import AdminModal from "../../components/ui/AdminModal";
 import {BTN,SelectInput,TextInput,TextArea} from "../../components/ui/primitives";
 import {ITEM_CATEGORIES} from "../../utils/itemOptions";
@@ -8,19 +8,22 @@ export default function ReportApprovals(){
  const [rows,setRows]=useState<ReviewReport[]>([]),[available,setAvailable]=useState(true),[loading,setLoading]=useState(true),[more,setMore]=useState(false);
  const [kind,setKind]=useState("all"),[state,setState]=useState("pending"),[category,setCategory]=useState(""),[q,setQ]=useState(""),[offset,setOffset]=useState(0),[refresh,setRefresh]=useState(0);
  const [selected,setSelected]=useState<ReviewReport|null>(null),[decision,setDecision]=useState("approved"),[note,setNote]=useState(""),[requestId,setRequestId]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");
+ const paused=useRef(true);paused.current=loading||busy||!!selected;
+ useEffect(()=>{const update=()=>{if(document.visibilityState==="visible"&&!paused.current)setRefresh(n=>n+1);};const timer=setInterval(update,10000);window.addEventListener("focus",update);document.addEventListener("visibilitychange",update);return()=>{clearInterval(timer);window.removeEventListener("focus",update);document.removeEventListener("visibilitychange",update);};},[]);
  useEffect(()=>{let active=true;setLoading(true);setError("");const timer=setTimeout(()=>{
   privacyRead<{available:boolean;reports:ReviewReport[];has_more:boolean}>("report-publication",{kind,state,category,q,offset}).then(data=>{if(active){setRows(data.reports);setAvailable(data.available);setMore(data.has_more);}}).catch(e=>{if(active){setRows([]);setError(e.message);}}).finally(()=>{if(active)setLoading(false);});
  },200);return()=>{active=false;clearTimeout(timer);};},[kind,state,category,q,offset,refresh]);
  function filter(set:(v:string)=>void,value:string){set(value);setOffset(0);}
  async function review(){if(!selected)return;setBusy(true);setError("");try{
   await privacyWrite("report-publication",{kind:selected.kind,item_id:selected.item_id,version:selected.version,state:decision,note,request_id:requestId},"Review report publication");
+  setRows(current=>current.filter(row=>row.item_id!==selected.item_id||row.kind!==selected.kind));
   setSelected(null);setRefresh(n=>n+1);
  }catch(e){setError(e instanceof Error?e.message:"Review failed. Refresh the report.");}finally{setBusy(false);}}
  return <section className="space-y-4 p-4 sm:p-6 text-ink">
   <div><h1 className="text-2xl font-semibold">Approve Reports</h1><p className="mt-1 text-sm text-ink-muted">Review campus posts before they appear in the hub, matching, search and public feed. Approval does not confirm physical custody or ownership. Content edits require review again.</p></div>
   <div className="grid gap-3 rounded-2xl border border-line bg-[var(--surface)] p-4 sm:grid-cols-2 lg:grid-cols-4">
    <label className="text-sm">Report type<SelectInput value={kind} onChange={e=>filter(setKind,e.target.value)}><option value="all">All reports</option><option value="missing">Lost reports</option><option value="found">Found reports</option></SelectInput></label>
-   <label className="text-sm">Review state<SelectInput value={state} onChange={e=>filter(setState,e.target.value)}><option value="pending">Awaiting review</option><option value="approved">Approved</option><option value="rejected">Needs changes</option></SelectInput></label>
+   <label className="text-sm">Review state<SelectInput value={state} onChange={e=>filter(setState,e.target.value)}><option value="pending">For approval</option><option value="approved">Approved</option><option value="rejected">Needs changes</option></SelectInput></label>
    <label className="text-sm">Category<SelectInput value={category} onChange={e=>filter(setCategory,e.target.value)}><option value="">All categories</option>{ITEM_CATEGORIES.map(c=><option key={c}>{c}</option>)}</SelectInput></label>
    <label className="text-sm">Item title<TextInput value={q} onChange={e=>filter(setQ,e.target.value)} placeholder="Filter item titles"/></label>
   </div>

@@ -181,7 +181,7 @@ def create_found_item():
             to_email=reporter.get('email'),
             recipient_name=user_full_name,
             subject='Your E-Balik found-item report was received',
-            summary='Thank you for turning in a found item. Keep this reference if administrators need to follow up about custody.',
+            summary='Your private report is for administrator approval and has not been posted yet. Custody details are retained separately. Track it in My reports → For approval.' if item.get('publication_state')=='pending' else 'Thank you for turning in a found item. Keep this reference if administrators need to follow up about custody.',
             reference_label='Found item reference',
             reference=fpost_id,
             details={
@@ -194,7 +194,7 @@ def create_found_item():
         )
         if not email_sent:
             current_app.logger.warning('Found item %s was saved, but confirmation email was not sent', fpost_id)
-        return jsonify({'message': 'Found item report created', 'item': item, 'fpost_id': fpost_id}), 201
+        return jsonify({'message': 'Report submitted for approval' if item.get('publication_state')=='pending' else 'Found item report created', 'item': item, 'fpost_id': fpost_id}), 201
     except TextRejected as error:
         return jsonify(error.body()), error.status
     except ReportRuleError as error:

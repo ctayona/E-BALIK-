@@ -44,6 +44,10 @@ def submission(client):
     return {}
 
 
+def review_columns(client):
+    return ',publication_state' if installed(client) else ''
+
+
 def list_reports(db, kind, state, category, query, offset):
     if not installed(db.client):
         return dict(available=False, reports=[], has_more=False)
@@ -96,8 +100,9 @@ def review(db, actor, kind, item_id, body):
             try:
                 db.create_user_notification(row.get('reporter_account_id') or row['account_id'],
                     'Report approved' if state=='approved' else 'Report needs changes',
-                    'Your report is approved for publication.' if state=='approved' else note.strip(),
-                    notification_type='report_review',link_label='My reports',link_page='my-reports')
+                    f"{row.get('fpost_id') or row.get('mpost_id')}: Your report was approved and is now posted." if state=='approved' else f"{row.get('fpost_id') or row.get('mpost_id')}: {note.strip()}",
+                    found_item_id=item_id if kind=='found' else None,missing_report_id=item_id if kind=='missing' else None,
+                    notification_type='report_approval' if state=='approved' else 'report_rejection',link_label='View my report',link_page='my-reports')
                 if state=='approved':
                     from . import match_alerts
                     (match_alerts.alert_for_new_found_item if kind=='found' else match_alerts.alert_for_new_missing_report)(db,row)

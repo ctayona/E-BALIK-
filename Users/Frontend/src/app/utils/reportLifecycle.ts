@@ -14,7 +14,13 @@ export function isCompletedReport(kind: ReportKind, status?: string | null): boo
 }
 
 /** The words a person sees: finished reports say "Completed", the rest keep their own status. */
-export function reportStatusLabel(kind: ReportKind, status?: string | null): string {
+export function isReportPublished(publication?: string | null): boolean {
+  return !publication || publication === "approved";
+}
+
+export function reportStatusLabel(kind: ReportKind, status?: string | null, publication?:string|null): string {
+  if(publication === "pending") return "For approval";
+  if(publication === "rejected") return "Needs changes";
   if (isCompletedReport(kind, status)) return "Completed";
   const value = String(status || "").trim().toLowerCase();
   if (!value) return "Unknown";

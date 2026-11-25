@@ -3,6 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
 import { ArrowLeft, ArrowRight, BadgeCheck, CalendarRange, ChevronDown, ClipboardList, FileStack, Filter, ImagePlus, Lightbulb, MapPin, RefreshCw, Search, SearchCheck, Tag, UserRound, X } from "lucide-react";
 import { useAuth } from "@/app/utils/useAuth";
+import {reportStatusLabel} from "@/app/utils/reportLifecycle";
 import PhotoSourceButtons from "@/app/shared/PhotoSourceButtons";
 import { useVerificationPrompt } from "@/app/shared/verification/VerificationRequiredModal";
 import { CX } from "@/app/utils/clay";
@@ -124,7 +125,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
 
   const galleryReports = useMemo<GalleryItem[]>(() => filteredReports.map((report) => ({
     id: report.mpost_id, title: report.item_name, kind: "missing", image: report.image_url || undefined, category: report.category,
-    location: report.last_location, date: report.last_seen_date, description: report.description, status: report.status,
+    location: report.last_location, date: report.last_seen_date, description: report.description, status: reportStatusLabel("Missing",report.status,report.publication_state),
   })), [filteredReports]);
   const galleryResults = useMemo<GalleryItem[]>(() => [...foundResults].sort((a, b) => b.match_percentage - a.match_percentage).map((item) => ({
     id: item.fpost_id, title: item.item_name, kind: "found", image: item.image_url || undefined, category: item.category,
@@ -229,10 +230,10 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
     const created = (result.item || null) as Report | null;
     showInfoModal({
       variant: "success",
-      title: created?.publication_state==="pending"?"Report awaiting admin review":"Missing report is now active",
+      title: created?.publication_state==="pending"?"Report submitted for approval":"Missing report is now active",
       message: created?.publication_state==="pending"?"Your report is saved privately. An administrator must approve it before it appears in public listings or matching.":"We'll compare it against every found item and notify you when a likely match appears.",
       reference: created?.mpost_id,
-      details: ["Check Matches any time to review possible found items."],
+      details: [created?.publication_state==="pending"?"Track this private submission in My reports → For approval. We will notify you after review.":"Check Matches any time to review possible found items."],
     });
     setItemName("");
     setDescription("");
@@ -555,7 +556,7 @@ export default function MissingItem({ initialSearchTerm = "", focused = false, o
             <p className="whitespace-pre-line text-[15px] leading-7 text-ink-soft">{openReport.description || "No description provided."}</p>
             <dl className="grid gap-3 sm:grid-cols-2">
               {[
-                ["Category", openReport.category], ["Status", openReport.status || "missing"],
+                ["Category", openReport.category], ["Status", reportStatusLabel("Missing",openReport.status,openReport.publication_state)],
                 ["Last seen at", openReport.last_location], ["Date lost", openReport.last_seen_date],
                 ...(openReport.distinctive_marks ? [["Private marks (only you and admins)", openReport.distinctive_marks]] : []),
               ].map(([label, value]) => (

@@ -1,9 +1,10 @@
 import { useCampusVenues } from "../../../../../../shared/useCampusVenues";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CalendarDays, CheckCircle2, FileStack, GitCompareArrows, Layers, MapPin, Pencil, ShieldCheck, Tag, Trash2, Search, AlertTriangle, Plus, RefreshCw, QrCode } from "lucide-react";
 import type { NavigationOptions, Page } from "@/app/types";
 import { useAuth } from "@/app/utils/useAuth";
-import { isCompletedReport, reportStatusLabel } from "@/app/utils/reportLifecycle";
+import { isCompletedReport, isReportPublished, reportStatusLabel } from "@/app/utils/reportLifecycle";
+import { invalidateApiCache } from "@/app/utils/api";
 import { CX } from "@/app/utils/clay";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 import { showInfoModal } from "@/app/shared/info-modal/infoModalStore";
@@ -19,12 +20,12 @@ type Report = {
   location: string; date: string; image?: string; status: string;
   kind: "Missing" | "Found"; distinctive_marks?: string; turnover_location?: string; publication?:string;
 };
-type Filter = "all" | "missing" | "found" | "completed";
+type Filter = "all" | "missing" | "found" | "completed" | "approval";
 
 const toGallery = (report: Report): GalleryItem => ({
   id: report.id, title: report.name, kind: report.kind === "Found" ? "found" : "missing", image: report.image || undefined,
   category: report.category, location: report.location, date: report.date, description: report.description,
-  heldAt: report.turnover_location, status: reportStatusLabel(report.kind, report.status),
+  heldAt: report.turnover_location, status: reportStatusLabel(report.kind, report.status,report.publication),
 });
 
 function StatusPill({ status }: { status: string }) {
@@ -45,7 +46,7 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
   const venueOptions = useCampusVenues();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState<Filter>(initialTab === "completed" ? "completed" : "all");
+  const [active, setActive] = useState<Filter>(initialTab === "completed" ? "completed" : initialTab === "approval" ? "approval" : "all");
   const [selected, setSelected] = useState<Report | null>(null);
   const [draft, setDraft] = useState<Report | null>(null);
   const [editing, setEditing] = useState(false);
@@ -56,6 +57,8 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const loadInFlight=useRef(false);
+  const routedHighlight=useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if ((!confirmDelete && !confirmEdit) || confirmCountdown <= 0) return;
@@ -69,9 +72,12 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
     setConfirmChecked(false);
   }, [confirmDelete]);
 
-  async function loadReports() {
-    setLoading(true);
+  async function loadReports(background=false) {
+    if(loadInFlight.current)return;
+    loadInFlight.current=true;
+    if(!background)setLoading(true);
     try {
+      invalidateApiCache();
       const [missing, found] = await Promise.all([getMissingItems(), getFoundItems()]);
       const m = (missing.items || []).map((item: any): Report => ({
         id: item.mpost_id, name: item.item_name, category: item.category, description: item.description,
@@ -84,12 +90,20 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
         status: item.status || "unclaimed", turnover_location: item.turnover_location, kind: "Found",publication:item.publication_state,
       }));
       // Newest first by date, except a report that was just submitted: it always leads, so it is the first thing the reporter sees.
-      setReports([...m, ...f].sort((a, b) => (Number(b.id === highlightId) - Number(a.id === highlightId)) || (new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())));
+      const updated=[...m, ...f].sort((a, b) => (Number(b.id === highlightId) - Number(a.id === highlightId)) || (new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()));
+      setReports(updated);
+      if(background)setSelected(previous=>previous?updated.find(row=>row.id===previous.id)||previous:null);
     } finally {
+      loadInFlight.current=false;
       setLoading(false);
     }
   }
   useEffect(() => { void loadReports(); }, [getFoundItems, getMissingItems, highlightId]);
+  useEffect(()=>{
+    const update=()=>{if(document.visibilityState==="visible"&&!editing&&!saving&&!confirmEdit&&!confirmDelete)void loadReports(true);};
+    const timer=setInterval(update,15000);document.addEventListener("visibilitychange",update);window.addEventListener("focus",update);
+    return()=>{clearInterval(timer);document.removeEventListener("visibilitychange",update);window.removeEventListener("focus",update);};
+  },[getFoundItems,getMissingItems,highlightId,editing,saving,confirmEdit,confirmDelete]);
 
   function openReport(report: Report) {
     setSelected(report);
@@ -120,7 +134,10 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
       showInfoModal({ variant: "error", title: "Changes not saved", message: result.error || "Unable to update report." });
       return;
     }
-    showInfoModal({ variant: "success", title: "Report updated", message: `Your changes to "${draft.name}" are saved and matching has been refreshed.`, reference: draft.id });
+    const publication=(result.item as {publication_state?:string}|undefined)?.publication_state;
+    const needsReview=!isReportPublished(publication);
+    showInfoModal({ variant: "success", title: needsReview?"Changes submitted":"Report updated", message: needsReview?`Your changes to "${draft.name}" are saved. Check For approval for the review status before publication.`:`Your changes to "${draft.name}" are saved.`, reference: draft.id });
+    setActive(needsReview?"approval":"all");
     setEditing(false); setSelected(null); setConfirmEdit(false); await loadReports();
   }
 
@@ -141,20 +158,23 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
   function openDeleteConfirmation() { setConfirmCountdown(5); setConfirmChecked(false); setConfirmDelete(true); }
 
   // Finished reports (the item was released to its owner) live in the Completed tab; the other tabs only show reports still in progress.
-  const finished = useMemo(() => reports.filter((r) => isCompletedReport(r.kind, r.status)), [reports]);
-  const inProgress = useMemo(() => reports.filter((r) => !isCompletedReport(r.kind, r.status)), [reports]);
+  const approval = useMemo(() => reports.filter(r => !isReportPublished(r.publication)),[reports]);
+  const finished = useMemo(() => reports.filter((r) => isReportPublished(r.publication) && isCompletedReport(r.kind, r.status)), [reports]);
+  const inProgress = useMemo(() => reports.filter((r) => isReportPublished(r.publication) && !isCompletedReport(r.kind, r.status)), [reports]);
+  useEffect(()=>{if(highlightId&&routedHighlight.current!==highlightId){const report=reports.find(r=>r.id===highlightId);if(report){if(!isReportPublished(report.publication))setActive("approval");routedHighlight.current=highlightId;}}},[highlightId,reports]);
   const counts = useMemo(() => ({
     all: inProgress.length,
     missing: inProgress.filter((r) => r.kind === "Missing").length,
     found: inProgress.filter((r) => r.kind === "Found").length,
     completed: finished.length,
-  }), [inProgress, finished]);
+    approval: approval.length,
+  }), [inProgress, finished,approval]);
   const visibleReports = useMemo(() => {
-    const pool = active === "completed" ? finished : inProgress.filter((r) => active === "all" || r.kind.toLowerCase() === active);
+    const pool = active === "approval" ? approval : active === "completed" ? finished : inProgress.filter((r) => active === "all" || r.kind.toLowerCase() === active);
     const needle = query.trim().toLowerCase();
     if (!needle) return pool;
     return pool.filter((r) => [r.name, r.id, r.category, r.location, r.description].some((part) => String(part || "").toLowerCase().includes(needle)));
-  }, [finished, inProgress, active, query]);
+  }, [finished, inProgress, approval,active, query]);
   // Reports made by marking a Smart Tag as lost carry the tag's code in their private marks.
   const fromTag = (report: Report) => /^smart tag\b/i.test(report.distinctive_marks || "");
 
@@ -177,7 +197,7 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
             <div className="min-w-0">
               <p className="text-[13px] font-semibold text-gold-300">Personal workspace</p>
               <h1 className="mt-1 font-[family-name:var(--font-heading)] text-[28px] font-semibold leading-tight sm:text-[34px]">My reports</h1>
-              <p className="mt-1.5 max-w-[56ch] text-[14.5px] leading-6 text-navy-100">Everything you've reported, in one place. Open a report to review, edit or remove it.</p>
+              <p className="mt-1.5 max-w-[56ch] text-[14.5px] leading-6 text-navy-100">Track private approval requests and approved posts. An administrator reviews each submission before it is posted.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => onNavigate("matches")} className="inline-flex min-h-[46px] items-center gap-2 rounded-2xl bg-white/10 px-4 text-[14px] font-semibold text-white ring-1 ring-white/20 transition-colors hover:bg-white/15">
@@ -217,7 +237,7 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
         <div className="glass sticky top-[calc(var(--app-header-h)+12px+env(safe-area-inset-top))] z-20 mb-5 flex items-center justify-between gap-2 rounded-[20px] p-2">
           <div role="tablist" aria-label="Report type" className="no-scrollbar flex min-w-0 gap-1 overflow-x-auto">
             <datalist id={formId + "-venues"}>{venueOptions.map(v => <option key={v} value={v} />)}</datalist>
-            {(["all", "missing", "found", "completed"] as const).map((tab) => (
+            {(["all", "approval", "missing", "found", "completed"] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -228,13 +248,14 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
                   active === tab ? "bg-[linear-gradient(180deg,#2b4282_0%,#1f3160_100%)] text-white shadow-[0_8px_18px_-10px_rgba(17,27,66,0.8)]" : "text-ink-soft hover:bg-white/80"
                 }`}
               >
-                {tab === "all" ? "All" : tab === "missing" ? "Missing" : tab === "found" ? "Found" : "Completed"}
+                {tab === "approval" ? "For approval" : tab === "all" ? "Posted" : tab === "missing" ? "Missing" : tab === "found" ? "Found" : "Completed"}
                 <span className={`rounded-full px-1.5 text-[12px] tabular-nums ${active === tab ? "bg-white/20" : "bg-frost-100 text-ink-muted"}`}>{counts[tab]}</span>
               </button>
             ))}
           </div>
           <ViewToggle compact />
         </div>
+        {active==="approval"&&<p className="mb-4 rounded-2xl border border-line bg-gold-50 p-4 text-sm text-ink">Private submissions awaiting approval or corrections appear here. They stay out of your posted reports and the campus hub until approved. You will receive a notification after review.</p>}
 
         <div className="mb-4 flex items-center gap-2">
           <div role="search" className="relative min-w-0 flex-1">
@@ -271,7 +292,6 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
                 <span className="inline-flex flex-col items-end gap-1 sm:flex-row sm:items-center">
                   {report && fromTag(report) && <span className="inline-flex items-center gap-1 rounded-full bg-gold-50 px-2 py-1 text-[11px] font-semibold text-gold-800 ring-1 ring-gold-200"><QrCode size={11} aria-hidden="true" /><span className="hidden sm:inline">Smart Tag</span><span className="sr-only sm:hidden">Smart Tag</span></span>}
                   <StatusPill status={item.status || ""} />
-                  {report?.publication&&report.publication!=="approved"&&<StatusPill status={report.publication==="pending"?"Awaiting admin review":"Needs changes"}/>}
                 </span>
               );
             }}
@@ -292,7 +312,7 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
               <div className="glass flex flex-col items-center gap-3 rounded-[22px] px-6 py-14 text-center">
                 <span className="flex size-14 items-center justify-center rounded-2xl bg-frost-100 text-iris-600"><FileStack size={26} aria-hidden="true" /></span>
                 <p className="text-[16px] font-semibold text-ink">No reports in this view yet</p>
-                <p className="max-w-[44ch] text-[14px] text-ink-muted">Reports you submit for found or lost items will appear here.</p>
+                <p className="max-w-[44ch] text-[14px] text-ink-muted">{active==="approval"?"New submissions and changes awaiting review appear here privately.":"Approved reports appear here. Pending submissions are in For approval."}</p>
                 <button type="button" onClick={() => onNavigate("report-item")} className={CX.btnGold}>Report an item</button>
               </div>
             )}
@@ -313,7 +333,7 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
         hero={!editing && selected?.image ? (
           <div className="relative">
             <ItemImage item={toGallery(selected)} className="h-[200px] w-full sm:h-[240px]" />
-            <span className="absolute bottom-3 left-3"><StatusPill status={reportStatusLabel(selected.kind, selected.status)} /></span>
+            <span className="absolute bottom-3 left-3"><StatusPill status={reportStatusLabel(selected.kind, selected.status,selected.publication)} /></span>
           </div>
         ) : undefined}
         footer={editing ? (
@@ -328,7 +348,7 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
             <button type="button" onClick={openDeleteConfirmation} className={`${CX.btnGhost} border-rose-200 text-rose-700 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-800 sm:mr-auto`}>
               <Trash2 size={15} aria-hidden="true" /> Delete
             </button>
-            {selected?.kind === "Missing" && (
+            {selected?.kind === "Missing" && isReportPublished(selected.publication) && (
               <button type="button" onClick={() => { const id = selected.id; setSelected(null); onNavigate("matches", { reportId: id }); }} className={CX.btnGhost}>
                 <GitCompareArrows size={15} aria-hidden="true" /> Matches
               </button>
@@ -376,6 +396,7 @@ export default function MyReports({ onNavigate, highlightId, initialTab }: { onN
           </form>
         ) : (
           <div className="space-y-4">
+            {!isReportPublished(selected.publication)&&<p className="rounded-2xl border border-line bg-gold-50 p-3.5 text-sm text-ink"><strong>{reportStatusLabel(selected.kind,selected.status,selected.publication)}.</strong> This is a private submission awaiting administrator approval or corrections.</p>}
             {selectedCompleted && (
               <p className="flex items-start gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50 p-3.5 text-[14px] leading-6 text-emerald-900">
                 <CheckCircle2 size={18} className="mt-0.5 shrink-0" aria-hidden="true" />

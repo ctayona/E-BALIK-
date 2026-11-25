@@ -1,4 +1,4 @@
-from app.utils.report_publication import public_table
+from app.utils.report_publication import public_table, review_columns, submission as publication_submission
 """
 Supabase Database Connection Handler
 """
@@ -522,6 +522,7 @@ class SupabaseDB:
                 'guard_name_or_id', 'handover_guard_id', 'smart_tag_id', 'custody_status', 'status'
             }
             payload = {key: value for key, value in item_data.items() if key in allowed_fields and value is not None}
+            payload.update(publication_submission(self.client))
             while True:
                 try:
                     response = self.client.table('found_items').insert(payload).execute()
@@ -609,6 +610,8 @@ class SupabaseDB:
                 'status'
             }
             payload = {key: value for key, value in item_data.items() if key in allowed_fields and value is not None}
+            review_fields = publication_submission(self.client)
+            payload.update(review_fields)
             try:
                 response = self.client.table('missing_items').insert(payload).execute()
             except Exception as first_error:
@@ -617,6 +620,7 @@ class SupabaseDB:
                     'last_location', 'last_seen_date', 'image_url', 'status'
                 }
                 legacy_payload = {key: value for key, value in payload.items() if key in legacy_fields}
+                legacy_payload.update(review_fields)
                 logger.warning(f"Missing-item insert with reporter fields failed; retrying compatible payload: {first_error}")
                 response = self.client.table('missing_items').insert(legacy_payload).execute()
             logger.info(f"✓ Missing item created: {payload.get('item_name')}")
@@ -1142,7 +1146,7 @@ class SupabaseDB:
         """Return lost-item records in the shape the admin Lost Items page expects."""
         try:
             items = fetch_all(lambda: self.client.table('missing_items').select(
-                'item_id, mpost_id, account_id, reporter_account_id, reporter_name, item_name, category, description, last_location, last_seen_date, image_url, status, created_at, reporter_email, reporter_campus_id, distinctive_marks'
+                'item_id, mpost_id, account_id, reporter_account_id, reporter_name, item_name, category, description, last_location, last_seen_date, image_url, status, created_at, reporter_email, reporter_campus_id, distinctive_marks' + review_columns(self.client)
             ).order('created_at', desc=True))
             reporter_ids = []
             for item in items:
@@ -1175,6 +1179,7 @@ class SupabaseDB:
                     'aiMatch': None,
                     'status': 'Completed' if report_status in {'returned', 'resolved', 'closed'} else 'Found' if report_status == 'found' else 'Potential Match' if report_status == 'matched' else 'Searching',
                     'rawStatus': report_status or 'missing',
+                    'publicationState': item.get('publication_state') or 'approved',
                 })
             flag_archived(self.client, mapped, 'missing_items', 'mpost_id')
             return mapped
@@ -1191,7 +1196,7 @@ class SupabaseDB:
             ).in_('status', ['missing', 'found', 'open', 'matched']).order('created_at', desc=True))
 
             items = fetch_all(lambda: self.client.table('found_items').select(
-                'item_id, fpost_id, account_id, reporter_account_id, reporter_name, item_name, category, description, location, found_date, image_url, turnover_location, guard_name_or_id, status, custody_status, created_at, reporter_email, reporter_campus_id'
+                'item_id, fpost_id, account_id, reporter_account_id, reporter_name, item_name, category, description, location, found_date, image_url, turnover_location, guard_name_or_id, status, custody_status, created_at, reporter_email, reporter_campus_id' + review_columns(self.client)
             ).order('created_at', desc=True))
 
             best_match_scores = {}
@@ -1246,6 +1251,7 @@ class SupabaseDB:
                     'matchedItem': best_match_names.get(item_key, '') if ai_matched else '',
                     'status': ui_status,
                     'rawStatus': report_status or 'unclaimed',
+                    'publicationState': item.get('publication_state') or 'approved',
                     'photo': item.get('image_url') or '',
                 })
             flag_archived(self.client, mapped, 'found_items', 'fpost_id')

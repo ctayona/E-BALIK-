@@ -35,7 +35,13 @@ export function notificationTarget(notification: UserNotification): { page: Page
   if (notification.link_page === 'profile') return { page: 'profile' };
   if (notification.link_page === 'auction-hall') return { page: 'auction-hall' };
   if (notification.link_page === 'auction-selling') return { page: 'auction-hall', options: { auctionTab: 'selling' } };
-  if (notification.link_page === 'my-reports') return { page: 'my-reports', options: { reportsTab: 'completed' } };
+  if (notification.link_page === 'my-reports') {
+    if(['report_approval','report_rejection','report_review'].includes(notification.notification_type||''))return {
+      page:'my-reports',options:{highlightReportId:notification.missing_report_reference||notification.found_item_reference,
+        ...(notification.notification_type==='report_rejection'?{reportsTab:'approval' as const}:{})},
+    };
+    return { page: 'my-reports', options: { reportsTab: 'completed' } };
+  }
   if (opensSmartTags(notification)) {
     const tagId = /^my-tags\/([A-Z0-9]{10,12})$/.exec(notification.link_page || '')?.[1];
     return tagId ? { page: 'my-tags', options: { tagId } } : { page: 'my-tags' };

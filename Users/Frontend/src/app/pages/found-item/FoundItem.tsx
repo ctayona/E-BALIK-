@@ -11,7 +11,7 @@ import DataPrivacyConsent from "@/app/shared/privacy/DataPrivacyConsent";
 import { showSubmitError } from "@/app/utils/submitErrors";
 import { FieldHint, INVALID_FIELD, focusFirstInvalid, useFieldHint, type TextRule } from "@/app/shared/forms/FieldHint";
 import { firstTextProblem } from "@/app/utils/textGuard";
-import { isCompletedReport } from "@/app/utils/reportLifecycle";
+import { isCompletedReport,reportStatusLabel } from "@/app/utils/reportLifecycle";
 import { ReportGridSkeleton } from "@/app/shared/LoadingSkeleton";
 import ItemCollection from "@/app/shared/media/ItemCollection";
 import ItemImage, { type GalleryItem } from "@/app/shared/media/ItemImage";
@@ -93,7 +93,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
     return reports.filter((report) => {
       const matchesQuery = !query || [report.fpost_id, report.item_name, report.description, report.location, report.guard_name_or_id].some((value) => (value || "").toLowerCase().includes(query));
       const matchesCategory = !reportCategory || report.category === reportCategory;
-      const matchesStatus = !reportStatus || (reportStatus === "completed" ? isCompletedReport("Found", report.status) : report.status === reportStatus);
+      const matchesStatus = !reportStatus || (reportStatus === "pending" ? report.publication_state==="pending" : reportStatus === "completed" ? report.publication_state!=="pending"&&report.publication_state!=="rejected"&&isCompletedReport("Found", report.status) : (!report.publication_state||report.publication_state==="approved")&&report.status === reportStatus);
       const matchesLocation = !reportLocation || report.location.toLowerCase().includes(reportLocation.toLowerCase());
       return matchesQuery && matchesCategory && matchesStatus && matchesLocation;
     });
@@ -101,7 +101,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
 
   const galleryReports = useMemo<GalleryItem[]>(() => filteredReports.map((report) => ({
     id: report.fpost_id, title: report.item_name, kind: "found", image: report.image_url || undefined, category: report.category,
-    location: report.location, date: report.found_date, description: report.description, heldAt: report.turnover_location, status: report.status,
+    location: report.location, date: report.found_date, description: report.description, heldAt: report.turnover_location, status: reportStatusLabel("Found",report.status,report.publication_state),
   })), [filteredReports]);
 
   useEffect(() => {
@@ -221,7 +221,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
     const created = (result.item || null) as Report | null;
     showInfoModal({
       variant: "success",
-      title: created?.publication_state==="pending"?"Report awaiting admin review":"Found report published",
+      title: created?.publication_state==="pending"?"Report submitted for approval":"Found report published",
       message: created?.publication_state==="pending"?"Your report and turnover details are saved. An administrator must approve publication before the report appears in public listings or matching.":"Thank you. The report is recorded and the item is logged as turned over for safekeeping. Owners can now match against it.",
       reference: created?.fpost_id,
       details: [`Turned over at ${turnoverLocation}${guardLabel ? ` to ${guardLabel}` : ""}.`],
@@ -439,7 +439,7 @@ export default function FoundItem({ focused = false, onBack }: { focused?: boole
             <p className="whitespace-pre-line text-[15px] leading-7 text-ink-soft">{openReport.description || "No description provided."}</p>
             <dl className="grid gap-3 sm:grid-cols-2">
               {[
-                ["Category", openReport.category], ["Status", openReport.status || "unclaimed"],
+                ["Category", openReport.category], ["Status", reportStatusLabel("Found",openReport.status,openReport.publication_state)],
                 ["Found at", openReport.location], ["Date found", openReport.found_date],
                 ["Turned over at", openReport.turnover_location], ["Guard", openReport.guard_name_or_id],
               ].map(([label, value]) => (

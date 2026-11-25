@@ -208,8 +208,8 @@ export default function FoundItems() {
   }, []);
 
   // Archived reports only appear in the Archived tab.
-  const working = useMemo(() => items.filter((item) => !item.archived), [items]);
-  const archivedCount = items.length - working.length;
+  const working = useMemo(() => items.filter((item) => !item.archived&&(!item.publicationState||item.publicationState==="approved")), [items]);
+  const archivedCount = items.filter(item=>item.archived).length;
   const statusCounts = useMemo(() => working.reduce<Record<string, number>>((counts, item) => {
     counts[item.status] = (counts[item.status] ?? 0) + 1;
     return counts;
@@ -221,6 +221,7 @@ export default function FoundItems() {
     const query = search.trim().toLowerCase();
     return items.filter((item) => {
       if (statusFilter === ARCHIVED_TAB ? !item.archived : item.archived) return false;
+      if(statusFilter!==ARCHIVED_TAB&&item.publicationState&&item.publicationState!=="approved")return false;
       if (statusFilter !== ALL && statusFilter !== ARCHIVED_TAB && item.status !== statusFilter) return false;
       if (category !== ALL && item.category !== category) return false;
       return !query || [item.item, item.id, item.locationFound, item.storage, item.description].some((value) => value?.toLowerCase().includes(query));

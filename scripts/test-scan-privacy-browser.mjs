@@ -23,7 +23,7 @@ try{
  const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});socket.send(JSON.stringify({id,method,params}));});
  await send("Page.enable");
  const selectedModes=process.argv.slice(2);
- for(const mode of selectedModes.length?selectedModes:["tag-desktop","tag-mobile","tag-nfc-mobile","tag-legacy-mobile","scan-desktop","scan-mobile","scan-mobile-dark","review-desktop","review-mobile","review-mobile-dark","activity-desktop","activity-mobile","activity-mobile-dark","activity-slow-mobile"]){
+ for(const mode of selectedModes.length?selectedModes:["tag-desktop","tag-mobile","tag-nfc-mobile","tag-legacy-mobile","scan-desktop","scan-mobile","scan-mobile-dark","review-desktop","review-mobile","review-mobile-dark","report-journey-desktop","report-journey-mobile","report-journey-mobile-dark","activity-desktop","activity-mobile","activity-mobile-dark","activity-slow-mobile"]){
   await send("Emulation.setDeviceMetricsOverride",{width:mode.includes("mobile")?390:1440,height:1000,deviceScaleFactor:1,mobile:mode.includes("mobile")});
   await send("Page.navigate",{url:pathToFileURL(folder+"/index.html").href+"?mode="+mode});
   let qa;for(let i=0;i<100;i++){await sleep(150);const d=await send("Runtime.evaluate",{expression:'({qa:document.body.dataset.qa,text:document.getElementById("qa")?.textContent})',returnByValue:true});qa=d.result?.value;if(qa?.qa)break;}
