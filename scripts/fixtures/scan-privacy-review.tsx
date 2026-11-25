@@ -78,8 +78,11 @@ async function click(label:string){const el=await wait(()=>Array.from(document.q
  }else{
   await click("Smart Tag scans");await wait(()=>document.body.textContent?.includes("14.50000"));
   if(!document.body.textContent?.includes("Owner: No opt-in"))throw Error("Recipient consent missing");
+  const mapLink=document.querySelector<HTMLAnchorElement>('a[href^="https://www.google.com/maps/"]');
+  if(!mapLink||new URL(mapLink.href).searchParams.get("query")!=="14.5,121"||mapLink.target!=="_blank"||!mapLink.rel.includes("noreferrer"))throw Error("Missing or unsafe admin map link");
   await click("Resolve / remove location");await wait(()=>!document.body.textContent?.includes("14.50000"));
   if(document.body.textContent?.includes("14.50000"))throw Error("Resolved location still visible");
+  if(document.querySelector('a[href^="https://www.google.com/maps/"]'))throw Error("Resolved map link remains accessible");
   newArrival=true;
   document.dispatchEvent(new Event("visibilitychange"));
   await wait(()=>document.body.textContent?.includes("ZXCVBNMASD23"));

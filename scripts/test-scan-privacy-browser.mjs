@@ -22,7 +22,8 @@ try{
  let seq=0;const pending=new Map();socket.onmessage=e=>{const d=JSON.parse(e.data);if(d.id){const p=pending.get(d.id);pending.delete(d.id);d.error?p?.reject(Error(d.error.message)):p?.resolve(d.result);}};
  const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});socket.send(JSON.stringify({id,method,params}));});
  await send("Page.enable");
- for(const mode of ["tag-desktop","tag-mobile","tag-nfc-mobile","tag-legacy-mobile","scan-desktop","scan-mobile","scan-mobile-dark","review-desktop","review-mobile","review-mobile-dark","activity-desktop","activity-mobile","activity-mobile-dark","activity-slow-mobile"]){
+ const selectedModes=process.argv.slice(2);
+ for(const mode of selectedModes.length?selectedModes:["tag-desktop","tag-mobile","tag-nfc-mobile","tag-legacy-mobile","scan-desktop","scan-mobile","scan-mobile-dark","review-desktop","review-mobile","review-mobile-dark","activity-desktop","activity-mobile","activity-mobile-dark","activity-slow-mobile"]){
   await send("Emulation.setDeviceMetricsOverride",{width:mode.includes("mobile")?390:1440,height:1000,deviceScaleFactor:1,mobile:mode.includes("mobile")});
   await send("Page.navigate",{url:pathToFileURL(folder+"/index.html").href+"?mode="+mode});
   let qa;for(let i=0;i<100;i++){await sleep(150);const d=await send("Runtime.evaluate",{expression:'({qa:document.body.dataset.qa,text:document.getElementById("qa")?.textContent})',returnByValue:true});qa=d.result?.value;if(qa?.qa)break;}
